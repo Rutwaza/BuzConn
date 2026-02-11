@@ -187,8 +187,20 @@ class _ChatPageState extends State<ChatPage> {
         final isOtherTyping =
             otherUserId != null && typingMap[otherUserId] == true;
 
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final backgroundColor =
+            isDark ? const Color(0xFF0F1115) : const Color(0xFFF4F6FA);
+        final surfaceColor = isDark ? const Color(0xFF151922) : Colors.white;
+        final bubbleMeColor = isDark ? const Color(0xFF3B82F6) : AppColors.primary;
+        final bubbleOtherColor = surfaceColor;
+        final separatorColor = isDark ? Colors.white10 : Colors.black12;
+        final replyBarColor = isDark ? const Color(0xFF1C212B) : AppColors.lightGrey;
+        final inputBarColor = surfaceColor;
+        final emojiBarColor = surfaceColor;
+        final typingColor = isDark ? Colors.white70 : AppColors.grey;
+
         return Scaffold(
-          backgroundColor: const Color(0xFFF4F6FA),
+          backgroundColor: backgroundColor,
           appBar: AppBar(
             title: Row(
               children: [
@@ -301,7 +313,7 @@ class _ChatPageState extends State<ChatPage> {
                             child: Container(
                               width: 200,
                               height: 120,
-                              color: AppColors.lightGrey,
+                              color: replyBarColor,
                               child: bytes == null
                                   ? const Center(
                                       child: Icon(Icons.play_circle_fill,
@@ -333,7 +345,7 @@ class _ChatPageState extends State<ChatPage> {
                         MediaQuery.of(context).size.width * 0.7;
 
                     final bubbleTextStyle = TextStyle(
-                      color: isMe ? Colors.white : Colors.black87,
+                      color: isMe ? Colors.white : (isDark ? Colors.white : Colors.black87),
                     );
 
                         final isSeen = isMe &&
@@ -367,14 +379,14 @@ class _ChatPageState extends State<ChatPage> {
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 12, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: Colors.black12,
+                                      color: separatorColor,
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Text(
                                       separatorLabel,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 12,
-                                        color: Colors.black87,
+                                        color: isDark ? Colors.white70 : Colors.black87,
                                       ),
                                     ),
                                   ),
@@ -426,8 +438,8 @@ class _ChatPageState extends State<ChatPage> {
                                           padding: const EdgeInsets.all(10),
                                           decoration: BoxDecoration(
                                             color: isMe
-                                                ? AppColors.primary
-                                                : Colors.white,
+                                                ? bubbleMeColor
+                                                : bubbleOtherColor,
                                             borderRadius:
                                                 BorderRadius.circular(12),
                                             boxShadow: [
@@ -457,7 +469,7 @@ class _ChatPageState extends State<ChatPage> {
                                                 Container(
                                                   padding: const EdgeInsets.all(6),
                                                   decoration: BoxDecoration(
-                                                    color: Colors.black12,
+                                                    color: isDark ? Colors.white12 : Colors.black12,
                                                     borderRadius:
                                                         BorderRadius.circular(8),
                                                   ),
@@ -484,9 +496,7 @@ class _ChatPageState extends State<ChatPage> {
                                                       timeLabel,
                                                       style: TextStyle(
                                                         fontSize: 10,
-                                                        color: isMe
-                                                            ? Colors.white70
-                                                            : AppColors.grey,
+                                                        color: isMe ? Colors.white70 : (isDark ? Colors.white70 : AppColors.grey),
                                                       ),
                                                     ),
                                                     if (isMe) ...[
@@ -520,13 +530,13 @@ class _ChatPageState extends State<ChatPage> {
             ),
           ),
           if (isOtherTyping)
-            const Padding(
-              padding: EdgeInsets.only(left: 16, bottom: 4),
+            Padding(
+              padding: const EdgeInsets.only(left: 16, bottom: 4),
               child: Row(
                 children: [
                   Text(
-                    'typingâ€¦',
-                    style: TextStyle(color: AppColors.grey),
+                    'typing…',
+                    style: TextStyle(color: typingColor),
                   ),
                 ],
               ),
@@ -534,7 +544,7 @@ class _ChatPageState extends State<ChatPage> {
           if (_replyingTo != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              color: AppColors.lightGrey,
+              color: replyBarColor,
               child: Row(
                 children: [
                   Expanded(
@@ -795,3 +805,9 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 }
+
+
+
+
+
+

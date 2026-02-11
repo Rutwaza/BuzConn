@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
+import '../../../core/services/theme_mode_service.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
@@ -37,6 +38,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         setState(() {
           _userData = userData;
         });
+        await ThemeModeService.instance.loadFromUser();
 
         // Check if profile is completed
         final profileCompleted = userData['profileCompleted'] ?? false;
@@ -112,6 +114,19 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           },
         ),
         actions: [
+          IconButton(
+            icon: Icon(
+              ThemeModeService.instance.mode.value == ThemeMode.dark
+                  ? Icons.light_mode
+                  : Icons.dark_mode,
+            ),
+            onPressed: () async {
+              await ThemeModeService.instance.toggle();
+              if (mounted) {
+                setState(() {});
+              }
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.person),
             onPressed: () {

@@ -57,6 +57,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           'createdAt': FieldValue.serverTimestamp(),
           'userType': 'client', // Default to client, can be changed later
           'fcmTokens': [],
+          'themeMode': 'light',
         });
 
         // Send email verification

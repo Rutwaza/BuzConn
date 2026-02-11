@@ -7,6 +7,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'core/theme/app_theme.dart';
 import 'core/services/firebase_service.dart';
 import 'core/services/push_notification_service.dart';
+import 'core/services/theme_mode_service.dart';
 import 'core/routes/router.dart';
 import 'firebase_options.dart';
 
@@ -23,6 +24,7 @@ void main() async {
   await FirebaseService.instance.initialize();
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   await PushNotificationService.instance.initialize();
+  await ThemeModeService.instance.loadFromUser();
 
   // Initialize Supabase
   await Supabase.initialize(
@@ -42,13 +44,18 @@ class MyApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return MaterialApp.router(
-      title: 'Business Connector',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.light,
-      routerConfig: AppRouter.router,
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemeModeService.instance.mode,
+      builder: (context, mode, _) {
+        return MaterialApp.router(
+          title: 'Business Connector',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: mode,
+          routerConfig: AppRouter.router,
+        );
+      },
     );
   }
 }
