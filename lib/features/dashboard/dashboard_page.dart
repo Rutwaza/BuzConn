@@ -68,26 +68,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           stream: _currentUser == null
               ? const Stream.empty()
               : FirebaseFirestore.instance
-                  .collection('posts')
-                  .where('ownerId', isEqualTo: _currentUser!.uid)
+                  .collection('notifications')
+                  .where('toUserId', isEqualTo: _currentUser!.uid)
+                  .where('readAt', isEqualTo: null)
                   .snapshots(),
-          builder: (context, postsSnap) {
-            final posts = postsSnap.data?.docs ?? [];
-            final lastRead =
-                (_userData?['lastNotificationsReadAt'] as Timestamp?);
-            int count = 0;
-            for (final doc in posts) {
-              final data = doc.data() as Map<String, dynamic>;
-              final updatedAt = data['updatedAt'] as Timestamp?;
-              if (lastRead == null ||
-                  (updatedAt != null &&
-                      updatedAt.toDate().isAfter(lastRead.toDate()))) {
-                final likes = (data['likes'] as List?)?.length ?? 0;
-                final comments = (data['comments'] as List?)?.length ?? 0;
-                count += likes + comments;
-              }
-            }
-
+          builder: (context, notifSnap) {
+            final docs = notifSnap.data?.docs ?? [];
+            final count = docs
+                .where((d) => (d.data() as Map<String, dynamic>)['hidden'] != true)
+                .length;
             return IconButton(
               onPressed: () async {
                 context.push(AppRoutes.notifications);

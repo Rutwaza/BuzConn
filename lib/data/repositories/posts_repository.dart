@@ -5,6 +5,16 @@ import '../../data/models/post_model.dart';
 class PostsRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  Map<String, dynamic>? _currentUserCache;
+
+  Future<Map<String, dynamic>> _currentUserProfile() async {
+    if (_currentUserCache != null) return _currentUserCache!;
+    final user = _auth.currentUser;
+    if (user == null) return {};
+    final doc = await _firestore.collection('users').doc(user.uid).get();
+    _currentUserCache = doc.data() ?? {};
+    return _currentUserCache!;
+  }
 
   // Get all posts ordered by creation date
   Stream<List<Post>> getPosts() {
@@ -91,16 +101,33 @@ class PostsRepository {
     final post = Post.fromFirestore(postDoc);
     final likes = List<String>.from(post.likes);
 
+    bool addedLike = false;
     if (likes.contains(user.uid)) {
       likes.remove(user.uid);
     } else {
       likes.add(user.uid);
+      addedLike = true;
     }
 
     await postRef.update({
       'likes': likes,
       'updatedAt': Timestamp.now(),
     });
+
+    if (addedLike && post.ownerId != user.uid) {
+      final profile = await _currentUserProfile();
+      await _firestore.collection('notifications').add({
+        'toUserId': post.ownerId,
+        'fromUserId': user.uid,
+        'fromUserName': profile['name'] ?? 'User',
+        'fromUserImageUrl': profile['imageUrl'],
+        'postId': post.id,
+        'type': 'like',
+        'createdAt': FieldValue.serverTimestamp(),
+        'readAt': null,
+        'hidden': false,
+      });
+    }
   }
 
   // Add comment to post
@@ -133,6 +160,21 @@ class PostsRepository {
       'comments': comments.map((c) => c.toMap()).toList(),
       'updatedAt': Timestamp.now(),
     });
+
+    if (post.ownerId != user.uid) {
+      final profile = await _currentUserProfile();
+      await _firestore.collection('notifications').add({
+        'toUserId': post.ownerId,
+        'fromUserId': user.uid,
+        'fromUserName': profile['name'] ?? 'User',
+        'fromUserImageUrl': profile['imageUrl'],
+        'postId': post.id,
+        'type': 'comment',
+        'createdAt': FieldValue.serverTimestamp(),
+        'readAt': null,
+        'hidden': false,
+      });
+    }
   }
 
   // Delete post (only by business owner)
