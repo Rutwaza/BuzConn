@@ -1,0 +1,80 @@
+name: businessfinder
+description: A platform connecting businesses with clients
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI & Design
+  cupertino_icons: ^1.0.6
+  google_fonts: ^6.1.0
+  flutter_svg: ^2.0.9
+  lottie: ^2.7.0
+  smooth_page_indicator: ^1.1.0
+
+  # State Management
+  flutter_riverpod: ^2.4.9
+  riverpod_annotation: ^2.3.3
+
+  # Navigation & Routing
+  go_router: ^13.0.1
+  auto_route: ^7.0.0
+
+  # Firebase Core
+  firebase_core: ^2.28.0
+  firebase_auth: ^4.15.2
+  cloud_firestore: ^4.17.0
+  firebase_storage: ^11.3.5
+  firebase_messaging: ^14.7.10
+
+  # Utilities
+  intl: ^0.19.0
+  equatable: ^2.0.5
+  dartz: ^0.10.1
+  uuid: ^4.3.3
+  image_picker: ^1.0.4
+  image_cropper: ^11.0.0
+  cached_network_image: ^3.3.0
+  path_provider: ^2.1.1
+  url_launcher: ^6.2.5
+  supabase_flutter: ^2.5.6
+  video_player: ^2.9.2
+  video_thumbnail: ^0.5.3
+
+  # Maps & Location
+  geolocator: ^10.1.0
+  geocoding: ^2.1.1
+  flutter_map: ^6.2.1
+  latlong2: ^0.9.1
+
+  # Forms & Validation
+  formz: ^0.6.0 # Update to the latest version found
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  build_runner: ^2.4.8
+  riverpod_generator: ^2.3.9
+  auto_route_generator: ^7.0.0
+  freezed_annotation: ^2.4.1
+  json_serializable: ^6.7.1
+  flutter_launcher_icons: ^0.13.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/icons/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/images/app_icon.png
+  min_sdk_android: 21

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "540337503772",
+    "project_id": "bussinessfinder-327f5",
+    "storage_bucket": "bussinessfinder-327f5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:540337503772:android:999aecc7575dc206d769d9",
+        "android_client_info": {
+          "package_name": "com.example.bussinessfinder"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDLTVlu8D53IRz2FIMUh6RkN3XbbQN-xuE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
