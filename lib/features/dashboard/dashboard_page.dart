@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -65,7 +68,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: const Text('CityFigure'),
         leading: StreamBuilder<QuerySnapshot>(
           stream: _currentUser == null
               ? const Stream.empty()
@@ -214,7 +217,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'Welcome back!',
+                                          'Explore Cosmos!',
                                           style: Theme.of(context).textTheme.headlineSmall,
                                         ),
                                         const SizedBox(height: 8),
@@ -249,20 +252,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                                         end: Alignment.bottomRight,
                                       ),
                                     ),
-                                    child: Center(
-                                      child: userType == 'business'
-                                          ? Icon(
-                                              Icons.star,
-                                              color: anyVerified
-                                                  ? const Color(0xFFFFD700)
-                                                  : const Color(0xFFCD7F32),
-                                              size: 30,
-                                            )
-                                          : const Text(
-                                              '😊',
-                                              style: TextStyle(fontSize: 26),
-                                            ),
-                                    ),
+                                    child: const _RotatingWelcomeIcon(),
                                   ),
                                 ],
                               ),
@@ -528,6 +518,64 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ],
+    );
+  }
+}
+
+class _RotatingWelcomeIcon extends StatefulWidget {
+  const _RotatingWelcomeIcon();
+
+  @override
+  State<_RotatingWelcomeIcon> createState() => _RotatingWelcomeIconState();
+}
+
+class _RotatingWelcomeIconState extends State<_RotatingWelcomeIcon> {
+  static const List<String> _welcomeIcons = [
+    'assets/icons/alien.png',
+    'assets/icons/constellation.png',
+    'assets/icons/stars.png',
+  ];
+
+  int _welcomeIconIndex = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _welcomeIconIndex = Random().nextInt(_welcomeIcons.length);
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        _welcomeIconIndex = (_welcomeIconIndex + 1) % _welcomeIcons.length;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipOval(
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 600),
+        transitionBuilder: (child, animation) {
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
+        child: SizedBox.expand(
+          key: ValueKey(_welcomeIcons[_welcomeIconIndex]),
+          child: Image.asset(
+            _welcomeIcons[_welcomeIconIndex],
+            fit: BoxFit.cover,
+          ),
+        ),
+      ),
     );
   }
 }
