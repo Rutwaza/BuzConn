@@ -116,9 +116,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         actions: [
           IconButton(
             icon: Icon(
-              ThemeModeService.instance.mode.value == ThemeMode.dark
+              ThemeModeService.instance.mode.value == AppThemeMode.dark
                   ? Icons.light_mode
-                  : Icons.dark_mode,
+                  : ThemeModeService.instance.mode.value == AppThemeMode.cyber
+                      ? Icons.bolt
+                      : Icons.dark_mode,
             ),
             onPressed: () async {
               await ThemeModeService.instance.toggle();

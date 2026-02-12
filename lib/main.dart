@@ -44,15 +44,17 @@ class MyApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ValueListenableBuilder<ThemeMode>(
+    return ValueListenableBuilder<AppThemeMode>(
       valueListenable: ThemeModeService.instance.mode,
       builder: (context, mode, _) {
+        final isCyber = mode == AppThemeMode.cyber;
+        final themeMode = mode == AppThemeMode.dark ? ThemeMode.dark : ThemeMode.light;
         return MaterialApp.router(
           title: 'Business Connector',
           debugShowCheckedModeBanner: false,
-          theme: AppTheme.lightTheme,
-          darkTheme: AppTheme.darkTheme,
-          themeMode: mode,
+          theme: isCyber ? AppTheme.cyberpunkTheme : AppTheme.lightTheme,
+          darkTheme: isCyber ? AppTheme.cyberpunkTheme : AppTheme.darkTheme,
+          themeMode: themeMode,
           routerConfig: AppRouter.router,
         );
       },

@@ -107,4 +107,97 @@ class AppTheme {
     primaryColor: AppColors.primaryLight,
     // Add dark theme colors here
   );
+
+  static ThemeData cyberpunkTheme = ThemeData(
+    useMaterial3: true,
+    brightness: Brightness.dark,
+    fontFamily: 'RobotoMono',
+    primaryColor: const Color(0xFF00E5FF),
+    scaffoldBackgroundColor: const Color(0xFF0A0F1E),
+    colorScheme: const ColorScheme.dark(
+      primary: Color(0xFF00E5FF),
+      secondary: Color(0xFFFF4DFF),
+      surface: Color(0xFF111827),
+      error: Color(0xFFFF4D4D),
+    ),
+    appBarTheme: const AppBarTheme(
+      backgroundColor: Color(0xAA0A0F1E),
+      elevation: 0,
+      centerTitle: true,
+      iconTheme: IconThemeData(color: Color(0xFF9AF7FF)),
+      titleTextStyle: TextStyle(
+        color: Color(0xFF9AF7FF),
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+    textTheme: const TextTheme(
+      displayLarge: TextStyle(color: Color(0xFFE7F9FF)),
+      displayMedium: TextStyle(color: Color(0xFFE7F9FF)),
+      displaySmall: TextStyle(color: Color(0xFFE7F9FF)),
+      headlineMedium: TextStyle(color: Color(0xFFE7F9FF)),
+      bodyLarge: TextStyle(color: Color(0xFFC7D8FF)),
+      bodyMedium: TextStyle(color: Color(0xFFC7D8FF)),
+      bodySmall: TextStyle(color: Color(0xFF9FB3D9)),
+      labelLarge: TextStyle(color: Color(0xFF00E5FF)),
+      labelSmall: TextStyle(color: Color(0xFF8AB4FF)),
+    ),
+    cardTheme: CardThemeData(
+      color: const Color(0x3318A0FB),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0x5520F6FF), width: 1),
+      ),
+      margin: EdgeInsets.zero,
+    ),
+    dividerTheme: const DividerThemeData(
+      color: Color(0x331DE9B6),
+      thickness: 1,
+      space: 1,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: const Color(0x2218A0FB),
+      contentPadding: const EdgeInsets.all(16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0x5520F6FF)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0x5520F6FF)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF00E5FF), width: 2),
+      ),
+      hintStyle: const TextStyle(color: Color(0xFF7AA6B8)),
+      labelStyle: const TextStyle(color: Color(0xFF7AA6B8)),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF00E5FF),
+        foregroundColor: const Color(0xFF0A0F1E),
+        textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        elevation: 0,
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: const Color(0xFF9AF7FF),
+        textStyle: const TextStyle(fontWeight: FontWeight.w500),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        side: const BorderSide(color: Color(0x5520F6FF)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    ),
+    iconTheme: const IconThemeData(color: Color(0xFF9AF7FF)),
+  );
 }
