@@ -69,53 +69,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('CityFigure'),
-        leading: StreamBuilder<QuerySnapshot>(
-          stream: _currentUser == null
-              ? const Stream.empty()
-              : FirebaseFirestore.instance
-                  .collection('notifications')
-                  .where('toUserId', isEqualTo: _currentUser!.uid)
-                  .where('readAt', isEqualTo: null)
-                  .snapshots(),
-          builder: (context, notifSnap) {
-            final docs = notifSnap.data?.docs ?? [];
-            final count = docs
-                .where((d) => (d.data() as Map<String, dynamic>)['hidden'] != true)
-                .length;
-            return IconButton(
-              onPressed: () async {
-                context.push(AppRoutes.notifications);
-              },
-              icon: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  const Icon(Icons.notifications),
-                  if (count > 0)
-                    Positioned(
-                      right: -6,
-                      top: -6,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          count.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
-        ),
+        leading: null,
         actions: [
           IconButton(
             icon: Icon(

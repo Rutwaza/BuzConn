@@ -1,23 +1,23 @@
 import 'package:go_router/go_router.dart';
 
 import '../constants/app_constants.dart';
-import '../../presentation/pages/splash/splash_page.dart';
-import '../../presentation/pages/onboarding/onboarding_page.dart';
-import '../../presentation/pages/auth/login_page.dart';
-import '../../presentation/pages/auth/register_page.dart';
-import '../../presentation/pages/profile/profile_completion_page.dart';
-import '../../presentation/pages/business/business_setup_page.dart';
-import '../../presentation/pages/business/businesses_page.dart';
-import '../../presentation/pages/feed/posts_feed_page.dart';
-import '../../presentation/pages/feed/create_post_page.dart';
-import '../../presentation/pages/business/business_profile_page.dart';
-import '../../presentation/pages/traffic/traffic_management_page.dart';
-import '../../presentation/pages/chat/chat_list_page.dart';
-import '../../presentation/pages/chat/chat_page.dart';
-import '../../presentation/pages/search/search_page.dart';
-import '../../presentation/pages/profile/client_profile_page.dart';
-import '../../presentation/pages/notifications/notifications_page.dart';
-import '../../features/dashboard/dashboard_page.dart';
+import 'package:businessfinder/presentation/pages/splash/splash_page.dart';
+import 'package:businessfinder/presentation/pages/onboarding/onboarding_page.dart';
+import 'package:businessfinder/presentation/pages/auth/login_page.dart';
+import 'package:businessfinder/presentation/pages/auth/register_page.dart';
+import 'package:businessfinder/presentation/pages/profile/profile_completion_page.dart';
+import 'package:businessfinder/presentation/pages/business/business_setup_page.dart';
+import 'package:businessfinder/presentation/pages/business/businesses_page.dart';
+import 'package:businessfinder/presentation/pages/feed/posts_feed_page.dart';
+import 'package:businessfinder/presentation/pages/feed/create_post_page.dart';
+import 'package:businessfinder/presentation/pages/business/business_profile_page.dart';
+import 'package:businessfinder/presentation/pages/traffic/traffic_management_page.dart';
+import 'package:businessfinder/presentation/pages/chat/chat_list_page.dart';
+import 'package:businessfinder/presentation/pages/chat/chat_page.dart';
+import 'package:businessfinder/presentation/pages/search/search_page.dart';
+import 'package:businessfinder/presentation/pages/profile/client_profile_page.dart';
+import 'package:businessfinder/presentation/pages/notifications/notifications_page.dart';
+import 'package:businessfinder/features/dashboard/dashboard_page.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(

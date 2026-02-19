@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/colors.dart';
-import '../theme/text_styles.dart';
 
 class AppTextField extends StatelessWidget {
   final String label;
@@ -47,12 +46,23 @@ class AppTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final labelStyle = theme.textTheme.labelLarge;
+    final hintStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: isDark ? Colors.white54 : AppColors.grey,
+    );
+    final textStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: enabled ? (isDark ? Colors.white : AppColors.black) : AppColors.grey,
+    );
+    final fillColor =
+        enabled ? theme.cardColor : (isDark ? const Color(0xFF1C212B) : AppColors.lightGrey);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: AppTextStyles.labelLarge,
+          style: labelStyle,
         ),
         const SizedBox(height: 8),
         TextFormField(
@@ -69,18 +79,20 @@ class AppTextField extends StatelessWidget {
           inputFormatters: inputFormatters,
           decoration: InputDecoration(
             hintText: hintText,
-            hintStyle: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.grey,
-            ),
+            hintStyle: hintStyle,
             filled: true,
-            fillColor: enabled ? AppColors.white : AppColors.lightGrey,
+            fillColor: fillColor,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.lightGrey),
+              borderSide: BorderSide(
+                color: isDark ? Colors.white24 : AppColors.lightGrey,
+              ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.lightGrey),
+              borderSide: BorderSide(
+                color: isDark ? Colors.white24 : AppColors.lightGrey,
+              ),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -98,9 +110,7 @@ class AppTextField extends StatelessWidget {
             suffixIcon: suffixIcon,
             errorMaxLines: 2,
           ),
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: enabled ? AppColors.black : AppColors.grey,
-          ),
+          style: textStyle,
           validator: validator,
           onChanged: onChanged,
           onTap: onTap,

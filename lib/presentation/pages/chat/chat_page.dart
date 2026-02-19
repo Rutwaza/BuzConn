@@ -1,5 +1,6 @@
-import 'dart:typed_data';
+﻿import 'dart:typed_data';
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -242,6 +243,18 @@ class _ChatPageState extends State<ChatPage> {
                   ),
               ],
             ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.call),
+                onPressed: () => _showComingSoon('Audio calls'),
+                tooltip: 'Audio call',
+              ),
+              IconButton(
+                icon: const Icon(Icons.videocam),
+                onPressed: () => _showComingSoon('Video calls'),
+                tooltip: 'Video call',
+              ),
+            ],
           ),
           body: Column(
             children: [
@@ -534,10 +547,7 @@ class _ChatPageState extends State<ChatPage> {
               padding: const EdgeInsets.only(left: 16, bottom: 4),
               child: Row(
                 children: [
-                  Text(
-                    'typing�',
-                    style: TextStyle(color: typingColor),
-                  ),
+                  _TypingDots(color: typingColor),
                 ],
               ),
             ),
@@ -567,7 +577,7 @@ class _ChatPageState extends State<ChatPage> {
             ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            color: Colors.white,
+            color: inputBarColor,
             child: Row(
               children: [
                 IconButton(
@@ -582,11 +592,22 @@ class _ChatPageState extends State<ChatPage> {
                       ? null
                       : () => _sendMedia(ImageSource.gallery, isVideo: true),
                 ),
+                IconButton(
+                  icon: const Icon(Icons.mic),
+                  onPressed:
+                      _sendingMedia ? null : () => _showComingSoon('Voice notes'),
+                ),
                 Expanded(
                   child: TextField(
                     controller: _controller,
-                    decoration: const InputDecoration(
+                    style: TextStyle(
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                    decoration: InputDecoration(
                       hintText: 'Message...',
+                      hintStyle: TextStyle(
+                        color: isDark ? Colors.white54 : AppColors.grey,
+                      ),
                       border: InputBorder.none,
                     ),
                     onChanged: _handleTyping,
@@ -599,7 +620,6 @@ class _ChatPageState extends State<ChatPage> {
               ],
             ),
           ),
-          _quickEmojiRow(),
         ],
       ),
     );
@@ -607,27 +627,10 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _quickEmojiRow() {
-    const emojis = ['👍', '🔥', '😂', '😍', '🙏', '🎉'];
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      color: Colors.white,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: emojis
-            .map(
-              (e) => InkWell(
-                onTap: () {
-                  _controller.text = '${_controller.text}$e';
-                  _controller.selection = TextSelection.fromPosition(
-                    TextPosition(offset: _controller.text.length),
-                  );
-                },
-                child: Text(e, style: const TextStyle(fontSize: 18)),
-              ),
-            )
-            .toList(),
-      ),
+  void _showComingSoon(String feature) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$feature coming soon!')),
     );
   }
 
@@ -805,6 +808,70 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 }
+
+class _TypingDots extends StatefulWidget {
+  const _TypingDots({required this.color});
+
+  final Color color;
+
+  @override
+  State<_TypingDots> createState() => _TypingDotsState();
+}
+
+class _TypingDotsState extends State<_TypingDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  double _opacity(double phase) {
+    final value = math.sin((_controller.value * math.pi * 2) + phase);
+    return 0.35 + 0.65 * ((value + 1) / 2);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        return Row(
+          children: [
+            _dot(_opacity(0)),
+            const SizedBox(width: 4),
+            _dot(_opacity(1.2)),
+            const SizedBox(width: 4),
+            _dot(_opacity(2.4)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _dot(double opacity) {
+    return Container(
+      width: 6,
+      height: 6,
+      decoration: BoxDecoration(
+        color: widget.color.withOpacity(opacity),
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+}
+
 
 
 

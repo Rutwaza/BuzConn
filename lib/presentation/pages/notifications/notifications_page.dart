@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
 import '../business/post_detail_page.dart';
@@ -34,7 +36,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         .get();
     final batch = FirebaseFirestore.instance.batch();
     for (final doc in snap.docs) {
-      batch.update(doc.reference, {'readAt': FieldValue.serverTimestamp()});
+      batch.update(doc.reference, {'readAt': Timestamp.now()});
     }
     await batch.commit();
   }
@@ -69,6 +71,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (user == null) {
       return const Scaffold(body: Center(child: Text('Please sign in.')));
     }
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final cardColor = theme.cardColor;
+    final selectedColor = theme.colorScheme.primary.withOpacity(0.15);
+    final titleStyle = theme.textTheme.bodyLarge;
+    final subtitleStyle = theme.textTheme.bodySmall?.copyWith(
+      color: isDark ? Colors.white70 : AppColors.grey,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -150,11 +160,18 @@ class _NotificationsPageState extends State<NotificationsPage> {
               final fromName = data['fromUserName'] ?? 'Someone';
               final fromImage = data['fromUserImageUrl'] as String?;
               final postId = data['postId'] as String?;
+              final chatId = data['chatId'] as String?;
+              final preview = data['preview'] as String?;
               final createdAt = data['createdAt'] as Timestamp?;
 
-              final title = type == 'comment'
-                  ? '$fromName commented on your post'
-                  : '$fromName liked your post';
+              String title;
+              if (type == 'message') {
+                title = 'New message from $fromName';
+              } else if (type == 'comment') {
+                title = '$fromName commented on your post';
+              } else {
+                title = '$fromName liked your post';
+              }
 
               final selected = _selectedIds.contains(id);
 
@@ -175,25 +192,33 @@ class _NotificationsPageState extends State<NotificationsPage> {
                     });
                     return;
                   }
-                  if (postId == null) return;
-                  final postDoc = await FirebaseFirestore.instance
-                      .collection('posts')
-                      .doc(postId)
-                      .get();
-                  if (!postDoc.exists) return;
-                  final post = Post.fromFirestore(postDoc);
-                  if (!context.mounted) return;
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => PostDetailPage(post: post)),
-                  );
+                  if (type == 'message') {
+                    if (chatId == null) return;
+                    if (!context.mounted) return;
+                    context.push(AppRoutes.chatDetailPath(chatId));
+                  } else {
+                    if (postId == null) return;
+                    final postDoc = await FirebaseFirestore.instance
+                        .collection('posts')
+                        .doc(postId)
+                        .get();
+                    if (!postDoc.exists) return;
+                    final post = Post.fromFirestore(postDoc);
+                    if (!context.mounted) return;
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => PostDetailPage(post: post)),
+                    );
+                  }
                 },
                 child: Container(
                   decoration: BoxDecoration(
-                    color: selected ? AppColors.lightGrey : Colors.white,
+                    color: selected ? selectedColor : cardColor,
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
+                        color: isDark
+                            ? Colors.black.withOpacity(0.2)
+                            : Colors.black.withOpacity(0.04),
                         blurRadius: 6,
                         offset: const Offset(0, 2),
                       ),
@@ -213,10 +238,18 @@ class _NotificationsPageState extends State<NotificationsPage> {
                             )
                           : null,
                     ),
-                    title: Text(title),
+                    title: Text(
+                      title,
+                      style: titleStyle,
+                    ),
                     subtitle: createdAt == null
                         ? null
-                        : Text(_formatTime(createdAt.toDate())),
+                        : Text(
+                            type == 'message' && preview != null && preview.isNotEmpty
+                                ? '$preview • ${_formatTime(createdAt.toDate())}'
+                                : _formatTime(createdAt.toDate()),
+                            style: subtitleStyle,
+                          ),
                     trailing: _selectionMode
                         ? Checkbox(
                             value: selected,

@@ -106,10 +106,7 @@ class ClientProfilePage extends StatelessWidget {
           onTap: phone.isEmpty
               ? null
               : () async {
-                  final uri = Uri.parse('tel:$phone');
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri);
-                  }
+                  await _dialPhone(context, phone);
                 },
           label: 'Call',
         ),
@@ -149,6 +146,22 @@ class ClientProfilePage extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  Future<void> _dialPhone(BuildContext context, String phone) async {
+    final trimmed = phone.trim();
+    if (trimmed.isEmpty) return;
+    final normalized = trimmed.replaceAll(RegExp(r'\s+'), '');
+    final uri = Uri(scheme: 'tel', path: normalized);
+    final ok = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open dialer.')),
+      );
+    }
   }
 
   Future<void> _startChat(BuildContext context) async {

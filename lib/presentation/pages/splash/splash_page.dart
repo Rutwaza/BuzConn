@@ -30,8 +30,8 @@ class _SplashPageState extends ConsumerState<SplashPage> {
     // Navigate based on auth status
     if (mounted) {
       if (isLoggedIn) {
-        // Navigate to dashboard if already logged in
-        context.go(AppRoutes.dashboard);
+        // Navigate to feed if already logged in
+        context.go(AppRoutes.feed);
       } else {
         // Navigate to onboarding if not logged in
         context.go(AppRoutes.onboarding);

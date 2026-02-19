@@ -45,8 +45,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           _isLoading = false;
         });
 
-        // Navigate to dashboard after successful login
-        context.go(AppRoutes.dashboard);
+        // Navigate to feed after successful login
+        context.go(AppRoutes.feed);
       } on FirebaseAuthException catch (e) {
         setState(() {
           _isLoading = false;

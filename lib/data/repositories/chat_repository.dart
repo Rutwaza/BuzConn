@@ -135,23 +135,41 @@ class ChatRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    // Create a notification request for backend/Cloud Function to deliver.
-    final chatDoc = await _firestore.collection('chats').doc(chatId).get();
-    if (chatDoc.exists) {
-      final data = chatDoc.data() as Map<String, dynamic>;
-      final clientId = data['clientId'];
-      final businessOwnerId = data['businessOwnerId'];
-      final recipientId =
-          senderId == clientId ? businessOwnerId : clientId;
-      if (recipientId != null && recipientId is String) {
-        await _firestore.collection('notification_requests').add({
-          'toUserId': recipientId,
-          'title': 'New message',
-          'body': mediaUrl != null ? 'Sent a media message' : text,
-          'chatId': chatId,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
+    await _createMessageNotifications(
+      chatId: chatId,
+      senderId: senderId,
+      senderName: senderName,
+      senderAvatar: senderAvatar,
+      previewText: mediaUrl != null ? '[media]' : text,
+    );
+  }
+
+  Future<void> _createMessageNotifications({
+    required String chatId,
+    required String senderId,
+    required String senderName,
+    String? senderAvatar,
+    required String previewText,
+  }) async {
+    final chatSnap = await _firestore.collection('chats').doc(chatId).get();
+    final chatData = chatSnap.data() ?? {};
+    final participants = (chatData['participants'] as List<dynamic>? ?? [])
+        .map((e) => e.toString())
+        .toList();
+    for (final uid in participants) {
+      if (uid == senderId) continue;
+      await _firestore.collection('notifications').add({
+        'toUserId': uid,
+        'fromUserId': senderId,
+        'fromUserName': senderName,
+        'fromUserImageUrl': senderAvatar,
+        'type': 'message',
+        'chatId': chatId,
+        'preview': previewText,
+        'readAt': null,
+        'hidden': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
     }
   }
 

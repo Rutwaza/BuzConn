@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -25,6 +26,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   final PostsRepository _postsRepository = PostsRepository();
   final TextEditingController _commentController = TextEditingController();
   String? _commentingOnPostId;
+  bool _markingNotifications = false;
 
   @override
   void dispose() {
@@ -145,6 +147,27 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     );
   }
 
+  Future<void> _markNotificationsRead() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _markingNotifications) return;
+    _markingNotifications = true;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('notifications')
+          .where('toUserId', isEqualTo: user.uid)
+          .where('readAt', isEqualTo: null)
+          .get();
+      if (snap.docs.isEmpty) return;
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in snap.docs) {
+        batch.update(doc.reference, {'readAt': Timestamp.now()});
+      }
+      await batch.commit();
+    } finally {
+      _markingNotifications = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
@@ -152,7 +175,62 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Business Feed'),
+        leading: IconButton(
+          icon: const Icon(Icons.home),
+          onPressed: () {
+            context.push(AppRoutes.dashboard);
+          },
+        ),
         actions: [
+          StreamBuilder<QuerySnapshot>(
+            stream: currentUser == null
+                ? const Stream.empty()
+                : FirebaseFirestore.instance
+                    .collection('notifications')
+                    .where('toUserId', isEqualTo: currentUser.uid)
+                    .where('readAt', isEqualTo: null)
+                    .snapshots(),
+            builder: (context, notifSnap) {
+              final docs = notifSnap.data?.docs ?? [];
+              final count = docs
+                  .where(
+                      (d) => (d.data() as Map<String, dynamic>)['hidden'] != true)
+                  .length;
+              return IconButton(
+                onPressed: () async {
+                  await _markNotificationsRead();
+                  context.push(AppRoutes.notifications);
+                },
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(Icons.notifications),
+                    if (count > 0)
+                      Positioned(
+                        right: -6,
+                        top: -6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            count.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () {

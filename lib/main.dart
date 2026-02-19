@@ -23,8 +23,6 @@ void main() async {
   // Initialize Firebase
   await FirebaseService.instance.initialize();
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-  await PushNotificationService.instance.initialize();
-  await ThemeModeService.instance.loadFromUser();
 
   // Initialize Supabase
   await Supabase.initialize(
@@ -37,6 +35,12 @@ void main() async {
       child: MyApp(),
     ),
   );
+
+  // Defer non-critical startup work until after the first frame.
+  Future(() async {
+    await PushNotificationService.instance.initialize();
+    await ThemeModeService.instance.loadFromUser();
+  });
 }
 
 class MyApp extends ConsumerWidget {
@@ -48,7 +52,8 @@ class MyApp extends ConsumerWidget {
       valueListenable: ThemeModeService.instance.mode,
       builder: (context, mode, _) {
         final isCyber = mode == AppThemeMode.cyber;
-        final themeMode = mode == AppThemeMode.dark ? ThemeMode.dark : ThemeMode.light;
+        final themeMode =
+            mode == AppThemeMode.dark ? ThemeMode.dark : ThemeMode.light;
         return MaterialApp.router(
           title: 'Business Connector',
           debugShowCheckedModeBanner: false,

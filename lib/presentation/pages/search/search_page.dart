@@ -26,6 +26,8 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final query = _controller.text.trim().toLowerCase();
 
     return Scaffold(
@@ -38,11 +40,20 @@ class _SearchPageState extends State<SearchPage> {
             padding: const EdgeInsets.all(12),
             child: TextField(
               controller: _controller,
+              style: TextStyle(
+                color: isDark ? Colors.white : Colors.black87,
+              ),
               decoration: InputDecoration(
                 hintText: 'Search businesses, users, or places',
-                prefixIcon: const Icon(Icons.search),
+                hintStyle: TextStyle(
+                  color: isDark ? Colors.white54 : AppColors.grey,
+                ),
+                prefixIcon: Icon(
+                  Icons.search,
+                  color: isDark ? Colors.white70 : AppColors.grey,
+                ),
                 filled: true,
-                fillColor: AppColors.lightGrey,
+                fillColor: theme.cardColor,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,

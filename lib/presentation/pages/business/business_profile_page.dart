@@ -91,10 +91,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                               onTap: phone.toString().isEmpty
                                   ? null
                                   : () async {
-                                      final uri = Uri.parse('tel:$phone');
-                                      if (await canLaunchUrl(uri)) {
-                                        await launchUrl(uri);
-                                      }
+                                      await _dialPhone(context, phone);
                                     },
                             ),
                             const SizedBox(width: 10),
@@ -317,6 +314,22 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
         ),
       ),
     );
+  }
+
+  Future<void> _dialPhone(BuildContext context, String phone) async {
+    final trimmed = phone.trim();
+    if (trimmed.isEmpty) return;
+    final normalized = trimmed.replaceAll(RegExp(r'\s+'), '');
+    final uri = Uri(scheme: 'tel', path: normalized);
+    final ok = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open dialer.')),
+      );
+    }
   }
 
 }
