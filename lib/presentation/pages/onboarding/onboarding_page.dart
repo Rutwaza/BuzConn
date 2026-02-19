@@ -41,6 +41,18 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     return Scaffold(
       body: Stack(
         children: [
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/onboard.jpg',
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withOpacity(0.45),
+            ),
+          ),
           PageView.builder(
             controller: _pageController,
             itemCount: _onboardingItems.length,
@@ -83,7 +95,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                   dotHeight: 8,
                   dotWidth: 8,
                   activeDotColor: AppColors.primary,
-                  dotColor: AppColors.lightGrey,
+                  dotColor: Colors.white24,
                 ),
               ),
             ),
@@ -119,7 +131,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                       'Skip',
                       style: TextStyle(
                         fontSize: 16,
-                        color: AppColors.grey,
+                        color: Colors.white70,
                       ),
                     ),
                   ),
@@ -141,7 +153,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
           Icon(
             item.icon,
             size: 120,
-            color: AppColors.primary,
+            color: Colors.white,
           ),
           const SizedBox(height: 32),
           Text(
@@ -150,7 +162,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             style: const TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.w700,
-              color: AppColors.black,
+              color: Colors.white,
             ),
           ),
           const SizedBox(height: 16),
@@ -159,7 +171,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             textAlign: TextAlign.center,
             style: const TextStyle(
               fontSize: 16,
-              color: AppColors.darkGrey,
+              color: Colors.white70,
               height: 1.5,
             ),
           ),

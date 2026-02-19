@@ -6,15 +6,21 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'dart:typed_data';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
 import '../../../data/repositories/posts_repository.dart';
 import '../../../data/repositories/chat_repository.dart';
+import '../../../core/services/supabase_storage_service.dart';
 
 class PostsFeedPage extends ConsumerStatefulWidget {
-  const PostsFeedPage({super.key});
+  const PostsFeedPage({super.key, this.initialPostId});
+
+  final String? initialPostId;
 
   @override
   ConsumerState<PostsFeedPage> createState() => _PostsFeedPageState();
@@ -23,14 +29,17 @@ class PostsFeedPage extends ConsumerStatefulWidget {
 class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   final PostsRepository _postsRepository = PostsRepository();
   final TextEditingController _commentController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   String? _commentingOnPostId;
   bool _markingNotifications = false;
   final ValueNotifier<Timestamp?> _badgeClearedAt =
       ValueNotifier<Timestamp?>(null);
+  bool _didJumpToPost = false;
 
   @override
   void dispose() {
     _commentController.dispose();
+    _scrollController.dispose();
     _badgeClearedAt.dispose();
     super.dispose();
   }
@@ -262,19 +271,55 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
           }
 
           return ListView.builder(
+            controller: _scrollController,
             itemCount: posts.length,
             itemBuilder: (context, index) {
               final post = posts[index];
-              return PostCard(
-                post: post,
-                currentUserId: currentUser?.uid ?? '',
+              final key = GlobalObjectKey(post.id);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!_didJumpToPost &&
+                    widget.initialPostId != null &&
+                    post.id == widget.initialPostId) {
+                  _didJumpToPost = true;
+                  final ctx = key.currentContext;
+                  if (ctx != null) {
+                    Scrollable.ensureVisible(
+                      ctx,
+                      duration: const Duration(milliseconds: 300),
+                      alignment: 0.1,
+                    );
+                  }
+                }
+              });
+
+              return StreamBuilder<DocumentSnapshot>(
+                stream: currentUser == null
+                    ? const Stream.empty()
+                    : FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(currentUser.uid)
+                        .collection('favorites')
+                        .doc(post.id)
+                        .snapshots(),
+                builder: (context, favSnap) {
+                  final isSaved = favSnap.data?.exists == true;
+                  return PostCard(
+                    key: key,
+                    post: post,
+                    currentUserId: currentUser?.uid ?? '',
+                    isSaved: isSaved,
                 onLike: () => _postsRepository.toggleLike(post.id),
                 onComment: () => _showCommentDialog(post.id),
                 onShare: () => _sharePost(post),
                 onLocationTap: () => _openLocation(post),
                 onMessage: () => _startChat(post),
+                onSave: () => _toggleFavorite(post, isSaved),
+                onEdit: () => _showEditDialog(post),
+                onDelete: () => _confirmDelete(post),
               );
             },
+          );
+        },
           );
         },
       ),
@@ -303,6 +348,337 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
         const SnackBar(content: Text('Location not available')),
       );
     }
+  }
+
+  void _showEditDialog(Post post) {
+    final controller = TextEditingController(text: post.content);
+    File? pickedImage;
+    File? pickedVideo;
+    bool removeMedia = false;
+    bool pickingMedia = false;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocalState) => AlertDialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          titlePadding: const EdgeInsets.only(top: 12),
+          title: const Center(child: Text('Edit Post')),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: controller,
+                  decoration: const InputDecoration(
+                    hintText: 'Update your post...',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 4,
+                  maxLength: 300,
+                ),
+                const SizedBox(height: 12),
+                if (!removeMedia &&
+                    pickedImage == null &&
+                    pickedVideo == null &&
+                    post.imageUrl != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: CachedNetworkImage(
+                      imageUrl: post.imageUrl!,
+                      height: 140,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                if (!removeMedia &&
+                    pickedImage == null &&
+                    pickedVideo == null &&
+                    post.videoUrl != null)
+                  Container(
+                    height: 140,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppColors.lightGrey,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.videocam, size: 36),
+                  ),
+                if (pickedImage != null)
+                  Container(
+                    height: 140,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      image: DecorationImage(
+                        image: FileImage(pickedImage!),
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                if (pickedVideo != null)
+                  Container(
+                    height: 140,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppColors.lightGrey,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.videocam, size: 36),
+                  ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton.icon(
+                        onPressed: pickingMedia
+                            ? null
+                            : () async {
+                                setLocalState(() => pickingMedia = true);
+                                final picker = ImagePicker();
+                                final picked = await picker.pickImage(
+                                    source: ImageSource.gallery);
+                                if (picked != null) {
+                                  setLocalState(() {
+                                    pickedImage = File(picked.path);
+                                    pickedVideo = null;
+                                    removeMedia = false;
+                                  });
+                                }
+                                setLocalState(() => pickingMedia = false);
+                              },
+                        icon: const Icon(Icons.photo),
+                        label: const Text('Pick image'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextButton.icon(
+                        onPressed: pickingMedia
+                            ? null
+                            : () async {
+                                setLocalState(() => pickingMedia = true);
+                                final picker = ImagePicker();
+                                final picked = await picker.pickImage(
+                                    source: ImageSource.camera);
+                                if (picked != null) {
+                                  setLocalState(() {
+                                    pickedImage = File(picked.path);
+                                    pickedVideo = null;
+                                    removeMedia = false;
+                                  });
+                                }
+                                setLocalState(() => pickingMedia = false);
+                              },
+                        icon: const Icon(Icons.photo_camera),
+                        label: const Text('Take photo'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton.icon(
+                        onPressed: pickingMedia
+                            ? null
+                            : () async {
+                                setLocalState(() => pickingMedia = true);
+                                final picker = ImagePicker();
+                                final picked = await picker.pickVideo(
+                                    source: ImageSource.gallery);
+                                if (picked != null) {
+                                  setLocalState(() {
+                                    pickedVideo = File(picked.path);
+                                    pickedImage = null;
+                                    removeMedia = false;
+                                  });
+                                }
+                                setLocalState(() => pickingMedia = false);
+                              },
+                        icon: const Icon(Icons.video_library),
+                        label: const Text('Pick video'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextButton.icon(
+                        onPressed: pickingMedia
+                            ? null
+                            : () async {
+                                setLocalState(() => pickingMedia = true);
+                                final picker = ImagePicker();
+                                final picked = await picker.pickVideo(
+                                    source: ImageSource.camera);
+                                if (picked != null) {
+                                  setLocalState(() {
+                                    pickedVideo = File(picked.path);
+                                    pickedImage = null;
+                                    removeMedia = false;
+                                  });
+                                }
+                                setLocalState(() => pickingMedia = false);
+                              },
+                        icon: const Icon(Icons.videocam),
+                        label: const Text('Record video'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.center,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      setLocalState(() {
+                        pickedImage = null;
+                        pickedVideo = null;
+                        removeMedia = true;
+                      });
+                    },
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Remove media'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final text = controller.text.trim();
+                if (text.isEmpty) return;
+                String? imageUrl = post.imageUrl;
+                String? videoUrl = post.videoUrl;
+                if (removeMedia) {
+                  imageUrl = null;
+                  videoUrl = null;
+                } else if (pickedImage != null) {
+                  imageUrl = await _uploadImage(pickedImage!);
+                  videoUrl = null;
+                } else if (pickedVideo != null) {
+                  videoUrl = await _uploadVideo(pickedVideo!);
+                  imageUrl = null;
+                }
+                await FirebaseFirestore.instance
+                    .collection('posts')
+                    .doc(post.id)
+                    .update({
+                  'content': text,
+                  'imageUrl': imageUrl,
+                  'videoUrl': videoUrl,
+                  'updatedAt': Timestamp.now(),
+                });
+                if (mounted) {
+                  Navigator.of(context).pop();
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmDelete(Post post) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Post'),
+        content: const Text('Are you sure you want to delete this post?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await _postsRepository.deletePost(post.id);
+              if (mounted) {
+                Navigator.of(context).pop();
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggleFavorite(Post post, bool isSaved) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final ref = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('favorites')
+        .doc(post.id);
+    if (isSaved) {
+      await ref.delete();
+    } else {
+      await ref.set({
+        'postId': post.id,
+        'createdAt': Timestamp.now(),
+      });
+    }
+  }
+
+  Future<String?> _uploadImage(File imageFile) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final bytes = await imageFile.readAsBytes();
+      final path =
+          '${user?.uid ?? 'anon'}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+      return await SupabaseStorageService.instance.uploadImage(
+        bucket: 'post-images',
+        path: path,
+        bytes: bytes,
+      );
+    } catch (e) {
+      debugPrint('Error uploading image: $e');
+      return null;
+    }
+  }
+
+  Future<String?> _uploadVideo(File videoFile) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final bytes = await videoFile.readAsBytes();
+      final path =
+          '${user?.uid ?? 'anon'}/${DateTime.now().millisecondsSinceEpoch}.mp4';
+      return await SupabaseStorageService.instance.uploadVideo(
+        bucket: 'post-videos',
+        path: path,
+        bytes: bytes,
+      );
+    } catch (e) {
+      debugPrint('Error uploading video: $e');
+      return null;
+    }
+  }
+
+  Widget _mediaActionTile({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool disabled = false,
+  }) {
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon),
+      title: Text(label),
+      enabled: !disabled,
+      onTap: disabled ? null : onTap,
+    );
   }
 
   Future<void> _startChat(Post post) async {
@@ -335,6 +711,10 @@ class PostCard extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback onLocationTap;
   final VoidCallback onMessage;
+  final bool isSaved;
+  final VoidCallback onSave;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   const PostCard({
     super.key,
@@ -345,6 +725,10 @@ class PostCard extends StatelessWidget {
     required this.onShare,
     required this.onLocationTap,
     required this.onMessage,
+    required this.isSaved,
+    required this.onSave,
+    required this.onEdit,
+    required this.onDelete,
   });
 
   @override
@@ -360,8 +744,8 @@ class PostCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Business header
-            Row(
-              children: [
+              Row(
+                children: [
                 CircleAvatar(
                   backgroundColor: AppColors.primary,
                   backgroundImage: (post.businessImageUrl != null &&
@@ -416,6 +800,26 @@ class PostCard extends StatelessWidget {
                   onPressed: onMessage,
                   tooltip: 'Message business',
                 ),
+                if (post.ownerId == currentUserId)
+                  PopupMenuButton<String>(
+                    onSelected: (value) {
+                      if (value == 'edit') {
+                        onEdit();
+                      } else if (value == 'delete') {
+                        onDelete();
+                      }
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: 'edit',
+                        child: Text('Edit'),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete'),
+                      ),
+                    ],
+                  ),
               ],
             ),
 
@@ -451,33 +855,6 @@ class PostCard extends StatelessWidget {
               ),
             ],
 
-            // Location
-            if (post.googleMapsLink != null) ...[
-              const SizedBox(height: 8),
-              InkWell(
-                onTap: onLocationTap,
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.location_on,
-                      size: 16,
-                      color: AppColors.primary,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        'View on Google Maps',
-                        style: TextStyle(
-                          color: AppColors.primary,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
             const SizedBox(height: 12),
 
             // Action buttons
@@ -502,8 +879,23 @@ class PostCard extends StatelessWidget {
                   icon: const Icon(Icons.share),
                   onPressed: onShare,
                 ),
-              ],
-            ),
+                const Spacer(),
+                if (post.googleMapsLink != null &&
+                    post.googleMapsLink!.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.location_on),
+                    onPressed: onLocationTap,
+                    tooltip: 'Open location',
+                  ),
+                IconButton(
+                  icon: Icon(
+                    isSaved ? Icons.bookmark : Icons.bookmark_border,
+                    color: isSaved ? AppColors.primary : null,
+                    ),
+                    onPressed: onSave,
+                  ),
+                ],
+              ),
 
             // Comments preview
             if (post.comments.isNotEmpty) ...[

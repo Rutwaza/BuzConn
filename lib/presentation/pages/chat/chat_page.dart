@@ -200,6 +200,12 @@ class _ChatPageState extends State<ChatPage> {
         final emojiBarColor = surfaceColor;
         final typingColor = isDark ? Colors.white70 : AppColors.grey;
 
+        final showChatBg = isDark;
+        final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
+        final bgCacheWidth =
+            (MediaQuery.of(context).size.width * devicePixelRatio).round();
+        final bgCacheHeight =
+            (MediaQuery.of(context).size.height * devicePixelRatio).round();
         return Scaffold(
           backgroundColor: backgroundColor,
           appBar: AppBar(
@@ -256,373 +262,403 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ],
           ),
-          body: Column(
+          body: Stack(
             children: [
-              Expanded(
-                child: StreamBuilder<QuerySnapshot>(
-                  stream: _repo.messagesStream(widget.chatId),
-                  builder: (context, snapshot) {
-                    final docs = snapshot.data?.docs ?? [];
-                    if (snapshot.connectionState == ConnectionState.waiting &&
-                        docs.isEmpty) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (docs.isNotEmpty) {
-                      final latest = docs.first.data() as Map<String, dynamic>;
-                      final latestSender = latest['senderId'] as String?;
-                      final latestId = latest['id'] ?? docs.first.id;
-                      if (latestSender != null &&
-                          latestSender != user.uid &&
-                          _lastReadMessageId != latestId) {
-                        _lastReadMessageId = latestId;
-                        _repo.setLastRead(
-                          chatId: widget.chatId,
-                          userId: user.uid,
-                        );
-                      }
-                    }
-                    return ListView.builder(
-                      reverse: true,
-                      padding: const EdgeInsets.all(12),
-                      itemCount: docs.length,
-                      itemBuilder: (context, index) {
-                        final doc = docs[index];
-                        final data = doc.data() as Map<String, dynamic>;
-                        final isMe = data['senderId'] == user.uid;
-                    final text = data['text'] ?? '';
-                    final mediaUrl = data['mediaUrl'] as String?;
-                    final mediaType = data['mediaType'] as String?;
-                    final senderName = data['senderName'] ?? 'User';
-                    final senderAvatar = data['senderAvatar'] as String?;
-                    final createdAt = data['createdAt'] as Timestamp?;
-                    final replyTo = data['replyTo'] as Map<String, dynamic>?;
-                    final deleted = data['deleted'] == true;
-                    final messageId = data['id'] ?? doc.id;
+              if (showChatBg)
+                Positioned.fill(
+                  child: RepaintBoundary(
+                    child: Opacity(
+                      opacity: 0.35,
+                      child: Image.asset(
+                        'assets/images/chat_bg.gif',
+                        fit: BoxFit.cover,
+                        alignment: Alignment.center,
+                        filterQuality: FilterQuality.low,
+                        gaplessPlayback: true,
+                        cacheWidth: bgCacheWidth,
+                        cacheHeight: bgCacheHeight,
+                      ),
+                    ),
+                  ),
+                ),
+              Column(
+                children: [
+                  Expanded(
+                    child: _buildMessagesList(
+                      user: user,
+                      otherLastRead: otherLastRead,
+                      isDark: isDark,
+                      bubbleMeColor: bubbleMeColor,
+                      bubbleOtherColor: bubbleOtherColor,
+                      separatorColor: separatorColor,
+                      replyBarColor: replyBarColor,
+                    ),
+                  ),
+                  if (isOtherTyping)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 16, bottom: 4),
+                      child: Row(
+                        children: [
+                          _TypingDots(color: typingColor),
+                        ],
+                      ),
+                    ),
+                  if (_replyingTo != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      color: replyBarColor,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Replying to ${_replyingTo?['senderName'] ?? 'message'}: ${_replyingTo?['text'] ?? ''}',
+                              style: const TextStyle(fontSize: 12),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 18),
+                            onPressed: () {
+                              setState(() {
+                                _replyingTo = null;
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    color: inputBarColor,
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.photo),
+                          onPressed: _sendingMedia
+                              ? null
+                              : () => _sendMedia(ImageSource.gallery,
+                                  isVideo: false),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.videocam),
+                          onPressed: _sendingMedia
+                              ? null
+                              : () => _sendMedia(ImageSource.gallery,
+                                  isVideo: true),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.mic),
+                          onPressed: _sendingMedia
+                              ? null
+                              : () => _showComingSoon('Voice notes'),
+                        ),
+                        Expanded(
+                          child: TextField(
+                            controller: _controller,
+                            style: TextStyle(
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: 'Message...',
+                              hintStyle: TextStyle(
+                                color: isDark ? Colors.white54 : AppColors.grey,
+                              ),
+                              border: InputBorder.none,
+                            ),
+                            onChanged: _handleTyping,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.send),
+                          onPressed: _sendingMedia ? null : _sendText,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
 
-                    Widget content;
-                    if (deleted) {
-                      content = const Text(
-                        'Message deleted',
-                        style: TextStyle(
-                          fontStyle: FontStyle.italic,
-                          color: AppColors.grey,
+      },
+    );
+  }
+
+
+  Widget _buildMessagesList({
+    required User user,
+    required Timestamp? otherLastRead,
+    required bool isDark,
+    required Color bubbleMeColor,
+    required Color bubbleOtherColor,
+    required Color separatorColor,
+    required Color replyBarColor,
+  }) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _repo.messagesStream(widget.chatId),
+      builder: (context, snapshot) {
+        final docs = snapshot.data?.docs ?? [];
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            docs.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (docs.isNotEmpty) {
+          final latest = docs.first.data() as Map<String, dynamic>;
+          final latestSender = latest['senderId'] as String?;
+          final latestId = latest['id'] ?? docs.first.id;
+          if (latestSender != null &&
+              latestSender != user.uid &&
+              _lastReadMessageId != latestId) {
+            _lastReadMessageId = latestId;
+            _repo.setLastRead(
+              chatId: widget.chatId,
+              userId: user.uid,
+            );
+          }
+        }
+        return ListView.builder(
+          reverse: true,
+          padding: const EdgeInsets.all(12),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final doc = docs[index];
+            final data = doc.data() as Map<String, dynamic>;
+            final isMe = data['senderId'] == user.uid;
+            final text = data['text'] ?? '';
+            final mediaUrl = data['mediaUrl'] as String?;
+            final mediaType = data['mediaType'] as String?;
+            final senderName = data['senderName'] ?? 'User';
+            final senderAvatar = data['senderAvatar'] as String?;
+            final createdAt = data['createdAt'] as Timestamp?;
+            final replyTo = data['replyTo'] as Map<String, dynamic>?;
+            final deleted = data['deleted'] == true;
+            final messageId = data['id'] ?? doc.id;
+
+            Widget content;
+            if (deleted) {
+              content = const Text(
+                'Message deleted',
+                style: TextStyle(
+                  fontStyle: FontStyle.italic,
+                  color: AppColors.grey,
+                ),
+              );
+            } else if (mediaUrl != null && mediaType == 'image') {
+              content = Image.network(mediaUrl, width: 200);
+            } else if (mediaUrl != null && mediaType == 'video') {
+              content = FutureBuilder<Uint8List?>(
+                future: _getVideoThumbnail(mediaUrl),
+                builder: (context, snap) {
+                  final bytes = snap.data;
+                  return InkWell(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => VideoPlayerPage(url: mediaUrl),
                         ),
                       );
-                    } else if (mediaUrl != null && mediaType == 'image') {
-                      content = Image.network(mediaUrl, width: 200);
-                    } else if (mediaUrl != null && mediaType == 'video') {
-                      content = FutureBuilder<Uint8List?>(
-                        future: _getVideoThumbnail(mediaUrl),
-                        builder: (context, snap) {
-                          final bytes = snap.data;
-                          return InkWell(
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => VideoPlayerPage(url: mediaUrl),
+                    },
+                    child: Container(
+                      width: 200,
+                      height: 120,
+                      color: replyBarColor,
+                      child: bytes == null
+                          ? const Center(
+                              child: Icon(Icons.play_circle_fill, size: 36),
+                            )
+                          : Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Image.memory(bytes, fit: BoxFit.cover),
+                                const Center(
+                                  child: Icon(Icons.play_circle_fill, size: 36),
                                 ),
-                              );
-                            },
-                            child: Container(
-                              width: 200,
-                              height: 120,
-                              color: replyBarColor,
-                              child: bytes == null
-                                  ? const Center(
-                                      child: Icon(Icons.play_circle_fill,
-                                          size: 36),
-                                    )
-                                  : Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        Image.memory(bytes, fit: BoxFit.cover),
-                                        const Center(
-                                          child: Icon(Icons.play_circle_fill,
-                                              size: 36),
-                                        ),
-                                      ],
-                                    ),
+                              ],
                             ),
-                          );
-                        },
-                      );
-                    } else {
-                      content = Text(text);
-                    }
+                    ),
+                  );
+                },
+              );
+            } else {
+              content = Text(text);
+            }
 
-                    final timeLabel = createdAt == null
-                        ? ''
-                        : _formatTime(createdAt.toDate());
+            final timeLabel =
+                createdAt == null ? '' : _formatTime(createdAt.toDate());
 
-                    final maxBubbleWidth =
-                        MediaQuery.of(context).size.width * 0.7;
+            final maxBubbleWidth = MediaQuery.of(context).size.width * 0.7;
 
-                    final bubbleTextStyle = TextStyle(
-                      color: isMe ? Colors.white : (isDark ? Colors.white : Colors.black87),
-                    );
+            final bubbleTextStyle = TextStyle(
+              color: isMe ? Colors.white : (isDark ? Colors.white : Colors.black87),
+            );
 
-                        final isSeen = isMe &&
-                            otherLastRead != null &&
-                            createdAt != null &&
-                            otherLastRead.toDate().isAfter(createdAt.toDate());
+            final isSeen = isMe &&
+                otherLastRead != null &&
+                createdAt != null &&
+                otherLastRead.toDate().isAfter(createdAt.toDate());
 
-                        final currentDate = createdAt?.toDate();
-                        final nextDate = index + 1 < docs.length
-                            ? (docs[index + 1].data()
-                                    as Map<String, dynamic>)['createdAt']
-                                as Timestamp?
-                            : null;
-                        final showSeparator = currentDate != null &&
-                            (nextDate == null ||
-                                !_isSameDay(
-                                  currentDate,
-                                  nextDate.toDate(),
-                                ));
-                        final separatorLabel =
-                            currentDate != null ? _formatDay(currentDate) : '';
+            final currentDate = createdAt?.toDate();
+            final nextDate = index + 1 < docs.length
+                ? (docs[index + 1].data() as Map<String, dynamic>)['createdAt']
+                    as Timestamp?
+                : null;
+            final showSeparator = currentDate != null &&
+                (nextDate == null || !_isSameDay(currentDate, nextDate.toDate()));
+            final separatorLabel =
+                currentDate != null ? _formatDay(currentDate) : '';
 
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (showSeparator && separatorLabel.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                child: Center(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: separatorColor,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Text(
-                                      separatorLabel,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: isDark ? Colors.white70 : Colors.black87,
-                                      ),
-                                    ),
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (showSeparator && separatorLabel.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: separatorColor,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          separatorLabel,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white70 : Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                Align(
+                  alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (!isMe)
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundColor: AppColors.primary,
+                          backgroundImage:
+                              senderAvatar != null ? NetworkImage(senderAvatar) : null,
+                          child: senderAvatar == null
+                              ? Text(
+                                  senderName.toString().isNotEmpty
+                                      ? senderName[0].toUpperCase()
+                                      : '?',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
                                   ),
-                                ),
-                              ),
-                            Align(
-                              alignment: isMe
-                                  ? Alignment.centerRight
-                                  : Alignment.centerLeft,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  if (!isMe)
-                                    CircleAvatar(
-                                      radius: 14,
-                                      backgroundColor: AppColors.primary,
-                                      backgroundImage: senderAvatar != null
-                                          ? NetworkImage(senderAvatar)
-                                          : null,
-                                      child: senderAvatar == null
-                                          ? Text(
-                                              senderName.toString().isNotEmpty
-                                                  ? senderName[0].toUpperCase()
-                                                  : '?',
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 12,
-                                              ),
-                                            )
-                                          : null,
-                                    ),
-                                  if (!isMe) const SizedBox(width: 6),
-                                  Flexible(
-                                    child: ConstrainedBox(
-                                      constraints: BoxConstraints(
-                                          maxWidth: maxBubbleWidth),
-                                      child: GestureDetector(
-                                        onLongPress: () => _showMessageActions(
-                                          messageId: messageId,
-                                          isMe: isMe,
-                                          text: text,
-                                          senderName: senderName,
-                                          replyTo: replyTo,
-                                        ),
-                                        child: Container(
-                                          margin: const EdgeInsets.symmetric(
-                                              vertical: 6),
-                                          padding: const EdgeInsets.all(10),
-                                          decoration: BoxDecoration(
-                                            color: isMe
-                                                ? bubbleMeColor
-                                                : bubbleOtherColor,
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.black
-                                                    .withOpacity(0.05),
-                                                blurRadius: 6,
-                                                offset: const Offset(0, 2),
-                                              ),
-                                            ],
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              if (!isMe)
-                                                Text(
-                                                  senderName,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w600,
-                                                    fontSize: 12,
-                                                  ),
-                                                ),
-                                              if (replyTo != null) ...[
-                                                const SizedBox(height: 6),
-                                                Container(
-                                                  padding: const EdgeInsets.all(6),
-                                                  decoration: BoxDecoration(
-                                                    color: isDark ? Colors.white12 : Colors.black12,
-                                                    borderRadius:
-                                                        BorderRadius.circular(8),
-                                                  ),
-                                                  child: Text(
-                                                    'Replying to ${replyTo['senderName'] ?? 'message'}: ${replyTo['text'] ?? ''}',
-                                                    style: const TextStyle(
-                                                        fontSize: 11),
-                                                    softWrap: true,
-                                                  ),
-                                                ),
-                                              ],
-                                              const SizedBox(height: 4),
-                                              DefaultTextStyle(
-                                                style: bubbleTextStyle,
-                                                child: _wrapMediaContent(
-                                                    content, mediaUrl, mediaType),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              if (timeLabel.isNotEmpty)
-                                                Row(
-                                                  mainAxisSize: MainAxisSize.min,
-                                                  children: [
-                                                    Text(
-                                                      timeLabel,
-                                                      style: TextStyle(
-                                                        fontSize: 10,
-                                                        color: isMe ? Colors.white70 : (isDark ? Colors.white70 : AppColors.grey),
-                                                      ),
-                                                    ),
-                                                    if (isMe) ...[
-                                                      const SizedBox(width: 6),
-                                                      Icon(
-                                                        isSeen
-                                                            ? Icons.done_all
-                                                            : Icons.done,
-                                                        size: 12,
-                                                        color: isSeen
-                                                            ? Colors.lightBlueAccent
-                                                            : Colors.white70,
-                                                      ),
-                                                    ],
-                                                  ],
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
+                                )
+                              : null,
+                        ),
+                      if (!isMe) const SizedBox(width: 6),
+                      Flexible(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+                          child: GestureDetector(
+                            onLongPress: () => _showMessageActions(
+                              messageId: messageId,
+                              isMe: isMe,
+                              text: text,
+                              senderName: senderName,
+                              replyTo: replyTo,
+                            ),
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 6),
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: isMe ? bubbleMeColor : bubbleOtherColor,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
                                   ),
                                 ],
                               ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (!isMe)
+                                    Text(
+                                      senderName,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  if (replyTo != null) ...[
+                                    const SizedBox(height: 6),
+                                    Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: isDark ? Colors.white12 : Colors.black12,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        'Replying to ${replyTo['senderName'] ?? 'message'}: ${replyTo['text'] ?? ''}',
+                                        style: const TextStyle(fontSize: 11),
+                                        softWrap: true,
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 4),
+                                  DefaultTextStyle(
+                                    style: bubbleTextStyle,
+                                    child: _wrapMediaContent(
+                                      content,
+                                      mediaUrl,
+                                      mediaType,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  if (timeLabel.isNotEmpty)
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          timeLabel,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: isMe
+                                                ? Colors.white70
+                                                : (isDark ? Colors.white70 : AppColors.grey),
+                                          ),
+                                        ),
+                                        if (isMe) ...[
+                                          const SizedBox(width: 6),
+                                          Icon(
+                                            isSeen ? Icons.done_all : Icons.done,
+                                            size: 12,
+                                            color: isSeen
+                                                ? Colors.lightBlueAccent
+                                                : Colors.white70,
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                ],
+                              ),
                             ),
-                          ],
-                        );
-                  },
-                );
-              },
-            ),
-          ),
-          if (isOtherTyping)
-            Padding(
-              padding: const EdgeInsets.only(left: 16, bottom: 4),
-              child: Row(
-                children: [
-                  _TypingDots(color: typingColor),
-                ],
-              ),
-            ),
-          if (_replyingTo != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              color: replyBarColor,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Replying to ${_replyingTo?['senderName'] ?? 'message'}: ${_replyingTo?['text'] ?? ''}',
-                      style: const TextStyle(fontSize: 12),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: () {
-                      setState(() {
-                        _replyingTo = null;
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            color: inputBarColor,
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.photo),
-                  onPressed: _sendingMedia
-                      ? null
-                      : () => _sendMedia(ImageSource.gallery, isVideo: false),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.videocam),
-                  onPressed: _sendingMedia
-                      ? null
-                      : () => _sendMedia(ImageSource.gallery, isVideo: true),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.mic),
-                  onPressed:
-                      _sendingMedia ? null : () => _showComingSoon('Voice notes'),
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    style: TextStyle(
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Message...',
-                      hintStyle: TextStyle(
-                        color: isDark ? Colors.white54 : AppColors.grey,
+                          ),
+                        ),
                       ),
-                      border: InputBorder.none,
-                    ),
-                    onChanged: _handleTyping,
+                    ],
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.send),
-                  onPressed: _sendingMedia ? null : _sendText,
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
+            );
+          },
+        );
       },
     );
   }

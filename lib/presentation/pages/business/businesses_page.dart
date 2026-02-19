@@ -300,6 +300,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
   }
 
   Widget _clientEmptyState() {
+    final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -312,6 +313,10 @@ class _BusinessesPageState extends State<BusinessesPage> {
           const SizedBox(height: 12),
           ElevatedButton(
             onPressed: _onCreateNewBusiness,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: scheme.primary,
+              foregroundColor: scheme.onPrimary,
+            ),
             child: const Text('Create your business profile'),
           ),
         ],

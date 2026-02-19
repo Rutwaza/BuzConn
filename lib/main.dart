@@ -60,6 +60,39 @@ class MyApp extends ConsumerWidget {
           theme: isCyber ? AppTheme.cyberpunkTheme : AppTheme.lightTheme,
           darkTheme: isCyber ? AppTheme.cyberpunkTheme : AppTheme.darkTheme,
           themeMode: themeMode,
+          builder: (context, child) {
+            final content = child ?? const SizedBox.shrink();
+            if (mode == AppThemeMode.light) {
+              return content;
+            }
+            final mq = MediaQuery.of(context);
+            final dpr = mq.devicePixelRatio;
+            final cacheWidth = (mq.size.width * dpr).round();
+            final cacheHeight = (mq.size.height * dpr).round();
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: RepaintBoundary(
+                      child: Opacity(
+                        opacity: 0.25,
+                        child: Image.asset(
+                          'assets/images/chat_bg.gif',
+                          fit: BoxFit.cover,
+                          alignment: Alignment.center,
+                          filterQuality: FilterQuality.low,
+                          gaplessPlayback: true,
+                          cacheWidth: cacheWidth,
+                          cacheHeight: cacheHeight,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                content,
+              ],
+            );
+          },
           routerConfig: AppRouter.router,
         );
       },

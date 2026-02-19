@@ -47,10 +47,12 @@ class AppRoutes {
   static const String notifications = '/notifications';
   static const String chats = '/chats';
   static const String chatDetail = '/chats/:id';
+  static const String favorites = '/favorites';
 
   static String businessProfilePath(String id) => '/business/$id';
   static String clientProfilePath(String id) => '/user/$id';
   static String chatDetailPath(String id) => '/chats/$id';
+  static String favoritesPath() => favorites;
 }
 
 class AppAssets {

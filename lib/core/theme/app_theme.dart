@@ -105,7 +105,7 @@ class AppTheme {
     useMaterial3: true,
     brightness: Brightness.dark,
     primaryColor: AppColors.primaryLight,
-    // Add dark theme colors here
+    scaffoldBackgroundColor: Colors.transparent,
   );
 
   static ThemeData cyberpunkTheme = ThemeData(
@@ -113,7 +113,7 @@ class AppTheme {
     brightness: Brightness.dark,
     fontFamily: 'RobotoMono',
     primaryColor: const Color(0xFF00E5FF),
-    scaffoldBackgroundColor: const Color(0xFF0A0F1E),
+    scaffoldBackgroundColor: Colors.transparent,
     colorScheme: const ColorScheme.dark(
       primary: Color(0xFF00E5FF),
       secondary: Color(0xFFFF4DFF),

@@ -17,6 +17,7 @@ import 'package:businessfinder/presentation/pages/chat/chat_page.dart';
 import 'package:businessfinder/presentation/pages/search/search_page.dart';
 import 'package:businessfinder/presentation/pages/profile/client_profile_page.dart';
 import 'package:businessfinder/presentation/pages/notifications/notifications_page.dart';
+import 'package:businessfinder/presentation/pages/favorites/favorites_page.dart';
 import 'package:businessfinder/features/dashboard/dashboard_page.dart';
 
 class AppRouter {
@@ -67,7 +68,9 @@ class AppRouter {
       ),
       GoRoute(
         path: AppRoutes.feed,
-        builder: (context, state) => const PostsFeedPage(),
+        builder: (context, state) => PostsFeedPage(
+          initialPostId: state.uri.queryParameters['postId'],
+        ),
       ),
       GoRoute(
         path: AppRoutes.createPost,
@@ -93,6 +96,10 @@ class AppRouter {
         path: AppRoutes.chatDetail,
         builder: (context, state) =>
             ChatPage(chatId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: AppRoutes.favorites,
+        builder: (context, state) => const FavoritesPage(),
       ),
     ],
   );

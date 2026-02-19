@@ -382,9 +382,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           icon: Icons.favorite,
           title: 'Favorites',
           onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Favorites coming soon!')),
-            );
+            context.push(AppRoutes.favorites);
           },
         ),
       ];
