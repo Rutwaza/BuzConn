@@ -4,10 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:video_player/video_player.dart';
-import 'package:video_thumbnail/video_thumbnail.dart';
-import 'dart:typed_data';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
@@ -27,10 +25,13 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   final TextEditingController _commentController = TextEditingController();
   String? _commentingOnPostId;
   bool _markingNotifications = false;
+  final ValueNotifier<Timestamp?> _badgeClearedAt =
+      ValueNotifier<Timestamp?>(null);
 
   @override
   void dispose() {
     _commentController.dispose();
+    _badgeClearedAt.dispose();
     super.dispose();
   }
 
@@ -83,75 +84,17 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     );
   }
 
-  void _showEditDialog(Post post) {
-    final controller = TextEditingController(text: post.content);
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Post'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            hintText: 'Update your post...',
-            border: OutlineInputBorder(),
-          ),
-          maxLines: 4,
-          maxLength: 300,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final text = controller.text.trim();
-              if (text.isEmpty) return;
-              await _postsRepository.updatePostContent(
-                postId: post.id,
-                content: text,
-              );
-              if (mounted) {
-                Navigator.of(context).pop();
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _confirmDelete(Post post) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Post'),
-        content: const Text('Are you sure you want to delete this post?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              await _postsRepository.deletePost(post.id);
-              if (mounted) {
-                Navigator.of(context).pop();
-              }
-            },
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _markNotificationsRead() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _markingNotifications) return;
     _markingNotifications = true;
+    _badgeClearedAt.value = Timestamp.now();
     try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({'lastSeenNotificationsAt': Timestamp.now()});
+
       final snap = await FirebaseFirestore.instance
           .collection('notifications')
           .where('toUserId', isEqualTo: user.uid)
@@ -163,6 +106,13 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
         batch.update(doc.reference, {'readAt': Timestamp.now()});
       }
       await batch.commit();
+    } catch (e) {
+      debugPrint('Failed to mark notifications read: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to mark notifications read')),
+        );
+      }
     } finally {
       _markingNotifications = false;
     }
@@ -182,52 +132,76 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
           },
         ),
         actions: [
-          StreamBuilder<QuerySnapshot>(
-            stream: currentUser == null
-                ? const Stream.empty()
-                : FirebaseFirestore.instance
-                    .collection('notifications')
-                    .where('toUserId', isEqualTo: currentUser.uid)
-                    .where('readAt', isEqualTo: null)
-                    .snapshots(),
-            builder: (context, notifSnap) {
-              final docs = notifSnap.data?.docs ?? [];
-              final count = docs
-                  .where(
-                      (d) => (d.data() as Map<String, dynamic>)['hidden'] != true)
-                  .length;
-              return IconButton(
-                onPressed: () async {
-                  await _markNotificationsRead();
-                  context.push(AppRoutes.notifications);
-                },
-                icon: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    const Icon(Icons.notifications),
-                    if (count > 0)
-                      Positioned(
-                        right: -6,
-                        top: -6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            count.toString(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+          ValueListenableBuilder<Timestamp?>(
+            valueListenable: _badgeClearedAt,
+            builder: (context, clearedAt, _) {
+              return StreamBuilder<DocumentSnapshot>(
+                stream: currentUser == null
+                    ? const Stream.empty()
+                    : FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(currentUser.uid)
+                        .snapshots(),
+                builder: (context, userSnap) {
+                  final userData =
+                      userSnap.data?.data() as Map<String, dynamic>?;
+                  final lastSeen =
+                      userData?['lastSeenNotificationsAt'] as Timestamp?;
+                  final effectiveClearedAt = clearedAt ?? lastSeen;
+                  return StreamBuilder<QuerySnapshot>(
+                    stream: currentUser == null
+                        ? const Stream.empty()
+                        : FirebaseFirestore.instance
+                            .collection('notifications')
+                            .where('toUserId', isEqualTo: currentUser.uid)
+                            .where('readAt', isEqualTo: null)
+                            .snapshots(),
+                    builder: (context, notifSnap) {
+                      final docs = notifSnap.data?.docs ?? [];
+                      final count = docs.where((d) {
+                        final data = d.data() as Map<String, dynamic>;
+                        if (data['hidden'] == true) return false;
+                        if (effectiveClearedAt == null) return true;
+                        final createdAt = data['createdAt'] as Timestamp?;
+                        if (createdAt == null) return true;
+                        return createdAt.compareTo(effectiveClearedAt) > 0;
+                      }).length;
+                      return IconButton(
+                        onPressed: () async {
+                          await _markNotificationsRead();
+                          context.push(AppRoutes.notifications);
+                        },
+                        icon: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            const Icon(Icons.notifications),
+                            if (count > 0)
+                              Positioned(
+                                right: -6,
+                                top: -6,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    count.toString(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                      ),
-                  ],
-                ),
+                      );
+                    },
+                  );
+                },
               );
             },
           ),
@@ -265,7 +239,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.post_add,
                     size: 64,
                     color: AppColors.grey,
@@ -299,8 +273,6 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 onShare: () => _sharePost(post),
                 onLocationTap: () => _openLocation(post),
                 onMessage: () => _startChat(post),
-                onEdit: () => _showEditDialog(post),
-                onDelete: () => _confirmDelete(post),
               );
             },
           );
@@ -338,7 +310,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     if (user == null) return;
 
     if (user.uid == post.ownerId) {
-      context.push(AppRoutes.chats);
+      if (mounted) {
+        context.push(AppRoutes.chats);
+      }
       return;
     }
 
@@ -361,8 +335,6 @@ class PostCard extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback onLocationTap;
   final VoidCallback onMessage;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
 
   const PostCard({
     super.key,
@@ -373,8 +345,6 @@ class PostCard extends StatelessWidget {
     required this.onShare,
     required this.onLocationTap,
     required this.onMessage,
-    required this.onEdit,
-    required this.onDelete,
   });
 
   @override
@@ -401,7 +371,9 @@ class PostCard extends StatelessWidget {
                   child: (post.businessImageUrl == null ||
                           post.businessImageUrl!.isEmpty)
                       ? Text(
-                          (post.businessName.isNotEmpty ? post.businessName[0] : '?')
+                          (post.businessName.isNotEmpty
+                                  ? post.businessName[0]
+                                  : '?')
                               .toUpperCase(),
                           style: const TextStyle(color: Colors.white),
                         )
@@ -414,7 +386,10 @@ class PostCard extends StatelessWidget {
                     children: [
                       GestureDetector(
                         onTap: () {
-                          context.push(AppRoutes.businessProfilePath(post.businessId));
+                          if (post.businessId.isNotEmpty) {
+                            context.push(
+                                AppRoutes.businessProfilePath(post.businessId));
+                          }
                         },
                         child: Text(
                           post.businessName.isNotEmpty
@@ -428,7 +403,7 @@ class PostCard extends StatelessWidget {
                       ),
                       Text(
                         timeAgo,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppColors.grey,
                           fontSize: 12,
                         ),
@@ -441,26 +416,6 @@ class PostCard extends StatelessWidget {
                   onPressed: onMessage,
                   tooltip: 'Message business',
                 ),
-                if (post.ownerId == currentUserId)
-                  PopupMenuButton<String>(
-                    onSelected: (value) {
-                      if (value == 'edit') {
-                        onEdit();
-                      } else if (value == 'delete') {
-                        onDelete();
-                      }
-                    },
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(
-                        value: 'edit',
-                        child: Text('Edit'),
-                      ),
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: Text('Delete'),
-                      ),
-                    ],
-                  ),
               ],
             ),
 
@@ -496,10 +451,31 @@ class PostCard extends StatelessWidget {
               ),
             ],
 
-            // Post video
-            if (post.videoUrl != null) ...[
-              const SizedBox(height: 12),
-              InlineVideoPlayer(url: post.videoUrl!),
+            // Location
+            if (post.googleMapsLink != null) ...[
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: onLocationTap,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.location_on,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'View on Google Maps',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
 
             const SizedBox(height: 12),
@@ -526,12 +502,6 @@ class PostCard extends StatelessWidget {
                   icon: const Icon(Icons.share),
                   onPressed: onShare,
                 ),
-                const Spacer(),
-                if (post.googleMapsLink != null && post.googleMapsLink!.isNotEmpty)
-                  IconButton(
-                    icon: const Icon(Icons.location_on),
-                    onPressed: onLocationTap,
-                  ),
               ],
             ),
 
@@ -556,7 +526,7 @@ class PostCard extends StatelessWidget {
               if (post.comments.length > 2)
                 Text(
                   'View all ${post.comments.length} comments',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.primary,
                     fontSize: 12,
                   ),
@@ -581,109 +551,5 @@ class PostCard extends StatelessWidget {
     } else {
       return 'Just now';
     }
-  }
-}
-
-class InlineVideoPlayer extends StatefulWidget {
-  final String url;
-
-  const InlineVideoPlayer({super.key, required this.url});
-
-  @override
-  State<InlineVideoPlayer> createState() => _InlineVideoPlayerState();
-}
-
-class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
-  VideoPlayerController? _controller;
-  Future<Uint8List?>? _thumbFuture;
-  bool _isPlaying = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _thumbFuture = VideoThumbnail.thumbnailData(
-      video: widget.url,
-      imageFormat: ImageFormat.JPEG,
-      maxWidth: 480,
-      quality: 70,
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  Future<void> _play() async {
-    if (_controller == null) {
-      _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
-      await _controller!.initialize();
-    }
-    await _controller!.play();
-    if (mounted) {
-      setState(() {
-        _isPlaying = true;
-      });
-    }
-  }
-
-  Future<void> _pause() async {
-    if (_controller == null) return;
-    await _controller!.pause();
-    if (mounted) {
-      setState(() {
-        _isPlaying = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        height: 200,
-        width: double.infinity,
-        color: AppColors.lightGrey,
-        child: _isPlaying && _controller != null
-            ? Stack(
-                alignment: Alignment.center,
-                children: [
-                  AspectRatio(
-                    aspectRatio: _controller!.value.aspectRatio,
-                    child: VideoPlayer(_controller!),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.pause_circle_filled,
-                        color: Colors.white70, size: 48),
-                    onPressed: _pause,
-                  ),
-                ],
-              )
-            : FutureBuilder<Uint8List?>(
-                future: _thumbFuture,
-                builder: (context, snapshot) {
-                  final bytes = snapshot.data;
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (bytes != null)
-                        Image.memory(bytes, fit: BoxFit.cover)
-                      else
-                        Container(color: Colors.black45),
-                      Center(
-                        child: IconButton(
-                          icon: const Icon(Icons.play_circle_fill,
-                              color: Colors.white70, size: 48),
-                          onPressed: _play,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-      ),
-    );
   }
 }

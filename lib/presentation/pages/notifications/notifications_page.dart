@@ -29,16 +29,25 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Future<void> _markAllRead() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final snap = await FirebaseFirestore.instance
-        .collection('notifications')
-        .where('toUserId', isEqualTo: user.uid)
-        .where('readAt', isEqualTo: null)
-        .get();
-    final batch = FirebaseFirestore.instance.batch();
-    for (final doc in snap.docs) {
-      batch.update(doc.reference, {'readAt': Timestamp.now()});
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('notifications')
+          .where('toUserId', isEqualTo: user.uid)
+          .where('readAt', isEqualTo: null)
+          .get();
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in snap.docs) {
+        batch.update(doc.reference, {'readAt': Timestamp.now()});
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('Failed to mark notifications read: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to mark notifications read')),
+        );
+      }
     }
-    await batch.commit();
   }
 
   Future<void> _hideSelected() async {
