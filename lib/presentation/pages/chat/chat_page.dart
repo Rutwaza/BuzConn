@@ -9,6 +9,10 @@ import 'package:image_picker/image_picker.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:record/record.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 
 import '../../../core/theme/colors.dart';
 import '../../../core/services/supabase_storage_service.dart';
@@ -34,6 +38,8 @@ class _ChatPageState extends State<ChatPage> {
   String? _lastReadMessageId;
   bool _isTyping = false;
   Timer? _typingTimer;
+  final AudioRecorder _recorder = AudioRecorder();
+  bool _isRecording = false;
 
   @override
   void initState() {
@@ -50,6 +56,7 @@ class _ChatPageState extends State<ChatPage> {
     _controller.dispose();
     _typingTimer?.cancel();
     _setTyping(false);
+    _recorder.dispose();
     super.dispose();
   }
 
@@ -349,11 +356,23 @@ class _ChatPageState extends State<ChatPage> {
                                   isVideo: true),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.mic),
-                          onPressed: _sendingMedia
-                              ? null
-                              : () => _showComingSoon('Voice notes'),
+                          icon: Icon(
+                            _isRecording ? Icons.stop_circle : Icons.mic,
+                            color: _isRecording ? Colors.redAccent : null,
+                          ),
+                          onPressed: _sendingMedia ? null : _toggleRecording,
                         ),
+                        if (_isRecording)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 8),
+                            child: Text(
+                              'Recording...',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.redAccent,
+                              ),
+                            ),
+                          ),
                         Expanded(
                           child: TextField(
                             controller: _controller,
@@ -448,6 +467,8 @@ class _ChatPageState extends State<ChatPage> {
               );
             } else if (mediaUrl != null && mediaType == 'image') {
               content = Image.network(mediaUrl, width: 200);
+            } else if (mediaUrl != null && mediaType == 'audio') {
+              content = _AudioMessageTile(url: mediaUrl, isMe: isMe);
             } else if (mediaUrl != null && mediaType == 'video') {
               content = FutureBuilder<Uint8List?>(
                 future: _getVideoThumbnail(mediaUrl),
@@ -663,6 +684,108 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+
+
+
+  Future<void> _toggleRecording() async {
+    if (_sendingMedia) return;
+    if (_isRecording) {
+      final path = await _recorder.stop();
+      if (mounted) {
+        setState(() {
+          _isRecording = false;
+        });
+      }
+      if (path != null) {
+        await _sendAudio(path);
+      }
+      return;
+    }
+
+    final hasPermission = await _recorder.hasPermission();
+    if (!hasPermission) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone permission required.')),
+        );
+      }
+      return;
+    }
+
+    final dir = await getTemporaryDirectory();
+    final filePath =
+        '${dir.path}/audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    await _recorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        bitRate: 128000,
+        sampleRate: 44100,
+      ),
+      path: filePath,
+    );
+
+    if (mounted) {
+      setState(() {
+        _isRecording = true;
+      });
+    }
+  }
+
+  Future<void> _sendAudio(String path) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    setState(() {
+      _sendingMedia = true;
+    });
+    try {
+      await _setTyping(false);
+      final bytes = await File(path).readAsBytes();
+      final fileName = '${user.uid}/${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final url = await SupabaseStorageService.instance.uploadAudio(
+        bucket: 'chat-media',
+        path: fileName,
+        bytes: bytes,
+      );
+
+      if (url == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Upload failed. Try again.')),
+          );
+        }
+        return;
+      }
+
+      await _repo.sendMessage(
+        chatId: widget.chatId,
+        senderId: user.uid,
+        text: '',
+        mediaUrl: url,
+        mediaType: 'audio',
+        replyTo: _replyingTo,
+      );
+      setState(() {
+        _replyingTo = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Voice note failed: $e')),
+        );
+      }
+    } finally {
+      try {
+        File(path).deleteSync();
+      } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _sendingMedia = false;
+        });
+      }
+    }
+  }
+
   void _showComingSoon(String feature) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -845,6 +968,108 @@ class _ChatPageState extends State<ChatPage> {
   }
 }
 
+
+class _AudioMessageTile extends StatefulWidget {
+  const _AudioMessageTile({required this.url, required this.isMe});
+
+  final String url;
+  final bool isMe;
+
+  @override
+  State<_AudioMessageTile> createState() => _AudioMessageTileState();
+}
+
+class _AudioMessageTileState extends State<_AudioMessageTile> {
+  final AudioPlayer _player = AudioPlayer();
+  bool _isPlaying = false;
+  Duration _duration = Duration.zero;
+  Duration _position = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _player.onDurationChanged.listen((d) {
+      if (mounted) {
+        setState(() => _duration = d);
+      }
+    });
+    _player.onPositionChanged.listen((p) {
+      if (mounted) {
+        setState(() => _position = p);
+      }
+    });
+    _player.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = false;
+          _position = Duration.zero;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  String _format(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  Future<void> _toggle() async {
+    if (_isPlaying) {
+      await _player.pause();
+      if (mounted) {
+        setState(() => _isPlaying = false);
+      }
+      return;
+    }
+    await _player.play(UrlSource(widget.url));
+    if (mounted) {
+      setState(() => _isPlaying = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = _duration.inMilliseconds > 0
+        ? _duration
+        : const Duration(seconds: 1);
+    final progress = _position.inMilliseconds / total.inMilliseconds;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
+          color: widget.isMe ? Colors.white : Theme.of(context).iconTheme.color,
+          onPressed: _toggle,
+        ),
+        SizedBox(
+          width: 120,
+          child: LinearProgressIndicator(
+            value: progress.clamp(0.0, 1.0),
+            backgroundColor: Colors.white12,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              widget.isMe
+                  ? Colors.white70
+                  : Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '${_format(_position)} / ${_format(_duration)}',
+          style: const TextStyle(fontSize: 11),
+        ),
+      ],
+    );
+  }
+}
+
 class _TypingDots extends StatefulWidget {
   const _TypingDots({required this.color});
 
@@ -907,10 +1132,5 @@ class _TypingDotsState extends State<_TypingDots>
     );
   }
 }
-
-
-
-
-
 
 

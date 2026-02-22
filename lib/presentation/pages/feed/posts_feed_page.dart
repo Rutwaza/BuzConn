@@ -29,19 +29,35 @@ class PostsFeedPage extends ConsumerStatefulWidget {
 class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   final PostsRepository _postsRepository = PostsRepository();
   final TextEditingController _commentController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   String? _commentingOnPostId;
   bool _markingNotifications = false;
   final ValueNotifier<Timestamp?> _badgeClearedAt =
       ValueNotifier<Timestamp?>(null);
   bool _didJumpToPost = false;
+  String _searchQuery = '';
+  String _pendingQuery = '';
 
   @override
   void dispose() {
     _commentController.dispose();
+    _searchController.dispose();
     _scrollController.dispose();
     _badgeClearedAt.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _pendingQuery = value;
+  }
+
+  void _applySearch([String? value]) {
+    final next = (value ?? _pendingQuery).trim();
+    if (next == _searchQuery) return;
+    setState(() {
+      _searchQuery = next;
+    });
   }
 
   void _showCommentDialog(String postId) {
@@ -133,7 +149,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Business Feed'),
+        title: const Text('Trends'),
         leading: IconButton(
           icon: const Icon(Icons.home),
           onPressed: () {
@@ -242,13 +258,33 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
           }
 
           final posts = snapshot.data ?? [];
+          final query = _searchQuery.trim().toLowerCase();
+          final filtered = query.isEmpty
+              ? posts
+              : posts.where((post) {
+                  final name = post.businessName.toLowerCase();
+                  final content = post.content.toLowerCase();
+                  return name.contains(query) || content.contains(query);
+                }).toList();
+
+          final likedBusinesses = <String, Post>{};
+          if (currentUser != null) {
+            for (final post in posts) {
+              if (post.likes.contains(currentUser.uid) &&
+                  !likedBusinesses.containsKey(post.businessId)) {
+                likedBusinesses[post.businessId] = post;
+                if (likedBusinesses.length >= 5) break;
+              }
+            }
+          }
+          final likedList = likedBusinesses.values.toList();
 
           if (posts.isEmpty) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.post_add,
                     size: 64,
                     color: AppColors.grey,
@@ -270,12 +306,134 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
             );
           }
 
-          return ListView.builder(
-            controller: _scrollController,
-            itemCount: posts.length,
-            itemBuilder: (context, index) {
-              final post = posts[index];
-              final key = GlobalObjectKey(post.id);
+          final postKeys = <String, GlobalObjectKey>{};
+          return Column(
+            children: [
+              if (likedList.isNotEmpty)
+                SizedBox(
+                  height: 100,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: likedList.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 12),
+                    itemBuilder: (context, index) {
+                      final post = likedList[index];
+                      return InkWell(
+                        onTap: () {
+                          final key = postKeys[post.id];
+                          final ctx = key?.currentContext;
+                          if (ctx != null) {
+                            Scrollable.ensureVisible(
+                              ctx,
+                              duration: const Duration(milliseconds: 300),
+                              alignment: 0.1,
+                            );
+                          }
+                        },
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircleAvatar(
+                              radius: 24,
+                              backgroundColor: AppColors.primary,
+                              backgroundImage: post.businessImageUrl != null &&
+                                      post.businessImageUrl!.isNotEmpty
+                                  ? CachedNetworkImageProvider(
+                                      post.businessImageUrl!)
+                                  : null,
+                              child: (post.businessImageUrl == null ||
+                                      post.businessImageUrl!.isEmpty)
+                                  ? Text(
+                                      post.businessName.isNotEmpty
+                                          ? post.businessName[0].toUpperCase()
+                                          : '?',
+                                      style:
+                                          const TextStyle(color: Colors.white),
+                                    )
+                                  : null,
+                            ),
+                            const SizedBox(height: 6),
+                            SizedBox(
+                              width: 72,
+                              height: 14,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  post.businessName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(fontSize: 10),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: _onSearchChanged,
+                  onSubmitted: _applySearch,
+                  decoration: InputDecoration(
+                    hintText: 'Search businesses or descriptions...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _searchController,
+                      builder: (context, value, _) {
+                        final hasText = value.text.trim().isNotEmpty;
+                        if (!hasText) return const SizedBox.shrink();
+                        return SizedBox(
+                          width: 96,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.search),
+                                onPressed: () => _applySearch(value.text),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  _applySearch('');
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: filtered.isEmpty
+                    ? Center(
+                        child: Text(
+                          query.isNotEmpty
+                              ? 'No results for \"$query\"'
+                              : 'No posts yet',
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _scrollController,
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) {
+                          final post = filtered[index];
+              final key = postKeys.putIfAbsent(
+                post.id,
+                () => GlobalObjectKey(post.id),
+              );
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (!_didJumpToPost &&
                     widget.initialPostId != null &&
@@ -308,18 +466,21 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     post: post,
                     currentUserId: currentUser?.uid ?? '',
                     isSaved: isSaved,
-                onLike: () => _postsRepository.toggleLike(post.id),
-                onComment: () => _showCommentDialog(post.id),
-                onShare: () => _sharePost(post),
-                onLocationTap: () => _openLocation(post),
-                onMessage: () => _startChat(post),
-                onSave: () => _toggleFavorite(post, isSaved),
-                onEdit: () => _showEditDialog(post),
-                onDelete: () => _confirmDelete(post),
+                    onLike: () => _postsRepository.toggleLike(post.id),
+                    onComment: () => _showCommentDialog(post.id),
+                    onShare: () => _sharePost(post),
+                    onLocationTap: () => _openLocation(post),
+                    onMessage: () => _startChat(post),
+                    onSave: () => _toggleFavorite(post, isSaved),
+                    onEdit: () => _showEditDialog(post),
+                    onDelete: () => _confirmDelete(post),
+                  );
+                },
               );
             },
-          );
-        },
+          ),
+              ),
+            ],
           );
         },
       ),
@@ -787,7 +948,7 @@ class PostCard extends StatelessWidget {
                       ),
                       Text(
                         timeAgo,
-                        style: TextStyle(
+                        style: const TextStyle(
                           color: AppColors.grey,
                           fontSize: 12,
                         ),
@@ -918,7 +1079,7 @@ class PostCard extends StatelessWidget {
               if (post.comments.length > 2)
                 Text(
                   'View all ${post.comments.length} comments',
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: AppColors.primary,
                     fontSize: 12,
                   ),

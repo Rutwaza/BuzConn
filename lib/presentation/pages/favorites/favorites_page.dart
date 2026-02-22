@@ -129,11 +129,11 @@ class FavoritesPage extends StatelessWidget {
   }
 
   Widget _loadingCard() {
-    return Card(
+    return const Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(16),
         child: Row(
-          children: const [
+          children: [
             SizedBox(
               width: 24,
               height: 24,

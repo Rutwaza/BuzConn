@@ -35,6 +35,19 @@ class SupabaseStorageService {
     );
   }
 
+  Future<String?> uploadAudio({
+    required String bucket,
+    required String path,
+    required Uint8List bytes,
+  }) async {
+    return _upload(
+      bucket: bucket,
+      path: path,
+      bytes: bytes,
+      contentType: 'audio/m4a',
+    );
+  }
+
   Future<String?> _upload({
     required String bucket,
     required String path,
