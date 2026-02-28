@@ -105,6 +105,8 @@ class ChatRepository {
     required String text,
     String? mediaUrl,
     String? mediaType,
+    String? mediaName,
+    int? mediaSize,
     Map<String, dynamic>? replyTo,
   }) async {
     final messageRef = _firestore
@@ -124,6 +126,8 @@ class ChatRepository {
       'text': text,
       'mediaUrl': mediaUrl,
       'mediaType': mediaType,
+      'mediaName': mediaName,
+      'mediaSize': mediaSize,
       'replyTo': replyTo,
       'createdAt': FieldValue.serverTimestamp(),
     });

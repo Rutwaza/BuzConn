@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:io';
-import 'dart:typed_data';
 
 import '../../../core/theme/colors.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../data/models/post_model.dart';
 import '../../../data/repositories/posts_repository.dart';
 import '../../../core/services/supabase_storage_service.dart';
 
@@ -19,14 +19,21 @@ class CreatePostPage extends ConsumerStatefulWidget {
   ConsumerState<CreatePostPage> createState() => _CreatePostPageState();
 }
 
+class _LocalMedia {
+  final File file;
+  final PostMediaType type;
+
+  const _LocalMedia({required this.file, required this.type});
+}
+
 class _CreatePostPageState extends ConsumerState<CreatePostPage> {
   final _formKey = GlobalKey<FormState>();
   final _contentController = TextEditingController();
   final PostsRepository _postsRepository = PostsRepository();
 
-  File? _selectedImage;
-  File? _selectedVideo;
-  Uint8List? _selectedImageBytes;
+  final List<_LocalMedia> _selectedMedia = [];
+  final PageController _previewController = PageController();
+  int _previewIndex = 0;
   bool _isLoading = false;
   bool _isBusinessUser = false;
   bool _isCheckingUserType = true;
@@ -38,6 +45,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
   @override
   void dispose() {
     _contentController.dispose();
+    _previewController.dispose();
     super.dispose();
   }
 
@@ -107,19 +115,24 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
     }
   }
 
-  Future<void> _pickImage() async {
+  Future<void> _pickImages() async {
     try {
-      final picker = ImagePicker();
-      final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-
-      if (pickedFile != null) {
-        final bytes = await pickedFile.readAsBytes();
-        setState(() {
-          _selectedImage = File(pickedFile.path);
-          _selectedImageBytes = bytes;
-          _selectedVideo = null;
-        });
-      }
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: true,
+      );
+      if (result == null) return;
+      final picked = result.files
+          .where((file) => file.path != null)
+          .map((file) => _LocalMedia(
+                file: File(file.path!),
+                type: PostMediaType.image,
+              ))
+          .toList();
+      if (picked.isEmpty) return;
+      setState(() {
+        _selectedMedia.addAll(picked);
+      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -129,18 +142,24 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
     }
   }
 
-  Future<void> _pickVideo() async {
+  Future<void> _pickVideos() async {
     try {
-      final picker = ImagePicker();
-      final pickedFile = await picker.pickVideo(source: ImageSource.gallery);
-
-      if (pickedFile != null) {
-        setState(() {
-          _selectedVideo = File(pickedFile.path);
-          _selectedImage = null;
-          _selectedImageBytes = null;
-        });
-      }
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.video,
+        allowMultiple: true,
+      );
+      if (result == null) return;
+      final picked = result.files
+          .where((file) => file.path != null)
+          .map((file) => _LocalMedia(
+                file: File(file.path!),
+                type: PostMediaType.video,
+              ))
+          .toList();
+      if (picked.isEmpty) return;
+      setState(() {
+        _selectedMedia.addAll(picked);
+      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -197,20 +216,30 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
     });
 
     try {
-      String? imageUrl;
-      String? videoUrl;
-      if (_selectedImage != null) {
-        imageUrl = await _uploadImage(_selectedImage!);
-      }
-      if (_selectedVideo != null) {
-        videoUrl = await _uploadVideo(_selectedVideo!);
+      final uploadedMedia = <PostMedia>[];
+      for (final item in _selectedMedia) {
+        final url = item.type == PostMediaType.video
+            ? await _uploadVideo(item.file)
+            : await _uploadImage(item.file);
+        if (url == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                item.type == PostMediaType.video
+                    ? 'Video upload failed.'
+                    : 'Image upload failed.',
+              ),
+            ),
+          );
+          return;
+        }
+        uploadedMedia.add(PostMedia(type: item.type, url: url));
       }
 
       await _postsRepository.createPost(
         content: _contentController.text.trim(),
         businessId: _selectedBusinessId!,
-        imageUrl: imageUrl,
-        videoUrl: videoUrl,
+        media: uploadedMedia,
       );
 
       if (mounted) {
@@ -220,9 +249,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
       // Clear form and go back
       _contentController.clear();
       setState(() {
-        _selectedImage = null;
-        _selectedVideo = null;
-        _selectedImageBytes = null;
+        _selectedMedia.clear();
+        _previewIndex = 0;
       });
 
       if (mounted) {
@@ -358,52 +386,78 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                     children: [
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: _pickImage,
+                          onPressed: _pickImages,
                           icon: const Icon(Icons.image),
-                          label: const Text('Photo'),
+                          label: const Text('Photos'),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: _pickVideo,
+                          onPressed: _pickVideos,
                           icon: const Icon(Icons.videocam),
-                          label: const Text('Video'),
+                          label: const Text('Videos'),
                         ),
                       ),
                     ],
                   ),
-
-                  if (_selectedImageBytes != null) ...[
+                  if (_selectedMedia.isNotEmpty) ...[
                     const SizedBox(height: 12),
-                    Container(
-                      height: 200,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                    SizedBox(
+                      height: 220,
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.memory(
-                          _selectedImageBytes!,
-                          fit: BoxFit.cover,
+                        borderRadius: BorderRadius.circular(12),
+                        child: PageView.builder(
+                          controller: _previewController,
+                          itemCount: _selectedMedia.length,
+                          onPageChanged: (value) {
+                            setState(() => _previewIndex = value);
+                          },
+                          itemBuilder: (context, index) {
+                            final item = _selectedMedia[index];
+                            if (item.type == PostMediaType.image) {
+                              return Image.file(
+                                item.file,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                              );
+                            }
+                            return Container(
+                              color: AppColors.lightGrey,
+                              child: const Center(
+                                child: Icon(Icons.play_circle_fill, size: 48),
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ),
-                  ],
-                  if (_selectedVideo != null) ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      height: 120,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Center(
-                        child: Text('Video selected'),
-                      ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(
+                          'Media ${_previewIndex + 1}/${_selectedMedia.length}',
+                          style: const TextStyle(color: AppColors.grey),
+                        ),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: () {
+                            if (_selectedMedia.isEmpty) return;
+                            setState(() {
+                              _selectedMedia.removeAt(_previewIndex);
+                              if (_previewIndex >= _selectedMedia.length) {
+                                _previewIndex =
+                                    _selectedMedia.isEmpty ? 0 : _selectedMedia.length - 1;
+                              }
+                            });
+                            if (_selectedMedia.isNotEmpty) {
+                              _previewController.jumpToPage(_previewIndex);
+                            }
+                          },
+                          icon: const Icon(Icons.close),
+                          label: const Text('Remove'),
+                        ),
+                      ],
                     ),
                   ],
 
@@ -418,8 +472,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
 
                   // Preview
                   if (_contentController.text.isNotEmpty ||
-                      _selectedImage != null ||
-                      _selectedVideo != null)
+                      _selectedMedia.isNotEmpty)
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -435,37 +488,23 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                             ),
                             const Divider(),
                             Text(_contentController.text),
-                            if (_selectedImage != null) ...[
+                            if (_selectedMedia.isNotEmpty) ...[
                               const SizedBox(height: 8),
                               Container(
-                                height: 150,
-                                width: double.infinity,
-                                color: AppColors.lightGrey,
-                                child: const Center(
-                                  child: Text('Image Preview\n(Not implemented yet)'),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppColors.lightGrey,
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
-                              ),
-                            ],
-                            if (_selectedVideo != null) ...[
-                              const SizedBox(height: 8),
-                              const Row(
-                                children: [
-                                  Icon(
-                                    Icons.videocam,
-                                    size: 16,
-                                    color: AppColors.primary,
-                                  ),
-                                  SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      'Video will be uploaded',
-                                      style: TextStyle(
-                                        color: AppColors.primary,
-                                        fontSize: 14,
-                                      ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.collections),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '${_selectedMedia.length} media item${_selectedMedia.length == 1 ? '' : 's'} selected',
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ],
                           ],

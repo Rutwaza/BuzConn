@@ -245,15 +245,17 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                               },
                               child: Container(
                                 color: AppColors.lightGrey,
-                                child: post.imageUrl != null
+                                child: post.media.isNotEmpty &&
+                                        !post.media.first.isVideo
                                     ? CachedNetworkImage(
-                                        imageUrl: post.imageUrl!,
+                                        imageUrl: post.media.first.url,
                                         fit: BoxFit.cover,
                                       )
-                                    : post.videoUrl != null
+                                    : post.media.isNotEmpty &&
+                                            post.media.first.isVideo
                                         ? FutureBuilder<Uint8List?>(
                                             future: _getVideoThumbnail(
-                                                post.videoUrl!),
+                                                post.media.first.url),
                                             builder: (context, thumbSnap) {
                                               final bytes = thumbSnap.data;
                                               if (bytes == null) {

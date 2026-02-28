@@ -4,11 +4,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:video_player/video_player.dart';
+import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'dart:io';
-import 'dart:typed_data';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
@@ -16,6 +16,8 @@ import '../../../data/models/post_model.dart';
 import '../../../data/repositories/posts_repository.dart';
 import '../../../data/repositories/chat_repository.dart';
 import '../../../core/services/supabase_storage_service.dart';
+import 'post_detail_page.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 class PostsFeedPage extends ConsumerStatefulWidget {
   const PostsFeedPage({super.key, this.initialPostId});
@@ -30,7 +32,10 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   final PostsRepository _postsRepository = PostsRepository();
   final TextEditingController _commentController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  final GlobalKey _searchKey = GlobalKey();
   final ScrollController _scrollController = ScrollController();
+  final Map<String, int> _mediaIndexByPostId = {};
   String? _commentingOnPostId;
   bool _markingNotifications = false;
   final ValueNotifier<Timestamp?> _badgeClearedAt =
@@ -38,11 +43,13 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   bool _didJumpToPost = false;
   String _searchQuery = '';
   String _pendingQuery = '';
+  bool _showSearch = false;
 
   @override
   void dispose() {
     _commentController.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _scrollController.dispose();
     _badgeClearedAt.dispose();
     super.dispose();
@@ -231,12 +238,6 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () {
-              context.push(AppRoutes.createPost);
-            },
-          ),
-          IconButton(
             icon: const Icon(Icons.person),
             onPressed: () {
               context.push(AppRoutes.profile);
@@ -375,53 +376,64 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     },
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: _onSearchChanged,
-                  onSubmitted: _applySearch,
-                  decoration: InputDecoration(
-                    hintText: 'Search businesses or descriptions...',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: ValueListenableBuilder<TextEditingValue>(
-                      valueListenable: _searchController,
-                      builder: (context, value, _) {
-                        final hasText = value.text.trim().isNotEmpty;
-                        if (!hasText) return const SizedBox.shrink();
-                        return SizedBox(
-                          width: 96,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.search),
-                                onPressed: () => _applySearch(value.text),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.close),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  _applySearch('');
-                                },
-                              ),
-                            ],
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: _showSearch
+                    ? Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: TextField(
+                          key: _searchKey,
+                          controller: _searchController,
+                          focusNode: _searchFocusNode,
+                          onChanged: _onSearchChanged,
+                          onSubmitted: _applySearch,
+                          decoration: InputDecoration(
+                            hintText: 'Search businesses or descriptions...',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                              valueListenable: _searchController,
+                              builder: (context, value, _) {
+                                final hasText = value.text.trim().isNotEmpty;
+                                if (!hasText) return const SizedBox.shrink();
+                                return SizedBox(
+                                  width: 96,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.search),
+                                        onPressed: () =>
+                                            _applySearch(value.text),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.close),
+                                        onPressed: () {
+                                          _searchController.clear();
+                                          _applySearch('');
+                                          setState(() {
+                                            _showSearch = false;
+                                          });
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
-                        );
-                      },
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
               Expanded(
                 child: filtered.isEmpty
                     ? Center(
                         child: Text(
                           query.isNotEmpty
-                              ? 'No results for \"$query\"'
+                              ? 'No results for "$query"'
                               : 'No posts yet',
                         ),
                       )
@@ -466,6 +478,20 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     post: post,
                     currentUserId: currentUser?.uid ?? '',
                     isSaved: isSaved,
+                    initialMediaIndex: _mediaIndexByPostId[post.id] ?? 0,
+                    onMediaIndexChanged: (index) {
+                      _mediaIndexByPostId[post.id] = index;
+                    },
+                    onOpenDetail: (index) {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => PostDetailPage(
+                            postId: post.id,
+                            initialMediaIndex: index,
+                          ),
+                        ),
+                      );
+                    },
                     onLike: () => _postsRepository.toggleLike(post.id),
                     onComment: () => _showCommentDialog(post.id),
                     onShare: () => _sharePost(post),
@@ -483,6 +509,68 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
             ],
           );
         },
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _roundActionButton(
+                icon: Icons.search,
+                tooltip: 'Search',
+                onTap: () {
+                  setState(() {
+                    _showSearch = true;
+                  });
+                  _searchFocusNode.requestFocus();
+                },
+              ),
+              const SizedBox(width: 16),
+              _roundActionButton(
+                icon: Icons.add,
+                tooltip: 'Add post',
+                filled: true,
+                onTap: () => context.push(AppRoutes.createPost),
+              ),
+              const SizedBox(width: 16),
+              _roundActionButton(
+                icon: Icons.message,
+                tooltip: 'Messages',
+                onTap: () => context.push(AppRoutes.chats),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _roundActionButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+    bool filled = false,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: filled ? scheme.primary : scheme.surface,
+        shape: const CircleBorder(),
+        elevation: filled ? 4 : 1,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Icon(
+              icon,
+              color: filled ? scheme.onPrimary : scheme.onSurface,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -544,11 +632,12 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 if (!removeMedia &&
                     pickedImage == null &&
                     pickedVideo == null &&
-                    post.imageUrl != null)
+                    post.media.isNotEmpty &&
+                    !post.media.first.isVideo)
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: CachedNetworkImage(
-                      imageUrl: post.imageUrl!,
+                      imageUrl: post.media.first.url,
                       height: 140,
                       width: double.infinity,
                       fit: BoxFit.cover,
@@ -557,7 +646,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 if (!removeMedia &&
                     pickedImage == null &&
                     pickedVideo == null &&
-                    post.videoUrl != null)
+                    post.media.isNotEmpty &&
+                    post.media.first.isVideo)
                   Container(
                     height: 140,
                     alignment: Alignment.center,
@@ -718,25 +808,39 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 if (text.isEmpty) return;
                 String? imageUrl = post.imageUrl;
                 String? videoUrl = post.videoUrl;
+                List<PostMedia>? mediaUpdate;
                 if (removeMedia) {
                   imageUrl = null;
                   videoUrl = null;
+                  mediaUpdate = [];
                 } else if (pickedImage != null) {
                   imageUrl = await _uploadImage(pickedImage!);
                   videoUrl = null;
+                  if (imageUrl == null) return;
+                  mediaUpdate = [
+                    PostMedia(type: PostMediaType.image, url: imageUrl!),
+                  ];
                 } else if (pickedVideo != null) {
                   videoUrl = await _uploadVideo(pickedVideo!);
                   imageUrl = null;
+                  if (videoUrl == null) return;
+                  mediaUpdate = [
+                    PostMedia(type: PostMediaType.video, url: videoUrl!),
+                  ];
                 }
-                await FirebaseFirestore.instance
-                    .collection('posts')
-                    .doc(post.id)
-                    .update({
+                final update = <String, dynamic>{
                   'content': text,
                   'imageUrl': imageUrl,
                   'videoUrl': videoUrl,
                   'updatedAt': Timestamp.now(),
-                });
+                };
+                if (mediaUpdate != null) {
+                  update['media'] = mediaUpdate.map((m) => m.toMap()).toList();
+                }
+                await FirebaseFirestore.instance
+                    .collection('posts')
+                    .doc(post.id)
+                    .update(update);
                 if (mounted) {
                   Navigator.of(context).pop();
                 }
@@ -864,9 +968,200 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   }
 }
 
+
+class _AutoPlayVideoPreview extends StatefulWidget {
+  const _AutoPlayVideoPreview({required this.url, required this.onTap});
+
+  final String url;
+  final VoidCallback onTap;
+
+  @override
+  State<_AutoPlayVideoPreview> createState() => _AutoPlayVideoPreviewState();
+}
+
+class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
+  VideoPlayerController? _controller;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() => _initialized = true);
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    return VisibilityDetector(
+      key: ValueKey('video_${widget.url}'),
+      onVisibilityChanged: (info) {
+        if (controller == null) return;
+        if (!controller.value.isInitialized) return;
+        if (info.visibleFraction >= 0.6) {
+          controller.play();
+          controller.setVolume(0);
+        } else {
+          controller.pause();
+        }
+      },
+      child: InkWell(
+        onTap: widget.onTap,
+        child: Container(
+          height: 200,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: AppColors.lightGrey,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: _initialized && controller != null
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: AspectRatio(
+                    aspectRatio: controller.value.aspectRatio,
+                    child: VideoPlayer(controller),
+                  ),
+                )
+              : const Center(
+                  child: Icon(Icons.play_circle_fill, size: 48),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PostMediaCarousel extends StatefulWidget {
+  final List<PostMedia> media;
+  final int initialIndex;
+  final ValueChanged<int> onIndexChanged;
+  final ValueChanged<int> onTap;
+
+  const _PostMediaCarousel({
+    required this.media,
+    required this.initialIndex,
+    required this.onIndexChanged,
+    required this.onTap,
+  });
+
+  @override
+  State<_PostMediaCarousel> createState() => _PostMediaCarouselState();
+}
+
+class _PostMediaCarouselState extends State<_PostMediaCarousel> {
+  late final PageController _controller;
+  late int _index;
+
+  @override
+  void initState() {
+    super.initState();
+    final safeIndex = widget.media.isEmpty
+        ? 0
+        : widget.initialIndex.clamp(0, widget.media.length - 1);
+    _index = safeIndex;
+    _controller = PageController(initialPage: safeIndex);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PostMediaCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.media.isEmpty) return;
+    final maxIndex = widget.media.length - 1;
+    if (_index > maxIndex) {
+      _index = maxIndex;
+      _controller.jumpToPage(_index);
+      widget.onIndexChanged(_index);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.media.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      children: [
+        SizedBox(
+          height: 220,
+          child: PageView.builder(
+            controller: _controller,
+            itemCount: widget.media.length,
+            onPageChanged: (value) {
+              setState(() => _index = value);
+              widget.onIndexChanged(value);
+            },
+            itemBuilder: (context, index) {
+              final item = widget.media[index];
+              if (item.isVideo) {
+                return _AutoPlayVideoPreview(
+                  url: item.url,
+                  onTap: () => widget.onTap(index),
+                );
+              }
+              return GestureDetector(
+                onTap: () => widget.onTap(index),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: CachedNetworkImage(
+                    imageUrl: item.url,
+                    height: 220,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(
+                      height: 220,
+                      color: AppColors.lightGrey,
+                      child: const Center(child: CircularProgressIndicator()),
+                    ),
+                    errorWidget: (context, url, error) => Container(
+                      height: 220,
+                      color: AppColors.lightGrey,
+                      child: const Icon(Icons.error),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        if (widget.media.length > 1) ...[
+          const SizedBox(height: 8),
+          SmoothPageIndicator(
+            controller: _controller,
+            count: widget.media.length,
+            effect: const WormEffect(
+              dotHeight: 6,
+              dotWidth: 6,
+              activeDotColor: AppColors.primary,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class PostCard extends StatelessWidget {
   final Post post;
   final String currentUserId;
+  final int initialMediaIndex;
+  final ValueChanged<int> onMediaIndexChanged;
+  final ValueChanged<int> onOpenDetail;
   final VoidCallback onLike;
   final VoidCallback onComment;
   final VoidCallback onShare;
@@ -881,6 +1176,9 @@ class PostCard extends StatelessWidget {
     super.key,
     required this.post,
     required this.currentUserId,
+    required this.initialMediaIndex,
+    required this.onMediaIndexChanged,
+    required this.onOpenDetail,
     required this.onLike,
     required this.onComment,
     required this.onShare,
@@ -896,6 +1194,7 @@ class PostCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isLiked = post.likes.contains(currentUserId);
     final timeAgo = _formatTimeAgo(post.createdAt);
+    final media = post.media;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -992,27 +1291,13 @@ class PostCard extends StatelessWidget {
               style: const TextStyle(fontSize: 16),
             ),
 
-            // Post image
-            if (post.imageUrl != null) ...[
+            if (media.isNotEmpty) ...[
               const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: CachedNetworkImage(
-                  imageUrl: post.imageUrl!,
-                  height: 200,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(
-                    height: 200,
-                    color: AppColors.lightGrey,
-                    child: const Center(child: CircularProgressIndicator()),
-                  ),
-                  errorWidget: (context, url, error) => Container(
-                    height: 200,
-                    color: AppColors.lightGrey,
-                    child: const Icon(Icons.error),
-                  ),
-                ),
+              _PostMediaCarousel(
+                media: media,
+                initialIndex: initialMediaIndex,
+                onIndexChanged: onMediaIndexChanged,
+                onTap: onOpenDetail,
               ),
             ],
 
@@ -1077,11 +1362,20 @@ class PostCard extends StatelessWidget {
                 ),
               )),
               if (post.comments.length > 2)
-                Text(
-                  'View all ${post.comments.length} comments',
-                  style: const TextStyle(
-                    color: AppColors.primary,
-                    fontSize: 12,
+                GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => PostDetailPage(postId: post.id),
+                      ),
+                    );
+                  },
+                  child: Text(
+                    'View all ${post.comments.length} comments',
+                    style: const TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
             ],

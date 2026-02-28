@@ -41,6 +41,7 @@ class PostsRepository {
   Future<String> createPost({
     required String content,
     required String businessId,
+    List<PostMedia> media = const [],
     String? imageUrl,
     String? videoUrl,
   }) async {
@@ -68,6 +69,21 @@ class PostsRepository {
     final googleMapsLink = business['googleMapsLink'];
 
     final postRef = _firestore.collection('posts').doc();
+    String? primaryImageUrl = imageUrl;
+    String? primaryVideoUrl = videoUrl;
+    if (primaryImageUrl == null || primaryVideoUrl == null) {
+      for (final item in media) {
+        if (primaryImageUrl == null && item.type == PostMediaType.image) {
+          primaryImageUrl = item.url;
+        }
+        if (primaryVideoUrl == null && item.type == PostMediaType.video) {
+          primaryVideoUrl = item.url;
+        }
+        if (primaryImageUrl != null && primaryVideoUrl != null) {
+          break;
+        }
+      }
+    }
     final post = Post(
       id: postRef.id,
       ownerId: user.uid,
@@ -75,8 +91,9 @@ class PostsRepository {
       businessName: businessName,
       businessImageUrl: businessImageUrl,
       content: content,
-      imageUrl: imageUrl,
-      videoUrl: videoUrl,
+      imageUrl: primaryImageUrl,
+      videoUrl: primaryVideoUrl,
+      media: media,
       googleMapsLink: googleMapsLink,
       likes: [],
       comments: [],

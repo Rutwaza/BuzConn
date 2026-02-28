@@ -9,6 +9,7 @@ import 'core/services/firebase_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/services/theme_mode_service.dart';
 import 'core/routes/router.dart';
+import 'core/widgets/network_status_banner.dart';
 import 'firebase_options.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -61,7 +62,9 @@ class MyApp extends ConsumerWidget {
           darkTheme: isCyber ? AppTheme.cyberpunkTheme : AppTheme.darkTheme,
           themeMode: themeMode,
           builder: (context, child) {
-            final content = child ?? const SizedBox.shrink();
+            final content = NetworkStatusBanner(
+              child: child ?? const SizedBox.shrink(),
+            );
             if (mode == AppThemeMode.light) {
               return content;
             }

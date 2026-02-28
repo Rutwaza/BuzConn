@@ -513,16 +513,33 @@ class _BusinessesPageState extends State<BusinessesPage> {
         future: user == null ? Future.value(0) : _getBusinessCount(user.uid),
         builder: (context, snapshot) {
           final count = snapshot.data ?? 0;
+          final scheme = Theme.of(context).colorScheme;
+          final isDark = Theme.of(context).brightness == Brightness.dark;
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            color: AppColors.lightGrey,
+            decoration: BoxDecoration(
+              color: isDark ? scheme.surface : AppColors.lightGrey,
+              border: Border(
+                top: BorderSide(
+                  color: isDark ? Colors.white12 : Colors.black12,
+                ),
+              ),
+            ),
             child: Row(
               children: [
                 Expanded(
-                  child: Text('Businesses: $count / $_maxBusinesses'),
+                  child: Text(
+                    'Businesses: $count / $_maxBusinesses',
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                    ),
+                  ),
                 ),
                 TextButton(
                   onPressed: _onCreateNewBusiness,
+                  style: TextButton.styleFrom(
+                    foregroundColor: scheme.primary,
+                  ),
                   child: const Text('Add New'),
                 ),
               ],

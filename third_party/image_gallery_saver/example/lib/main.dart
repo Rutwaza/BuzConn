@@ -9,7 +9,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'utils.dart';
 
-void main() => runApp(MyApp());
+void main() => runApp(const MyApp());
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -21,7 +21,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: MyHomePage(),
+      home: const MyHomePage(),
     );
   }
 }
@@ -67,7 +67,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 height: 44,
                 child: ElevatedButton(
                   onPressed: _saveLocalImage,
-                  child: Text("Save Local Image"),
+                  child: const Text("Save Local Image"),
                 ),
               ),
               Container(
@@ -76,7 +76,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 height: 44,
                 child: ElevatedButton(
                   onPressed: _saveNetworkImage,
-                  child: Text("Save Network Image"),
+                  child: const Text("Save Network Image"),
                 ),
               ),
               Container(
@@ -85,7 +85,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 height: 44,
                 child: ElevatedButton(
                   onPressed: _saveNetworkGifFile,
-                  child: Text("Save Network Gif Image"),
+                  child: const Text("Save Network Gif Image"),
                 ),
               ),
               Container(
@@ -94,7 +94,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 height: 44,
                 child: ElevatedButton(
                   onPressed: _saveNetworkVideoFile,
-                  child: Text("Save Network Video"),
+                  child: const Text("Save Network Video"),
                 ),
               ),
             ],

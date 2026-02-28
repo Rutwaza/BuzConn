@@ -61,4 +61,18 @@ class SupabaseStorageService {
         );
     return _client.storage.from(bucket).getPublicUrl(path);
   }
+
+  Future<String?> uploadFile({
+    required String bucket,
+    required String path,
+    required Uint8List bytes,
+    String contentType = 'application/octet-stream',
+  }) async {
+    return _upload(
+      bucket: bucket,
+      path: path,
+      bytes: bytes,
+      contentType: contentType,
+    );
+  }
 }

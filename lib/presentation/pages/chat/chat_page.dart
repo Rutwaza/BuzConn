@@ -13,6 +13,8 @@ import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/colors.dart';
 import '../../../core/services/supabase_storage_service.dart';
@@ -39,7 +41,11 @@ class _ChatPageState extends State<ChatPage> {
   bool _isTyping = false;
   Timer? _typingTimer;
   final AudioRecorder _recorder = AudioRecorder();
+  final AudioPlayer _voicePlayer = AudioPlayer();
   bool _isRecording = false;
+  bool _isRecordingPaused = false;
+  bool _isVoicePlaying = false;
+  String? _recordedPath;
 
   @override
   void initState() {
@@ -57,6 +63,7 @@ class _ChatPageState extends State<ChatPage> {
     _typingTimer?.cancel();
     _setTyping(false);
     _recorder.dispose();
+    _voicePlayer.dispose();
     super.dispose();
   }
 
@@ -342,36 +349,57 @@ class _ChatPageState extends State<ChatPage> {
                     child: Row(
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.photo),
-                          onPressed: _sendingMedia
-                              ? null
-                              : () => _sendMedia(ImageSource.gallery,
-                                  isVideo: false),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.videocam),
-                          onPressed: _sendingMedia
-                              ? null
-                              : () => _sendMedia(ImageSource.gallery,
-                                  isVideo: true),
+                          icon: const Icon(Icons.attach_file),
+                          onPressed: _sendingMedia ? null : _showAttachmentSheet,
                         ),
                         IconButton(
                           icon: Icon(
                             _isRecording ? Icons.stop_circle : Icons.mic,
                             color: _isRecording ? Colors.redAccent : null,
                           ),
-                          onPressed: _sendingMedia ? null : _toggleRecording,
+                          onPressed: _sendingMedia
+                              ? null
+                              : () {
+                                  if (_isRecording) {
+                                    _stopRecording();
+                                  } else {
+                                    _startRecording();
+                                  }
+                                },
                         ),
-                        if (_isRecording)
-                          const Padding(
-                            padding: EdgeInsets.only(right: 8),
-                            child: Text(
-                              'Recording...',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.redAccent,
-                              ),
-                            ),
+                        if (_isRecording || _recordedPath != null)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_isRecording)
+                                IconButton(
+                                  icon: Icon(
+                                    _isRecordingPaused
+                                        ? Icons.play_arrow
+                                        : Icons.pause,
+                                  ),
+                                  onPressed: _togglePauseRecording,
+                                ),
+                              if (_recordedPath != null && !_isRecording)
+                                IconButton(
+                                  icon: Icon(
+                                    _isVoicePlaying
+                                        ? Icons.pause
+                                        : Icons.play_arrow,
+                                  ),
+                                  onPressed: _togglePlayRecording,
+                                ),
+                              if (_recordedPath != null && !_isRecording)
+                                IconButton(
+                                  icon: const Icon(Icons.send),
+                                  onPressed: _sendRecordedAudio,
+                                ),
+                              if (_recordedPath != null && !_isRecording)
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline),
+                                  onPressed: _discardRecording,
+                                ),
+                            ],
                           ),
                         Expanded(
                           child: TextField(
@@ -469,6 +497,43 @@ class _ChatPageState extends State<ChatPage> {
               content = Image.network(mediaUrl, width: 200);
             } else if (mediaUrl != null && mediaType == 'audio') {
               content = _AudioMessageTile(url: mediaUrl, isMe: isMe);
+            } else if (mediaUrl != null && mediaType == 'document') {
+              final name = data['mediaName'] ?? 'Document';
+              final size = data['mediaSize'] as int?;
+              content = InkWell(
+                onTap: () => _openDocument(mediaUrl),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: replyBarColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.insert_drive_file),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (size != null)
+                              Text(
+                                _formatBytes(size),
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
             } else if (mediaUrl != null && mediaType == 'video') {
               content = FutureBuilder<Uint8List?>(
                 future: _getVideoThumbnail(mediaUrl),
@@ -687,21 +752,8 @@ class _ChatPageState extends State<ChatPage> {
 
 
 
-  Future<void> _toggleRecording() async {
+  Future<void> _startRecording() async {
     if (_sendingMedia) return;
-    if (_isRecording) {
-      final path = await _recorder.stop();
-      if (mounted) {
-        setState(() {
-          _isRecording = false;
-        });
-      }
-      if (path != null) {
-        await _sendAudio(path);
-      }
-      return;
-    }
-
     final hasPermission = await _recorder.hasPermission();
     if (!hasPermission) {
       if (mounted) {
@@ -727,6 +779,78 @@ class _ChatPageState extends State<ChatPage> {
     if (mounted) {
       setState(() {
         _isRecording = true;
+        _isRecordingPaused = false;
+        _recordedPath = null;
+      });
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    final path = await _recorder.stop();
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _isRecordingPaused = false;
+        _recordedPath = path;
+      });
+    }
+  }
+
+  Future<void> _togglePauseRecording() async {
+    if (!_isRecording) return;
+    if (_isRecordingPaused) {
+      await _recorder.resume();
+    } else {
+      await _recorder.pause();
+    }
+    if (mounted) {
+      setState(() {
+        _isRecordingPaused = !_isRecordingPaused;
+      });
+    }
+  }
+
+  Future<void> _togglePlayRecording() async {
+    final path = _recordedPath;
+    if (path == null) return;
+    if (_isVoicePlaying) {
+      await _voicePlayer.pause();
+      if (mounted) setState(() => _isVoicePlaying = false);
+      return;
+    }
+    await _voicePlayer.play(DeviceFileSource(path));
+    if (mounted) {
+      setState(() => _isVoicePlaying = true);
+    }
+    _voicePlayer.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _isVoicePlaying = false);
+    });
+  }
+
+  Future<void> _sendRecordedAudio() async {
+    final path = _recordedPath;
+    if (path == null) return;
+    await _sendAudio(path);
+    if (mounted) {
+      setState(() {
+        _recordedPath = null;
+        _isVoicePlaying = false;
+      });
+    }
+  }
+
+  void _discardRecording() {
+    _voicePlayer.stop();
+    final path = _recordedPath;
+    if (path != null) {
+      try {
+        File(path).deleteSync();
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() {
+        _recordedPath = null;
+        _isVoicePlaying = false;
       });
     }
   }
@@ -786,10 +910,141 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+
+  Future<void> _sendDocument() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: [
+        'pdf',
+        'doc',
+        'docx',
+        'xls',
+        'xlsx',
+        'ppt',
+        'pptx',
+        'txt',
+        'csv',
+        'zip',
+        'rar',
+      ],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    final bytes = file.bytes;
+    if (bytes == null) return;
+
+    setState(() {
+      _sendingMedia = true;
+    });
+    try {
+      await _setTyping(false);
+      final ext = file.extension ?? 'bin';
+      final path = '${user.uid}/${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final url = await SupabaseStorageService.instance.uploadFile(
+        bucket: 'chat-media',
+        path: path,
+        bytes: bytes,
+      );
+      if (url == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Upload failed. Try again.')),
+          );
+        }
+        return;
+      }
+      await _repo.sendMessage(
+        chatId: widget.chatId,
+        senderId: user.uid,
+        text: '',
+        mediaUrl: url,
+        mediaType: 'document',
+        mediaName: file.name,
+        mediaSize: bytes.length,
+        replyTo: _replyingTo,
+      );
+      setState(() {
+        _replyingTo = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Document send failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sendingMedia = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _openDocument(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  String _formatBytes(int bytes) {
+    const kb = 1024;
+    const mb = kb * 1024;
+    if (bytes >= mb) {
+      return '${(bytes / mb).toStringAsFixed(1)} MB';
+    }
+    if (bytes >= kb) {
+      return '${(bytes / kb).toStringAsFixed(1)} KB';
+    }
+    return '$bytes B';
+  }
+
   void _showComingSoon(String feature) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$feature coming soon!')),
+    );
+  }
+
+  void _showAttachmentSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo),
+                title: const Text('Photo'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _sendMedia(ImageSource.gallery, isVideo: false);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.videocam),
+                title: const Text('Video'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _sendMedia(ImageSource.gallery, isVideo: true);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.insert_drive_file),
+                title: const Text('Document'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _sendDocument();
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

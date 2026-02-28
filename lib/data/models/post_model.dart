@@ -9,6 +9,7 @@ class Post {
   final String content;
   final String? imageUrl;
   final String? videoUrl;
+  final List<PostMedia> media;
   final String? googleMapsLink;
   final List<String> likes;
   final List<Comment> comments;
@@ -24,6 +25,7 @@ class Post {
     required this.content,
     this.imageUrl,
     this.videoUrl,
+    required this.media,
     this.googleMapsLink,
     required this.likes,
     required this.comments,
@@ -33,6 +35,17 @@ class Post {
 
   factory Post.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    final imageUrl = _nullableStringFromDynamic(data['imageUrl']);
+    final videoUrl = _nullableStringFromDynamic(data['videoUrl']);
+    final media = _mediaListFromDynamic(data['media']);
+    if (media.isEmpty) {
+      if (imageUrl != null) {
+        media.add(PostMedia(type: PostMediaType.image, url: imageUrl));
+      }
+      if (videoUrl != null) {
+        media.add(PostMedia(type: PostMediaType.video, url: videoUrl));
+      }
+    }
     return Post(
       id: doc.id,
       ownerId: _stringFromDynamic(data['ownerId']),
@@ -42,8 +55,9 @@ class Post {
           : 'Unknown Business',
       businessImageUrl: _nullableStringFromDynamic(data['businessImageUrl']),
       content: _stringFromDynamic(data['content']),
-      imageUrl: _nullableStringFromDynamic(data['imageUrl']),
-      videoUrl: _nullableStringFromDynamic(data['videoUrl']),
+      imageUrl: imageUrl,
+      videoUrl: videoUrl,
+      media: media,
       googleMapsLink: _nullableStringFromDynamic(data['googleMapsLink']),
       likes: _stringListFromDynamic(data['likes']),
       comments: (data['comments'] is List)
@@ -63,6 +77,7 @@ class Post {
       'content': content,
       'imageUrl': imageUrl,
       'videoUrl': videoUrl,
+      'media': media.map((m) => m.toMap()).toList(),
       'googleMapsLink': googleMapsLink,
       'likes': likes,
       'comments': comments.map((comment) => comment.toMap()).toList(),
@@ -108,6 +123,32 @@ class Comment {
   }
 }
 
+enum PostMediaType { image, video }
+
+class PostMedia {
+  final PostMediaType type;
+  final String url;
+
+  const PostMedia({required this.type, required this.url});
+
+  bool get isVideo => type == PostMediaType.video;
+
+  factory PostMedia.fromMap(Map<String, dynamic> map) {
+    final typeValue = _stringFromDynamic(map['type']).toLowerCase();
+    return PostMedia(
+      type: typeValue == 'video' ? PostMediaType.video : PostMediaType.image,
+      url: _stringFromDynamic(map['url']),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'type': type == PostMediaType.video ? 'video' : 'image',
+      'url': url,
+    };
+  }
+}
+
 // Helper method to safely parse timestamps from various formats
 DateTime _parseTimestamp(dynamic timestamp) {
   if (timestamp is Timestamp) {
@@ -144,6 +185,29 @@ String? _nullableStringFromDynamic(dynamic value) {
 List<String> _stringListFromDynamic(dynamic value) {
   if (value is Iterable) {
     return value.map(_stringFromDynamic).where((s) => s.isNotEmpty).toList();
+  }
+  return [];
+}
+
+List<PostMedia> _mediaListFromDynamic(dynamic value) {
+  if (value is Iterable) {
+    final items = <PostMedia>[];
+    for (final raw in value) {
+      if (raw is Map<String, dynamic>) {
+        final media = PostMedia.fromMap(raw);
+        if (media.url.isNotEmpty) {
+          items.add(media);
+        }
+      } else if (raw is Map) {
+        final media = PostMedia.fromMap(
+          raw.map((key, value) => MapEntry('$key', value)),
+        );
+        if (media.url.isNotEmpty) {
+          items.add(media);
+        }
+      }
+    }
+    return items;
   }
   return [];
 }

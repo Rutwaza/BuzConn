@@ -67,23 +67,6 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             },
           ),
           Positioned(
-            top: 48,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: GestureDetector(
-                onTap: () {
-                  context.go(AppRoutes.login);
-                },
-                child: Image.asset(
-                  'assets/images/app_icon.png',
-                  height: 64,
-                  width: 64,
-                ),
-              ),
-            ),
-          ),
-          Positioned(
             bottom: 100,
             left: 0,
             right: 0,

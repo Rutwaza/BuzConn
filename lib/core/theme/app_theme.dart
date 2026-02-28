@@ -17,7 +17,7 @@ class AppTheme {
     appBarTheme: AppBarTheme(
       backgroundColor: AppColors.white,
       elevation: 0,
-      centerTitle: true,
+      centerTitle: false,
       titleTextStyle: AppTextStyles.h3.copyWith(color: AppColors.black),
       iconTheme: const IconThemeData(color: AppColors.black),
     ),
@@ -123,7 +123,7 @@ class AppTheme {
     appBarTheme: const AppBarTheme(
       backgroundColor: Color(0xAA0A0F1E),
       elevation: 0,
-      centerTitle: true,
+      centerTitle: false,
       iconTheme: IconThemeData(color: Color(0xFF9AF7FF)),
       titleTextStyle: TextStyle(
         color: Color(0xFF9AF7FF),
