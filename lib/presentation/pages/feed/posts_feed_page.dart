@@ -818,14 +818,14 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                   videoUrl = null;
                   if (imageUrl == null) return;
                   mediaUpdate = [
-                    PostMedia(type: PostMediaType.image, url: imageUrl!),
+                    PostMedia(type: PostMediaType.image, url: imageUrl),
                   ];
                 } else if (pickedVideo != null) {
                   videoUrl = await _uploadVideo(pickedVideo!);
                   imageUrl = null;
                   if (videoUrl == null) return;
                   mediaUpdate = [
-                    PostMedia(type: PostMediaType.video, url: videoUrl!),
+                    PostMedia(type: PostMediaType.video, url: videoUrl),
                   ];
                 }
                 final update = <String, dynamic>{

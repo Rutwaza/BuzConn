@@ -50,6 +50,8 @@ dependencies:
   connectivity_plus: ^6.0.5
   record: ^5.2.1
   audioplayers: ^5.2.1
+  google_sign_in: ^6.2.2
+  country_code_picker: ^3.3.0
 
 
   # Maps & Location

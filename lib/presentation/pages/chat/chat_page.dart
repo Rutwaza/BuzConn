@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
@@ -35,6 +36,9 @@ class _ChatPageState extends State<ChatPage> {
   final _controller = TextEditingController();
   final _repo = ChatRepository();
   final _thumbCache = <String, Future<Uint8List?>>{};
+  final _messageKeys = <String, GlobalKey>{};
+  final ScrollController _scrollController = ScrollController();
+  final Map<String, int> _messageIndex = {};
   Map<String, dynamic>? _replyingTo;
   bool _sendingMedia = false;
   String? _lastReadMessageId;
@@ -46,10 +50,12 @@ class _ChatPageState extends State<ChatPage> {
   bool _isRecordingPaused = false;
   bool _isVoicePlaying = false;
   String? _recordedPath;
+  bool _showScrollToBottom = false;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_handleScroll);
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       _repo.setLastRead(chatId: widget.chatId, userId: user.uid);
@@ -64,6 +70,8 @@ class _ChatPageState extends State<ChatPage> {
     _setTyping(false);
     _recorder.dispose();
     _voicePlayer.dispose();
+    _scrollController.removeListener(_handleScroll);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -426,6 +434,42 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ],
               ),
+              if (_showScrollToBottom)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 78,
+                  child: Center(
+                    child: GestureDetector(
+                      onTap: () {
+                        if (_scrollController.hasClients) {
+                          _scrollController.animateTo(
+                            0,
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeOut,
+                          );
+                        }
+                      },
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white10
+                              : Colors.black.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: isDark ? Colors.white24 : Colors.black12,
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.keyboard_arrow_down,
+                          color: isDark ? Colors.white70 : Colors.black54,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         );
@@ -466,9 +510,20 @@ class _ChatPageState extends State<ChatPage> {
             );
           }
         }
+        _messageIndex.clear();
+        for (var i = 0; i < docs.length; i++) {
+          final data = docs[i].data() as Map<String, dynamic>;
+          final id = data['id'] ?? docs[i].id;
+          if (id != null) {
+            _messageIndex[id.toString()] = i;
+          }
+        }
+
         return ListView.builder(
+          controller: _scrollController,
           reverse: true,
           padding: const EdgeInsets.all(12),
+          cacheExtent: 3000,
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final doc = docs[index];
@@ -482,7 +537,9 @@ class _ChatPageState extends State<ChatPage> {
             final createdAt = data['createdAt'] as Timestamp?;
             final replyTo = data['replyTo'] as Map<String, dynamic>?;
             final deleted = data['deleted'] == true;
-            final messageId = data['id'] ?? doc.id;
+            final messageId = (data['id'] ?? doc.id).toString();
+            _messageKeys.putIfAbsent(messageId, () => GlobalKey());
+            final isLinkOnly = _isSingleUrl(text.toString());
 
             Widget content;
             if (deleted) {
@@ -569,7 +626,11 @@ class _ChatPageState extends State<ChatPage> {
                 },
               );
             } else {
-              content = Text(text);
+              content = _buildLinkifiedText(
+                text.toString(),
+                isMe: isMe,
+                isDark: isDark,
+              );
             }
 
             final timeLabel =
@@ -596,152 +657,184 @@ class _ChatPageState extends State<ChatPage> {
             final separatorLabel =
                 currentDate != null ? _formatDay(currentDate) : '';
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (showSeparator && separatorLabel.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: separatorColor,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          separatorLabel,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isDark ? Colors.white70 : Colors.black87,
+            return KeyedSubtree(
+              key: ValueKey(messageId),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (showSeparator && separatorLabel.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: separatorColor,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            separatorLabel,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? Colors.white70 : Colors.black87,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                Align(
-                  alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      if (!isMe)
-                        CircleAvatar(
-                          radius: 14,
-                          backgroundColor: AppColors.primary,
-                          backgroundImage:
-                              senderAvatar != null ? NetworkImage(senderAvatar) : null,
-                          child: senderAvatar == null
-                              ? Text(
-                                  senderName.toString().isNotEmpty
-                                      ? senderName[0].toUpperCase()
-                                      : '?',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                  ),
-                                )
-                              : null,
-                        ),
-                      if (!isMe) const SizedBox(width: 6),
-                      Flexible(
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-                          child: GestureDetector(
-                            onLongPress: () => _showMessageActions(
-                              messageId: messageId,
-                              isMe: isMe,
-                              text: text,
-                              senderName: senderName,
-                              replyTo: replyTo,
-                            ),
-                            child: Container(
-                              margin: const EdgeInsets.symmetric(vertical: 6),
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: isMe ? bubbleMeColor : bubbleOtherColor,
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.05),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
+                  Align(
+                    key: _messageKeys[messageId],
+                    alignment:
+                        isMe ? Alignment.centerRight : Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        if (!isMe)
+                          CircleAvatar(
+                            radius: 14,
+                            backgroundColor: AppColors.primary,
+                            backgroundImage: senderAvatar != null
+                                ? NetworkImage(senderAvatar)
+                                : null,
+                            child: senderAvatar == null
+                                ? Text(
+                                    senderName.toString().isNotEmpty
+                                        ? senderName[0].toUpperCase()
+                                        : '?',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                    ),
+                                  )
+                                : null,
+                          ),
+                        if (!isMe) const SizedBox(width: 6),
+                        Flexible(
+                          child: ConstrainedBox(
+                            constraints:
+                                BoxConstraints(maxWidth: maxBubbleWidth),
+                            child: GestureDetector(
+                              onLongPress: () => _showMessageActions(
+                                messageId: messageId,
+                                isMe: isMe,
+                                text: text,
+                                senderName: senderName,
+                                replyTo: replyTo,
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (!isMe)
-                                    Text(
-                                      senderName,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  if (replyTo != null) ...[
-                                    const SizedBox(height: 6),
-                                    Container(
-                                      padding: const EdgeInsets.all(6),
-                                      decoration: BoxDecoration(
-                                        color: isDark ? Colors.white12 : Colors.black12,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        'Replying to ${replyTo['senderName'] ?? 'message'}: ${replyTo['text'] ?? ''}',
-                                        style: const TextStyle(fontSize: 11),
-                                        softWrap: true,
-                                      ),
-                                    ),
-                                  ],
-                                  const SizedBox(height: 4),
-                                  DefaultTextStyle(
-                                    style: bubbleTextStyle,
-                                    child: _wrapMediaContent(
-                                      content,
-                                      mediaUrl,
-                                      mediaType,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  if (timeLabel.isNotEmpty)
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          timeLabel,
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: isMe
-                                                ? Colors.white70
-                                                : (isDark ? Colors.white70 : AppColors.grey),
-                                          ),
-                                        ),
-                                        if (isMe) ...[
-                                          const SizedBox(width: 6),
-                                          Icon(
-                                            isSeen ? Icons.done_all : Icons.done,
-                                            size: 12,
-                                            color: isSeen
-                                                ? Colors.lightBlueAccent
-                                                : Colors.white70,
+                              child: Container(
+                                margin:
+                                    const EdgeInsets.symmetric(vertical: 6),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: isLinkOnly
+                                      ? Colors.transparent
+                                      : (isMe
+                                          ? bubbleMeColor
+                                          : bubbleOtherColor),
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: isLinkOnly
+                                      ? const []
+                                      : [
+                                          BoxShadow(
+                                            color:
+                                                Colors.black.withOpacity(0.05),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 2),
                                           ),
                                         ],
-                                      ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (!isMe)
+                                      Text(
+                                        senderName,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    if (replyTo != null) ...[
+                                      const SizedBox(height: 6),
+                                      InkWell(
+                                        onTap: () {
+                                          final replyId =
+                                              replyTo['messageId'] as String?;
+                                          if (replyId != null) {
+                                            _scrollToMessage(replyId);
+                                          }
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: BoxDecoration(
+                                            color: isDark
+                                                ? Colors.white12
+                                                : Colors.black12,
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            'Replying to ${replyTo['senderName'] ?? 'message'}: ${replyTo['text'] ?? ''}',
+                                            style:
+                                                const TextStyle(fontSize: 11),
+                                            softWrap: true,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 4),
+                                    DefaultTextStyle(
+                                      style: bubbleTextStyle,
+                                      child: _wrapMediaContent(
+                                        content,
+                                        mediaUrl,
+                                        mediaType,
+                                      ),
                                     ),
-                                ],
+                                    const SizedBox(height: 4),
+                                    if (timeLabel.isNotEmpty)
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            timeLabel,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: isMe
+                                                  ? Colors.white70
+                                                  : (isDark
+                                                      ? Colors.white70
+                                                      : AppColors.grey),
+                                            ),
+                                          ),
+                                          if (isMe) ...[
+                                            const SizedBox(width: 6),
+                                            Icon(
+                                              isSeen
+                                                  ? Icons.done_all
+                                                  : Icons.done,
+                                              size: 12,
+                                              color: isSeen
+                                                  ? Colors.lightBlueAccent
+                                                  : Colors.white70,
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             );
           },
         );
@@ -1046,6 +1139,120 @@ class _ChatPageState extends State<ChatPage> {
         );
       },
     );
+  }
+
+  Future<void> _scrollToMessage(String messageId) async {
+    final key = _messageKeys[messageId];
+    final ctx = key?.currentContext;
+    if (ctx != null) {
+      await Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 300),
+        alignment: 0.5,
+        curve: Curves.easeOut,
+      );
+      return;
+    }
+
+    final index = _messageIndex[messageId];
+    if (index == null || !_scrollController.hasClients) return;
+    final approxOffset = (index * 84.0)
+        .clamp(0.0, _scrollController.position.maxScrollExtent);
+    await _scrollController.animateTo(
+      approxOffset,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+    await Future.delayed(const Duration(milliseconds: 60));
+    final ctxAfter = _messageKeys[messageId]?.currentContext;
+    if (ctxAfter != null) {
+      await Scrollable.ensureVisible(
+        ctxAfter,
+        duration: const Duration(milliseconds: 250),
+        alignment: 0.5,
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  Widget _buildLinkifiedText(
+    String text, {
+    required bool isMe,
+    required bool isDark,
+  }) {
+    final linkStyle = TextStyle(
+      color: isMe ? Colors.lightBlueAccent : Colors.blue,
+      decoration: TextDecoration.none,
+    );
+    final normalStyle = TextStyle(
+      color: isMe ? Colors.white : (isDark ? Colors.white : Colors.black87),
+    );
+
+    final spans = <TextSpan>[];
+    final regex = RegExp(r'(https?:\/\/[^\s]+)');
+    int start = 0;
+    for (final match in regex.allMatches(text)) {
+      if (match.start > start) {
+        spans.add(TextSpan(
+          text: text.substring(start, match.start),
+          style: normalStyle,
+        ));
+      }
+      final url = match.group(0)!;
+      spans.add(TextSpan(
+        text: url,
+        style: linkStyle,
+        recognizer: TapGestureRecognizer()
+          ..onTap = () => _openLink(url),
+      ));
+      start = match.end;
+    }
+    if (start < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(start),
+        style: normalStyle,
+      ));
+    }
+    if (spans.isEmpty) {
+      return Text(text, style: normalStyle);
+    }
+    return RichText(text: TextSpan(children: spans));
+  }
+
+  bool _isSingleUrl(String text) {
+    final trimmed = text.trim();
+    final regex = RegExp(r'^(https?:\/\/[^\s]+)$');
+    return regex.hasMatch(trimmed);
+  }
+
+  void _handleScroll() {
+    if (!_scrollController.hasClients) return;
+    final shouldShow = _scrollController.offset > 220;
+    if (shouldShow != _showScrollToBottom) {
+      setState(() {
+        _showScrollToBottom = shouldShow;
+      });
+    }
+  }
+
+  Future<void> _openLink(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    if (await canLaunchUrl(uri)) {
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+      return;
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No app found to open this link.')),
+      );
+    }
   }
 
   Future<void> _showMessageActions({
