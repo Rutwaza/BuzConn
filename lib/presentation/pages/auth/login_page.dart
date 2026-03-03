@@ -39,11 +39,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
       try {
         // Firebase authentication
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
+        final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
 
+        final user = credential.user;
+        if (user != null) {
+          try {
+            await _ensureUserDocument(user);
+          } catch (_) {
+            // Do not block login if user doc creation fails.
+          }
+        }
+
+        if (!mounted) return;
         setState(() {
           _isLoading = false;
         });
@@ -51,9 +61,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         // Navigate to feed after successful login
         context.go(AppRoutes.feed);
       } on FirebaseAuthException catch (e) {
-        setState(() {
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
 
         String errorMessage = 'An error occurred';
         if (e.code == 'user-not-found') {
@@ -62,19 +74,36 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           errorMessage = 'Wrong password provided.';
         } else if (e.code == 'invalid-email') {
           errorMessage = 'Invalid email address.';
+        } else if (e.code == 'invalid-credential') {
+          errorMessage = 'Invalid credentials.';
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
-        );
+        if (FirebaseAuth.instance.currentUser != null && mounted) {
+          // Auth succeeded but an exception was raised after; proceed.
+          context.go(AppRoutes.feed);
+          return;
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(errorMessage)),
+          );
+        }
       } catch (e) {
-        setState(() {
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('An unexpected error occurred')),
-        );
+        if (FirebaseAuth.instance.currentUser != null && mounted) {
+          context.go(AppRoutes.feed);
+          return;
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Unexpected error: $e')),
+          );
+        }
       }
     }
   }

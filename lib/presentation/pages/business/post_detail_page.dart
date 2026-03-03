@@ -17,7 +17,6 @@ class PostDetailPage extends StatefulWidget {
 
 class _PostDetailPageState extends State<PostDetailPage> {
   late final PageController _controller;
-  int _index = 0;
 
   @override
   void initState() {
@@ -78,7 +77,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
                     controller: _controller,
                     itemCount: media.length,
                     physics: const PageScrollPhysics(),
-                    onPageChanged: (value) => setState(() => _index = value),
                     itemBuilder: (context, index) {
                       final item = media[index];
                       if (!item.isVideo) {

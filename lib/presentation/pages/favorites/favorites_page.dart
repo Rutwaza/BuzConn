@@ -1,11 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-
-import '../../../core/constants/app_constants.dart';
+import 'dart:typed_data';
+import 'package:video_thumbnail/video_thumbnail.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
+import '../feed/post_detail_page.dart';
 
 class FavoritesPage extends StatelessWidget {
   const FavoritesPage({super.key});
@@ -67,48 +67,97 @@ class FavoritesPage extends StatelessWidget {
   }
 
   Widget _postCard(BuildContext context, Post post, String userId) {
+    final media = post.media;
+    String? previewUrl;
+    bool isVideo = false;
+    if (media.isNotEmpty) {
+      previewUrl = media.first.url;
+      isVideo = media.first.isVideo;
+    } else if (post.imageUrl != null && post.imageUrl!.isNotEmpty) {
+      previewUrl = post.imageUrl;
+    } else if (post.videoUrl != null && post.videoUrl!.isNotEmpty) {
+      previewUrl = post.videoUrl;
+      isVideo = true;
+    }
+
     return InkWell(
       onTap: () {
-        context.push('${AppRoutes.feed}?postId=${post.id}');
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => PostDetailPage(postId: post.id),
+          ),
+        );
       },
       borderRadius: BorderRadius.circular(12),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: AppColors.primary,
-                child: Text(
-                  (post.businessName.isNotEmpty ? post.businessName[0] : '?')
-                      .toUpperCase(),
-                  style: const TextStyle(color: Colors.white),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      post.businessName,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      post.content,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.bookmark_remove),
-                onPressed: () => _unsave(userId, post.id),
-              ),
-            ],
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFF171B24)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Colors.white10
+                : Colors.black12,
           ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: AppColors.lightGrey,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: previewUrl == null
+                  ? const Icon(Icons.image, color: AppColors.grey)
+                  : ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: isVideo
+                          ? _VideoThumb(url: previewUrl)
+                          : Image.network(
+                              previewUrl,
+                              fit: BoxFit.cover,
+                            ),
+                    ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    post.content.isEmpty ? 'Post' : post.content,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Likes: ${post.likes.length}  Comments: ${post.comments.length}',
+                    style: TextStyle(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white70
+                          : AppColors.grey,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              _formatDate(post.createdAt),
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.bookmark_remove),
+              onPressed: () => _unsave(userId, post.id),
+            ),
+          ],
         ),
       ),
     );
@@ -154,5 +203,46 @@ class FavoritesPage extends StatelessWidget {
         .collection('favorites')
         .doc(postId)
         .delete();
+  }
+
+  String _formatDate(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '$month/$day';
+  }
+}
+
+class _VideoThumb extends StatelessWidget {
+  const _VideoThumb({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List?>(
+      future: VideoThumbnail.thumbnailData(
+        video: url,
+        imageFormat: ImageFormat.JPEG,
+        maxWidth: 240,
+        quality: 75,
+      ),
+      builder: (context, snap) {
+        final bytes = snap.data;
+        if (bytes == null) {
+          return const Center(
+            child: Icon(Icons.play_circle_fill, color: Colors.white70),
+          );
+        }
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.memory(bytes, fit: BoxFit.cover),
+            const Center(
+              child: Icon(Icons.play_circle_fill, color: Colors.white70),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

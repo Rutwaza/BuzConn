@@ -16,6 +16,8 @@ class ChatListPage extends StatefulWidget {
 
 class _ChatListPageState extends State<ChatListPage> {
   bool _showHidden = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   Future<Map<String, dynamic>> _resolveChatMeta(
     Map<String, dynamic> data,
@@ -102,6 +104,12 @@ class _ChatListPageState extends State<ChatListPage> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -127,107 +135,175 @@ class _ChatListPageState extends State<ChatListPage> {
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: repo.userChatsStream(user.uid),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final docs = snapshot.data?.docs ?? [];
-          if (docs.isEmpty) {
-            return const Center(child: Text('No conversations yet.'));
-          }
-
-          final filteredDocs = docs.where((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final hiddenFor =
-                (data['hiddenFor'] as List?)?.cast<String>() ?? [];
-            return _showHidden ? hiddenFor.contains(user.uid) : !hiddenFor.contains(user.uid);
-          }).toList();
-
-          if (filteredDocs.isEmpty) {
-            return Center(
-              child: Text(
-                _showHidden ? 'No hidden chats.' : 'No conversations yet.',
-              ),
-            );
-          }
-
-          final sortedDocs = [...filteredDocs]
-            ..sort((a, b) {
-              final aData = a.data() as Map<String, dynamic>;
-              final bData = b.data() as Map<String, dynamic>;
-              final aTs = aData['lastMessageAt'] as Timestamp?;
-              final bTs = bData['lastMessageAt'] as Timestamp?;
-              final aMillis = aTs?.millisecondsSinceEpoch ?? 0;
-              final bMillis = bTs?.millisecondsSinceEpoch ?? 0;
-              return bMillis.compareTo(aMillis);
-            });
-
-          return ListView.builder(
-            itemCount: sortedDocs.length,
-            itemBuilder: (context, index) {
-              final data = sortedDocs[index].data() as Map<String, dynamic>;
-              final chatId = sortedDocs[index].id;
-              final lastMessage = data['lastMessage'] ?? '';
-              final lastMessageAt = data['lastMessageAt'] as Timestamp?;
-              final lastReadAt = data['lastReadAt'] as Map<String, dynamic>? ?? {};
-              final lastReadForUser = lastReadAt[user.uid] as Timestamp?;
-              final unread = lastMessageAt != null &&
-                  (lastReadForUser == null ||
-                      lastMessageAt.toDate().isAfter(lastReadForUser.toDate()));
-
-              return FutureBuilder<Map<String, dynamic>>(
-                future: _resolveChatMeta(data, user.uid),
-                builder: (context, metaSnap) {
-                  final meta = metaSnap.data ?? {};
-                  final title = meta['title'] as String? ?? 'Chat';
-                  final avatarUrl = meta['avatarUrl'] as String?;
-
-                  return Column(
-                    children: [
-                      GestureDetector(
-                        onLongPress: () => _showChatActions(
-                          chatId: chatId,
-                          isHidden: (data['hiddenFor'] as List?)
-                                  ?.cast<String>()
-                                  .contains(user.uid) ??
-                              false,
-                        ),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: AppColors.primary,
-                            backgroundImage:
-                                avatarUrl != null ? NetworkImage(avatarUrl) : null,
-                            child: avatarUrl == null
-                                ? Text(
-                                    title.toString().isNotEmpty
-                                        ? title[0].toUpperCase()
-                                        : '?',
-                                    style: const TextStyle(color: Colors.white),
-                                  )
-                                : null,
-                          ),
-                          title: Text(title),
-                          subtitle: Text(lastMessage,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                          trailing: unread
-                              ? const Icon(Icons.circle,
-                                  color: Colors.red, size: 10)
-                              : null,
-                          onTap: () {
-                            context.push(AppRoutes.chatDetailPath(chatId));
-                          },
-                        ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value.trim().toLowerCase();
+                });
+              },
+              decoration: InputDecoration(
+                hintText: 'Search chats...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _searchQuery = '';
+                          });
+                        },
                       ),
-                      const Divider(height: 1),
-                    ],
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: repo.userChatsStream(user.uid),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final docs = snapshot.data?.docs ?? [];
+                if (docs.isEmpty) {
+                  return const Center(child: Text('No conversations yet.'));
+                }
+
+                final filteredDocs = docs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final hiddenFor =
+                      (data['hiddenFor'] as List?)?.cast<String>() ?? [];
+                  if (_showHidden
+                      ? !hiddenFor.contains(user.uid)
+                      : hiddenFor.contains(user.uid)) {
+                    return false;
+                  }
+                  if (_searchQuery.isEmpty) return true;
+                  final lastMessage = (data['lastMessage'] ?? '').toString();
+                  final aName = (data['userAName'] ?? '').toString();
+                  final bName = (data['userBName'] ?? '').toString();
+                  final businessName = (data['businessName'] ?? '').toString();
+                  final clientName = (data['clientName'] ?? '').toString();
+                  final haystack =
+                      '$lastMessage $aName $bName $businessName $clientName'
+                          .toLowerCase();
+                  return haystack.contains(_searchQuery);
+                }).toList();
+
+                if (filteredDocs.isEmpty) {
+                  return Center(
+                    child: Text(
+                      _searchQuery.isNotEmpty
+                          ? 'No results for "$_searchQuery"'
+                          : (_showHidden
+                              ? 'No hidden chats.'
+                              : 'No conversations yet.'),
+                    ),
                   );
-                },
-              );
-            },
-          );
-        },
+                }
+
+                final sortedDocs = [...filteredDocs]
+                  ..sort((a, b) {
+                    final aData = a.data() as Map<String, dynamic>;
+                    final bData = b.data() as Map<String, dynamic>;
+                    final aTs = aData['lastMessageAt'] as Timestamp?;
+                    final bTs = bData['lastMessageAt'] as Timestamp?;
+                    final aMillis = aTs?.millisecondsSinceEpoch ?? 0;
+                    final bMillis = bTs?.millisecondsSinceEpoch ?? 0;
+                    return bMillis.compareTo(aMillis);
+                  });
+
+                return ListView.builder(
+                  itemCount: sortedDocs.length,
+                  itemBuilder: (context, index) {
+                    final data = sortedDocs[index].data() as Map<String, dynamic>;
+                    final chatId = sortedDocs[index].id;
+                    final lastMessage = data['lastMessage'] ?? '';
+                    final lastMessageAt = data['lastMessageAt'] as Timestamp?;
+                    final lastReadAt =
+                        data['lastReadAt'] as Map<String, dynamic>? ?? {};
+                    final lastReadForUser = lastReadAt[user.uid] as Timestamp?;
+                    final unread = lastMessageAt != null &&
+                        (lastReadForUser == null ||
+                            lastMessageAt.toDate().isAfter(
+                                  lastReadForUser.toDate(),
+                                ));
+
+                    return FutureBuilder<Map<String, dynamic>>(
+                      future: _resolveChatMeta(data, user.uid),
+                      builder: (context, metaSnap) {
+                        final meta = metaSnap.data ?? {};
+                        final title = meta['title'] as String? ?? 'Chat';
+                        final avatarUrl = meta['avatarUrl'] as String?;
+                        if (_searchQuery.isNotEmpty &&
+                            !title.toLowerCase().contains(_searchQuery) &&
+                            !lastMessage
+                                .toString()
+                                .toLowerCase()
+                                .contains(_searchQuery)) {
+                          return const SizedBox.shrink();
+                        }
+
+                        return Column(
+                          children: [
+                            GestureDetector(
+                              onLongPress: () => _showChatActions(
+                                chatId: chatId,
+                                isHidden: (data['hiddenFor'] as List?)
+                                        ?.cast<String>()
+                                        .contains(user.uid) ??
+                                    false,
+                              ),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: AppColors.primary,
+                                  backgroundImage: avatarUrl != null
+                                      ? NetworkImage(avatarUrl)
+                                      : null,
+                                  child: avatarUrl == null
+                                      ? Text(
+                                          title.toString().isNotEmpty
+                                              ? title[0].toUpperCase()
+                                              : '?',
+                                          style: const TextStyle(
+                                              color: Colors.white),
+                                        )
+                                      : null,
+                                ),
+                                title: Text(title),
+                                subtitle: Text(lastMessage,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                                trailing: unread
+                                    ? const Icon(Icons.circle,
+                                        color: Colors.red, size: 10)
+                                    : null,
+                                onTap: () {
+                                  context
+                                      .push(AppRoutes.chatDetailPath(chatId));
+                                },
+                              ),
+                            ),
+                            const Divider(height: 1),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

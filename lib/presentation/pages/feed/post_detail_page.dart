@@ -36,7 +36,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
   void initState() {
     super.initState();
     _mediaIndex = widget.initialMediaIndex;
-    _pageController = PageController(initialPage: _mediaIndex);
+    _pageController = PageController(
+      initialPage: _mediaIndex,
+      keepPage: true,
+    );
   }
 
   @override
@@ -60,6 +63,19 @@ class _PostDetailPageState extends State<PostDetailPage> {
         controller.play();
       }
     });
+  }
+
+  void _handleMediaIndexChange(List<PostMedia> media, int index) {
+    if (media.isEmpty) return;
+    final current = media[index.clamp(0, media.length - 1)];
+    if (current.isVideo) {
+      if (_currentVideoUrl != current.url) {
+        _initVideo(current.url);
+      }
+    } else {
+      _videoController?.pause();
+      _currentVideoUrl = null;
+    }
   }
 
   Future<void> _addComment(String postId) async {
@@ -107,6 +123,102 @@ class _PostDetailPageState extends State<PostDetailPage> {
     return '$minutes:$seconds';
   }
 
+  Widget _buildVideoPage(PostMedia item, int index) {
+    final isActive = index == _mediaIndex;
+    if (!isActive) {
+      return Container(
+        color: AppColors.lightGrey,
+        child: const Center(
+          child: Icon(Icons.play_circle_fill, size: 48),
+        ),
+      );
+    }
+    return _videoController != null && _videoController!.value.isInitialized
+        ? Column(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FittedBox(
+                    fit: BoxFit.cover,
+                    child: SizedBox(
+                      width: _videoController!.value.size.width,
+                      height: _videoController!.value.size.height,
+                      child: VideoPlayer(_videoController!),
+                    ),
+                  ),
+                ),
+              ),
+              VideoProgressIndicator(
+                _videoController!,
+                allowScrubbing: true,
+                colors: VideoProgressColors(
+                  playedColor: Theme.of(context).colorScheme.primary,
+                  bufferedColor: Colors.white24,
+                  backgroundColor: Colors.white10,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 6,
+                ),
+                child: Row(
+                  children: [
+                    ValueListenableBuilder(
+                      valueListenable: _videoController!,
+                      builder: (context, value, _) {
+                        final isPlaying = value.isPlaying;
+                        return IconButton(
+                          icon: Icon(
+                            isPlaying ? Icons.pause : Icons.play_arrow,
+                          ),
+                          onPressed: () {
+                            isPlaying
+                                ? _videoController!.pause()
+                                : _videoController!.play();
+                          },
+                        );
+                      },
+                    ),
+                    ValueListenableBuilder(
+                      valueListenable: _videoController!,
+                      builder: (context, value, _) {
+                        return Text(
+                          '${_formatDuration(value.position)} / ${_formatDuration(value.duration)}',
+                          style: const TextStyle(fontSize: 12),
+                        );
+                      },
+                    ),
+                    const Spacer(),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _isMuted,
+                      builder: (context, muted, _) {
+                        return IconButton(
+                          icon: Icon(
+                            muted ? Icons.volume_off : Icons.volume_up,
+                          ),
+                          onPressed: () {
+                            final next = !muted;
+                            _isMuted.value = next;
+                            _videoController!.setVolume(next ? 0 : 1);
+                          },
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          )
+        : Container(
+            color: AppColors.lightGrey,
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -131,13 +243,11 @@ class _PostDetailPageState extends State<PostDetailPage> {
               _pageController.jumpToPage(0);
             });
           }
-          if (media.isNotEmpty) {
-            final current = media[_mediaIndex.clamp(0, media.length - 1)];
-            if (current.isVideo && _currentVideoUrl != current.url) {
-              _initVideo(current.url);
-            } else if (!current.isVideo) {
-              _videoController?.pause();
-            }
+          if (media.isNotEmpty && _currentVideoUrl == null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              _handleMediaIndexChange(media, _mediaIndex);
+            });
           }
 
           final isLiked =
@@ -165,125 +275,28 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         child: SizedBox(
                           height: 300,
                           child: PageView.builder(
+                            key: PageStorageKey(
+                              'post_media_${widget.postId}',
+                            ),
                             controller: _pageController,
                             itemCount: media.length,
                             physics: const PageScrollPhysics(),
                             onPageChanged: (value) {
                               setState(() => _mediaIndex = value);
+                              _handleMediaIndexChange(media, value);
                             },
                             itemBuilder: (context, index) {
                               final item = media[index];
-                              if (!item.isVideo) {
-                                return Image.network(
-                                  item.url,
-                                  width: double.infinity,
-                                  fit: BoxFit.cover,
-                                );
-                              }
-                              final isActive = index == _mediaIndex;
-                              if (!isActive) {
-                                return Container(
-                                  color: AppColors.lightGrey,
-                                  child: const Center(
-                                    child: Icon(Icons.play_circle_fill, size: 48),
-                                  ),
-                                );
-                              }
-                              return _videoController != null &&
-                                      _videoController!.value.isInitialized
-                                  ? Column(
-                                      children: [
-                                        Expanded(
-                                          child: SizedBox(
-                                            width: double.infinity,
-                                            child: FittedBox(
-                                              fit: BoxFit.cover,
-                                              child: SizedBox(
-                                                width: _videoController!
-                                                    .value.size.width,
-                                                height: _videoController!
-                                                    .value.size.height,
-                                                child: VideoPlayer(_videoController!),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        VideoProgressIndicator(
-                                          _videoController!,
-                                          allowScrubbing: true,
-                                          colors: VideoProgressColors(
-                                            playedColor: Theme.of(context)
-                                                .colorScheme
-                                                .primary,
-                                            bufferedColor: Colors.white24,
-                                            backgroundColor: Colors.white10,
-                                          ),
-                                        ),
-                                        Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 6,
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              ValueListenableBuilder(
-                                                valueListenable: _videoController!,
-                                                builder: (context, value, _) {
-                                                  final isPlaying = value.isPlaying;
-                                                  return IconButton(
-                                                    icon: Icon(isPlaying
-                                                        ? Icons.pause
-                                                        : Icons.play_arrow),
-                                                    onPressed: () {
-                                                      isPlaying
-                                                          ? _videoController!
-                                                              .pause()
-                                                          : _videoController!
-                                                              .play();
-                                                    },
-                                                  );
-                                                },
-                                              ),
-                                              ValueListenableBuilder(
-                                                valueListenable: _videoController!,
-                                                builder: (context, value, _) {
-                                                  return Text(
-                                                    '${_formatDuration(value.position)} / ${_formatDuration(value.duration)}',
-                                                    style: const TextStyle(
-                                                      fontSize: 12,
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                              const Spacer(),
-                                              ValueListenableBuilder<bool>(
-                                                valueListenable: _isMuted,
-                                                builder: (context, muted, _) {
-                                                  return IconButton(
-                                                    icon: Icon(muted
-                                                        ? Icons.volume_off
-                                                        : Icons.volume_up),
-                                                    onPressed: () {
-                                                      final next = !muted;
-                                                      _isMuted.value = next;
-                                                      _videoController!
-                                                          .setVolume(
-                                                              next ? 0 : 1);
-                                                    },
-                                                  );
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  : Container(
-                                      color: AppColors.lightGrey,
-                                      child: const Center(
-                                        child: CircularProgressIndicator(),
-                                      ),
-                                    );
+                              return KeyedSubtree(
+                                key: ValueKey(item.url),
+                                child: !item.isVideo
+                                    ? Image.network(
+                                        item.url,
+                                        width: double.infinity,
+                                        fit: BoxFit.cover,
+                                      )
+                                    : _buildVideoPage(item, index),
+                              );
                             },
                           ),
                         ),

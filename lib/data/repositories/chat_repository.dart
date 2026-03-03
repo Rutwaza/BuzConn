@@ -139,13 +139,17 @@ class ChatRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    await _createMessageNotifications(
-      chatId: chatId,
-      senderId: senderId,
-      senderName: senderName,
-      senderAvatar: senderAvatar,
-      previewText: mediaUrl != null ? '[media]' : text,
-    );
+    try {
+      await _createMessageNotifications(
+        chatId: chatId,
+        senderId: senderId,
+        senderName: senderName,
+        senderAvatar: senderAvatar,
+        previewText: mediaUrl != null ? '[media]' : text,
+      );
+    } catch (_) {
+      // Notification failures should not block sending messages.
+    }
   }
 
   Future<void> _createMessageNotifications({
@@ -223,6 +227,28 @@ class ChatRepository {
   Future<void> setUserLastSeen(String userId) async {
     await _firestore.collection('users').doc(userId).update({
       'lastSeen': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> clearChatMessages(String chatId) async {
+    final messagesRef = _firestore
+        .collection('chats')
+        .doc(chatId)
+        .collection('messages');
+    while (true) {
+      final snap = await messagesRef.limit(200).get();
+      if (snap.docs.isEmpty) break;
+      final batch = _firestore.batch();
+      for (final doc in snap.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+    await _firestore.collection('chats').doc(chatId).update({
+      'lastMessage': '',
+      'lastMessageAt': null,
+      'lastMessageSenderId': null,
+      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 

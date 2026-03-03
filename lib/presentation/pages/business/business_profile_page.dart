@@ -61,15 +61,11 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
           final business = raw as Map<String, dynamic>;
           final name = business['name'] ?? 'Business';
           final imageUrl = business['imageUrl'] as String?;
-          final description = business['description'] ?? '';
           final category = business['category'] ?? '';
           final phone = business['phone'] ?? '';
           // final email = business['email'] ?? '';
-          final mapsLink = business['googleMapsLink'] ?? '';
           final isVerified = business['isVerified'] == true;
           final ownerId = business['ownerId'] ?? '';
-          final rating = (business['rating'] ?? 0).toDouble();
-          final starCount = rating.round();
 
           return CustomScrollView(
             slivers: [

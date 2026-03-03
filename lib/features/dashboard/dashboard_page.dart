@@ -20,7 +20,6 @@ class DashboardPage extends ConsumerStatefulWidget {
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
   User? _currentUser;
-  Map<String, dynamic>? _userData;
 
   @override
   void initState() {
@@ -39,7 +38,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       if (userDoc.exists) {
         final userData = userDoc.data() as Map<String, dynamic>;
         setState(() {
-          _userData = userData;
         });
         await ThemeModeService.instance.loadFromUser();
 
@@ -341,9 +339,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           icon: Icons.analytics,
           title: 'Analytics',
           onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Analytics coming soon!')),
-            );
+            context.push(AppRoutes.analytics);
           },
         ),
       ];

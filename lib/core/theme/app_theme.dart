@@ -18,6 +18,7 @@ class AppTheme {
       backgroundColor: AppColors.white,
       elevation: 0,
       centerTitle: false,
+      titleSpacing: 0,
       titleTextStyle: AppTextStyles.h3.copyWith(color: AppColors.black),
       iconTheme: const IconThemeData(color: AppColors.black),
     ),
@@ -106,6 +107,10 @@ class AppTheme {
     brightness: Brightness.dark,
     primaryColor: AppColors.primaryLight,
     scaffoldBackgroundColor: Colors.transparent,
+    appBarTheme: const AppBarTheme(
+      centerTitle: false,
+      titleSpacing: 0,
+    ),
   );
 
   static ThemeData cyberpunkTheme = ThemeData(
@@ -124,6 +129,7 @@ class AppTheme {
       backgroundColor: Color(0xAA0A0F1E),
       elevation: 0,
       centerTitle: false,
+      titleSpacing: 0,
       iconTheme: IconThemeData(color: Color(0xFF9AF7FF)),
       titleTextStyle: TextStyle(
         color: Color(0xFF9AF7FF),

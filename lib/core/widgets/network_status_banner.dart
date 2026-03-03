@@ -96,7 +96,6 @@ class _NetworkStatusBannerState extends State<NetworkStatusBanner> {
       await response.drain();
       client.close(force: true);
       sw.stop();
-      final ms = sw.elapsedMilliseconds;
       return _NetStatus.online;
     } catch (_) {
       return _NetStatus.offline;

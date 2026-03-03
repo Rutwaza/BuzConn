@@ -48,6 +48,7 @@ class AppRoutes {
   static const String chats = '/chats';
   static const String chatDetail = '/chats/:id';
   static const String favorites = '/favorites';
+  static const String analytics = '/analytics';
 
   static String businessProfilePath(String id) => '/business/$id';
   static String clientProfilePath(String id) => '/user/$id';

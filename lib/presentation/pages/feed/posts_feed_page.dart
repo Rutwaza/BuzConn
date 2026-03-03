@@ -36,7 +36,6 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   final GlobalKey _searchKey = GlobalKey();
   final ScrollController _scrollController = ScrollController();
   final Map<String, int> _mediaIndexByPostId = {};
-  String? _commentingOnPostId;
   bool _markingNotifications = false;
   final ValueNotifier<Timestamp?> _badgeClearedAt =
       ValueNotifier<Timestamp?>(null);
@@ -55,6 +54,45 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     super.dispose();
   }
 
+  void _scrollToPost(
+    String postId,
+    List<Post> visiblePosts,
+    Map<String, GlobalObjectKey> postKeys,
+  ) {
+    final index = visiblePosts.indexWhere((p) => p.id == postId);
+    if (index < 0) return;
+    final key = postKeys[postId];
+    final ctx = key?.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 300),
+        alignment: 0.1,
+      );
+      return;
+    }
+    if (_scrollController.hasClients && visiblePosts.length > 1) {
+      final ratio = index / (visiblePosts.length - 1);
+      final target =
+          _scrollController.position.maxScrollExtent * ratio;
+      _scrollController.animateTo(
+        target.clamp(0, _scrollController.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOut,
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctxAfter = postKeys[postId]?.currentContext;
+        if (ctxAfter != null) {
+          Scrollable.ensureVisible(
+            ctxAfter,
+            duration: const Duration(milliseconds: 250),
+            alignment: 0.1,
+          );
+        }
+      });
+    }
+  }
+
   void _onSearchChanged(String value) {
     _pendingQuery = value;
   }
@@ -68,10 +106,6 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   }
 
   void _showCommentDialog(String postId) {
-    setState(() {
-      _commentingOnPostId = postId;
-    });
-
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -89,9 +123,6 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
             onPressed: () {
               Navigator.of(context).pop();
               _commentController.clear();
-              setState(() {
-                _commentingOnPostId = null;
-              });
             },
             child: const Text('Cancel'),
           ),
@@ -104,9 +135,6 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 );
                 Navigator.of(context).pop();
                 _commentController.clear();
-                setState(() {
-                  _commentingOnPostId = null;
-                });
               }
             },
             child: const Text('Comment'),
@@ -321,17 +349,11 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     itemBuilder: (context, index) {
                       final post = likedList[index];
                       return InkWell(
-                        onTap: () {
-                          final key = postKeys[post.id];
-                          final ctx = key?.currentContext;
-                          if (ctx != null) {
-                            Scrollable.ensureVisible(
-                              ctx,
-                              duration: const Duration(milliseconds: 300),
-                              alignment: 0.1,
-                            );
-                          }
-                        },
+                        onTap: () => _scrollToPost(
+                          post.id,
+                          filtered,
+                          postKeys,
+                        ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -930,22 +952,6 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     }
   }
 
-  Widget _mediaActionTile({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    bool disabled = false,
-  }) {
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon),
-      title: Text(label),
-      enabled: !disabled,
-      onTap: disabled ? null : onTap,
-    );
-  }
-
   Future<void> _startChat(Post post) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -980,8 +986,12 @@ class _AutoPlayVideoPreview extends StatefulWidget {
 }
 
 class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
+  static final ValueNotifier<bool> _globalMuted =
+      ValueNotifier<bool>(true);
+
   VideoPlayerController? _controller;
   bool _initialized = false;
+  bool _isMuted = true;
 
   @override
   void initState() {
@@ -990,14 +1000,32 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
       ..initialize().then((_) {
         if (mounted) {
           setState(() => _initialized = true);
+          _controller?.setVolume(_globalMuted.value ? 0 : 1);
         }
       });
+    _isMuted = _globalMuted.value;
+    _globalMuted.addListener(_handleGlobalMuteChanged);
   }
 
   @override
   void dispose() {
     _controller?.dispose();
+    _globalMuted.removeListener(_handleGlobalMuteChanged);
     super.dispose();
+  }
+
+  void _handleGlobalMuteChanged() {
+    final controller = _controller;
+    if (controller == null) return;
+    final nextMuted = _globalMuted.value;
+    if (_isMuted == nextMuted) return;
+    _isMuted = nextMuted;
+    if (controller.value.isInitialized) {
+      controller.setVolume(nextMuted ? 0 : 1);
+    }
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
@@ -1010,7 +1038,7 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
         if (!controller.value.isInitialized) return;
         if (info.visibleFraction >= 0.6) {
           controller.play();
-          controller.setVolume(0);
+          controller.setVolume(_globalMuted.value ? 0 : 1);
         } else {
           controller.pause();
         }
@@ -1027,9 +1055,43 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
           child: _initialized && controller != null
               ? ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: AspectRatio(
-                    aspectRatio: controller.value.aspectRatio,
-                    child: VideoPlayer(controller),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: AspectRatio(
+                          aspectRatio: controller.value.aspectRatio,
+                          child: VideoPlayer(controller),
+                        ),
+                      ),
+                      Positioned(
+                        left: 8,
+                        right: 8,
+                        bottom: 6,
+                        child: VideoProgressIndicator(
+                          controller,
+                          allowScrubbing: true,
+                          colors: VideoProgressColors(
+                            playedColor:
+                                Theme.of(context).colorScheme.primary,
+                            bufferedColor: Colors.white24,
+                            backgroundColor: Colors.white10,
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        right: 4,
+                        top: 4,
+                        child: IconButton(
+                          icon: Icon(
+                            _isMuted ? Icons.volume_off : Icons.volume_up,
+                            color: Colors.white,
+                          ),
+                          onPressed: () {
+                            _globalMuted.value = !_globalMuted.value;
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 )
               : const Center(
