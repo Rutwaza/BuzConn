@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'dart:typed_data';
+import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
@@ -58,6 +58,17 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       _emailController.text = user.email ?? '';
+      if (_phoneController.text.trim().isEmpty) {
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        final data = doc.data() ?? {};
+        final phone = (data['phone'] ?? data['phoneNumber'])?.toString();
+        if (phone != null && phone.trim().isNotEmpty) {
+          _phoneController.text = phone.trim();
+        }
+      }
     }
   }
 
@@ -81,28 +92,129 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
             if (mounted) {
               showDialog(
                 context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Go Premium'),
-                  content: const Text(
-                    'Free accounts can create up to 2 businesses. '
-                    'Upgrade to Premium to add more.',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Not now'),
+                barrierDismissible: true,
+                builder: (context) {
+                  final isDark =
+                      Theme.of(context).brightness == Brightness.dark;
+                  return Dialog(
+                    insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
                     ),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Premium upgrade coming soon!')),
-                        );
-                      },
-                      child: const Text('Go Premium'),
+                    child: Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF141821) : Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: isDark ? Colors.white10 : Colors.black12,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 54,
+                            height: 54,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                colors: [
+                                  AppColors.primary.withOpacity(0.95),
+                                  AppColors.primary.withOpacity(0.55),
+                                ],
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.stars_rounded,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Go Premium',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Free accounts can create up to 2 pages. '
+                            'Upgrade to unlock more pages and reach more fans.',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(color: AppColors.grey),
+                          ),
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? Colors.white.withOpacity(0.06)
+                                  : Colors.black.withOpacity(0.04),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.check_circle,
+                                    color: AppColors.primary, size: 18),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Unlimited pages • Priority review • Featured boost',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () =>
+                                      Navigator.of(context).pop(),
+                                  style: OutlinedButton.styleFrom(
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: const Text('Not now'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    Navigator.of(context).pop();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Premium upgrade coming soon!',
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: const Text('Go Premium'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
+                  );
+                },
               );
             }
             return;
@@ -116,6 +228,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
             'name': _businessNameController.text.trim(),
             'description': _descriptionController.text.trim(),
             'category': _selectedCategory,
+            'address': _addressController.text.trim(),
             'phone': _phoneController.text.trim(),
             'email': _emailController.text.trim(),
             'isVerified': false,
@@ -155,7 +268,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Business created successfully!'),
+                content: Text('Page created successfully!'),
                 backgroundColor: Colors.green,
               ),
             );
@@ -171,7 +284,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to create business. Please try again.')),
+            const SnackBar(content: Text('Failed to create page. Please try again.')),
           );
         }
       }
@@ -225,11 +338,54 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
     }
   }
 
+  String _buildMapsLinkFromAddress(String address) {
+    final encoded = Uri.encodeComponent(address.trim());
+    return 'https://www.google.com/maps/search/?api=1&query=$encoded';
+  }
+
+  void _generateMapsLinkFromAddress() {
+    final address = _addressController.text.trim();
+    if (address.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add your address first')),
+      );
+      return;
+    }
+    _googleMapsLinkController.text = _buildMapsLinkFromAddress(address);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Google Maps link generated')),
+    );
+  }
+
+  Future<void> _pasteMapsLink() async {
+    final data = await Clipboard.getData('text/plain');
+    final text = data?.text?.trim() ?? '';
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Clipboard is empty')),
+      );
+      return;
+    }
+    _googleMapsLinkController.text = text;
+  }
+
+  Widget _sectionCard({required Widget child}) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 18),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: child,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Set Up Your Business'),
+        title: const Text('Set Up Your Page'),
+        centerTitle: true,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
@@ -238,232 +394,279 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
-              Text(
-                'Create your business profile',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Fill in the details below to get started.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppColors.grey,
-                ),
-              ),
-
-              const SizedBox(height: 32),
-
-              // Business Name
-              AppTextField(
-                controller: _businessNameController,
-                label: 'Business Name',
-                hintText: 'Enter your business name',
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your business name';
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 24),
-
-              // Category
-              Text(
-                'Business Category',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                initialValue: _selectedCategory,
-                decoration: InputDecoration(
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                ),
-                items: _categories.map((category) {
-                  return DropdownMenuItem(
-                    value: category,
-                    child: Text(category),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedCategory = value!;
-                  });
-                },
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please select a category';
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 24),
-
-              // Description
-              AppTextField(
-                controller: _descriptionController,
-                label: 'Business Description',
-                hintText: 'Describe your business and services...',
-                maxLines: 3,
-                maxLength: 500,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter a business description';
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 24),
-
-              // Google Maps Link
-              AppTextField(
-                controller: _googleMapsLinkController,
-                label: 'Google Maps Link',
-                hintText: 'https://maps.google.com/...',
-                keyboardType: TextInputType.url,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your Google Maps link';
-                  }
-                  // Basic URL validation
-                  final v = value.toLowerCase();
-                  if (!v.contains('maps.google.com') &&
-                      !v.contains('goo.gl/maps') &&
-                      !v.contains('maps.app.goo.gl')) {
-                    return 'Please enter a valid Google Maps link';
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 24),
-
-              // Business Image
-              Text(
-                'Business Logo/Image',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                height: 200,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: _selectedImageBytes != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.memory(
-                          _selectedImageBytes!,
-                          fit: BoxFit.cover,
+              _sectionCard(
+                child: Row(
+                  children: [
+                    Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
+                        CircleAvatar(
+                          radius: 38,
+                          backgroundColor: AppColors.primary.withOpacity(0.2),
+                          backgroundImage: _selectedImageBytes != null
+                              ? MemoryImage(_selectedImageBytes!)
+                              : null,
+                          child: _selectedImageBytes == null
+                              ? const Icon(
+                                  Icons.person,
+                                  size: 36,
+                                  color: Colors.white70,
+                                )
+                              : null,
                         ),
-                      )
-                    : const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.image,
-                            size: 48,
-                            color: Colors.grey,
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundColor: AppColors.primary,
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            icon: const Icon(Icons.edit,
+                                size: 14, color: Colors.white),
+                            onPressed: _pickImage,
                           ),
-                          SizedBox(height: 8),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            'No image selected',
-                            style: TextStyle(color: Colors.grey),
+                            'Build your Spotlight page',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Show your work, connect with fans, and share updates.',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: AppColors.grey),
                           ),
                         ],
                       ),
-              ),
-              const SizedBox(height: 8),
-              ElevatedButton.icon(
-                onPressed: _pickImage,
-                icon: const Icon(Icons.photo_library),
-                label: const Text('Select Image'),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
+                    ),
+                  ],
                 ),
               ),
 
-              const SizedBox(height: 24),
-
-              // Phone
-              AppTextField(
-                controller: _phoneController,
-                label: 'Business Phone',
-                hintText: '+1 (555) 123-4567',
-                keyboardType: TextInputType.phone,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your business phone number';
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 24),
-
-              // Email
-              AppTextField(
-                controller: _emailController,
-                label: 'Business Email',
-                hintText: 'business@example.com',
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your business email';
-                  }
-                  if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-                    return 'Please enter a valid email address';
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 32),
-
-              // Info Card
-              Card(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.info_outline,
-                        color: AppColors.primary,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Your business profile will be reviewed before it becomes visible to clients. This usually takes 24-48 hours.',
-                          style: Theme.of(context).textTheme.bodyMedium,
+              _sectionCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Page basics',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    AppTextField(
+                      controller: _businessNameController,
+                      label: 'Page Name',
+                      hintText: 'Your creator name or brand',
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your page name';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Category',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedCategory,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
                         ),
                       ),
-                    ],
-                  ),
+                      items: _categories.map((category) {
+                        return DropdownMenuItem(
+                          value: category,
+                          child: Text(category),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedCategory = value!;
+                        });
+                      },
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please select a category';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    AppTextField(
+                      controller: _descriptionController,
+                      label: 'Bio',
+                      hintText: 'Describe your work and style...',
+                      maxLines: 3,
+                      maxLength: 500,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter a short bio';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
                 ),
               ),
 
-              const SizedBox(height: 32),
+              _sectionCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Location',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    AppTextField(
+                      controller: _addressController,
+                      label: 'Address',
+                      hintText: 'City, street, or venue',
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 12),
+                    AppTextField(
+                      controller: _googleMapsLinkController,
+                      label: 'Google Maps Link',
+                      hintText: 'Paste link or generate from address',
+                      keyboardType: TextInputType.url,
+                      validator: (value) {
+                        final link = value?.trim() ?? '';
+                        final address = _addressController.text.trim();
+                        if (link.isEmpty && address.isEmpty) {
+                          return 'Add an address or a Google Maps link';
+                        }
+                        if (link.isNotEmpty) {
+                          final v = link.toLowerCase();
+                          if (!v.contains('maps.google.com') &&
+                              !v.contains('goo.gl/maps') &&
+                              !v.contains('maps.app.goo.gl')) {
+                            return 'Please enter a valid Google Maps link';
+                          }
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _generateMapsLinkFromAddress,
+                            icon: const Icon(Icons.auto_fix_high),
+                            label: const Text('Generate link'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _pasteMapsLink,
+                            icon: const Icon(Icons.paste),
+                            label: const Text('Paste link'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Tip: You can just type your address and tap “Generate link”.',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: AppColors.grey),
+                    ),
+                  ],
+                ),
+              ),
 
-              // Create Business Button
+              _sectionCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Contact',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    AppTextField(
+                      controller: _phoneController,
+                      label: 'Contact Phone',
+                      hintText: '+1 (555) 123-4567',
+                      keyboardType: TextInputType.phone,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your phone number';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    AppTextField(
+                      controller: _emailController,
+                      label: 'Contact Email',
+                      hintText: 'creator@example.com',
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your email';
+                        }
+                        if (!RegExp(r'^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$')
+                            .hasMatch(value)) {
+                          return 'Please enter a valid email address';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
+              _sectionCard(
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.info_outline,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Your page will be reviewed before it becomes visible to the community. This usually takes 24-48 hours.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Create Page Button
               AppButton(
-                text: 'Create Business Profile',
+                text: 'Create Page',
                 onPressed: _createBusiness,
                 isLoading: _isLoading,
               ),
@@ -471,11 +674,26 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
               const SizedBox(height: 16),
 
               // Skip for now
-              TextButton(
-                onPressed: () {
-                  context.go(AppRoutes.dashboard);
-                },
-                child: const Text('Skip for now'),
+              Center(
+                child: OutlinedButton(
+                  onPressed: () {
+                    context.go(AppRoutes.dashboard);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                    side: BorderSide(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.25),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                  ),
+                  child: const Text('Skip for now'),
+                ),
               ),
             ],
           ),

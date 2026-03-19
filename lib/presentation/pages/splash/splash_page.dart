@@ -63,7 +63,7 @@ class _SplashPageState extends ConsumerState<SplashPage> {
                 ],
               ),
               child: const Icon(
-                Icons.handshake,
+                Icons.auto_awesome,
                 size: 60,
                 color: AppColors.primary,
               ),
@@ -82,7 +82,7 @@ class _SplashPageState extends ConsumerState<SplashPage> {
             const SizedBox(height: 8),
             // Tagline
             Text(
-              'Connecting Businesses & Clients',
+              'Spotlight your work. Discover creators.',
               style: TextStyle(
                 fontSize: 16,
                 color: AppColors.white.withOpacity(0.8),

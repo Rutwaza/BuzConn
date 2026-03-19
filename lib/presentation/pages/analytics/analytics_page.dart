@@ -21,7 +21,7 @@ class AnalyticsPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Analytics'),
+        title: const Text('Insights'),
       ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
@@ -112,7 +112,7 @@ class AnalyticsPage extends StatelessWidget {
 
                           final cards = <Widget>[
                             _StatCard(
-                              title: 'Saved Posts',
+                              title: 'Saved',
                               value: favoritesCount.toString(),
                               icon: Icons.bookmark,
                             ),
@@ -193,7 +193,7 @@ class AnalyticsPage extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 24),
                                   Text(
-                                    'Posts',
+                                    'Your Posts',
                                     style: Theme.of(context)
                                         .textTheme
                                         .titleLarge
@@ -220,7 +220,7 @@ class AnalyticsPage extends StatelessWidget {
                                           TabBarIndicatorSize.tab,
                                       tabs: [
                                         Tab(text: 'Recent Posts'),
-                                        Tab(text: 'Saved Posts'),
+                                        Tab(text: 'Saved'),
                                       ],
                                     ),
                                   ),

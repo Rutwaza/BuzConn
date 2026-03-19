@@ -1,162 +1,68 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/supabase_storage_service.dart';
 import '../../../core/theme/colors.dart';
+import '../../../data/models/post_model.dart';
 import '../../../data/repositories/chat_repository.dart';
+import '../business/post_detail_page.dart' as business_post;
 
-class ClientProfilePage extends StatelessWidget {
+class ClientProfilePage extends StatefulWidget {
   final String userId;
 
   const ClientProfilePage({super.key, required this.userId});
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Client Profile')),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance.collection('users').doc(userId).snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text('User not found'));
-          }
+  State<ClientProfilePage> createState() => _ClientProfilePageState();
+}
 
-          final data = snapshot.data!.data() as Map<String, dynamic>;
-          final name = (data['name'] ?? 'Client').toString();
-          final imageUrl = data['imageUrl'] as String?;
-          final bio = (data['bio'] ?? '').toString();
-          final phone = (data['phone'] ?? '').toString();
+class _ClientProfilePageState extends State<ClientProfilePage> {
+  static const int _maxBusinesses = 2;
+  int _collectionTab = 0;
+  File? _selectedLogo;
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                CircleAvatar(
-                  radius: 48,
-                  backgroundColor: AppColors.primary,
-                  backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
-                  child: imageUrl == null
-                      ? Text(
-                          name.isNotEmpty ? name[0].toUpperCase() : '?',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        )
-                      : null,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  name,
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                if (bio.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    bio,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: AppColors.grey),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                if (FirebaseAuth.instance.currentUser?.uid == userId)
-                  TextButton(
-                    onPressed: () {
-                      context.push(AppRoutes.profile);
-                    },
-                    child: const Text('Edit profile'),
-                  ),
-                const SizedBox(height: 8),
-                _actionRow(context, phone),
-                const SizedBox(height: 24),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Top businesses liked',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _likedBusinessesGrid(context),
-              ],
-            ),
-          );
-        },
-      ),
-    );
+  bool get _isSelf => FirebaseAuth.instance.currentUser?.uid == widget.userId;
+
+  Future<void> _followUser(String followerId, String followingId) async {
+    await FirebaseFirestore.instance
+        .collection('user_follows')
+        .doc('${followerId}_$followingId')
+        .set({
+      'followerId': followerId,
+      'followingId': followingId,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
-  Widget _actionRow(BuildContext context, String phone) {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _circleAction(
-          icon: Icons.call,
-          onTap: phone.isEmpty
-              ? null
-              : () async {
-                  await _dialPhone(context, phone);
-                },
-          label: 'Call',
-        ),
-        const SizedBox(width: 16),
-        _circleAction(
-          icon: Icons.message,
-          onTap: currentUser == null ? null : () => _startChat(context),
-          label: 'Message',
-        ),
-      ],
-    );
+  Future<void> _unfollowUser(String followerId, String followingId) async {
+    await FirebaseFirestore.instance
+        .collection('user_follows')
+        .doc('${followerId}_$followingId')
+        .delete();
   }
 
-  Widget _circleAction({
-    required IconData icon,
-    required VoidCallback? onTap,
-    required String label,
-  }) {
-    return Column(
-      children: [
-        InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(28),
-          child: Opacity(
-            opacity: onTap == null ? 0.4 : 1,
-            child: CircleAvatar(
-              radius: 22,
-              backgroundColor: AppColors.lightGrey,
-              child: Icon(icon, color: AppColors.primary),
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: AppColors.grey),
-        ),
-      ],
-    );
+  Stream<DocumentSnapshot<Map<String, dynamic>>> _followDocStream(
+    String followerId,
+    String followingId,
+  ) {
+    return FirebaseFirestore.instance
+        .collection('user_follows')
+        .doc('${followerId}_$followingId')
+        .snapshots();
   }
 
   Future<void> _dialPhone(BuildContext context, String phone) async {
-    final trimmed = phone.trim();
-    if (trimmed.isEmpty) return;
-    final normalized = trimmed.replaceAll(RegExp(r'\s+'), '');
-    final uri = Uri(scheme: 'tel', path: normalized);
-    final ok = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
+    final uri = Uri(scheme: 'tel', path: phone.replaceAll(RegExp(r'\s+'), ''));
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open dialer.')),
@@ -166,43 +72,35 @@ class ClientProfilePage extends StatelessWidget {
 
   Future<void> _startChat(BuildContext context) async {
     final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return;
-    if (currentUser.uid == userId) return;
+    if (currentUser == null || currentUser.uid == widget.userId) return;
 
     final currentUserDoc = await FirebaseFirestore.instance
         .collection('users')
         .doc(currentUser.uid)
         .get();
     final currentUserType =
-        (currentUserDoc.data() ?? {})['userType'] ??
-            'client';
-
+        ((currentUserDoc.data() ?? {})['userType'] ?? 'client').toString();
     final repo = ChatRepository();
 
     if (currentUserType == 'business') {
-      // Business users can message clients. Use their first active business.
       final businessesSnap = await FirebaseFirestore.instance
           .collection('businesses')
           .where('ownerId', isEqualTo: currentUser.uid)
           .where('isActive', isEqualTo: true)
           .limit(1)
           .get();
-
       if (businessesSnap.docs.isEmpty) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Create a business before messaging.')),
+            const SnackBar(content: Text('Create a page before messaging.')),
           );
         }
         return;
       }
-
-      final businessId = businessesSnap.docs.first.id;
       final chatId = await repo.createOrGetChat(
-        businessId: businessId,
+        businessId: businessesSnap.docs.first.id,
         businessOwnerId: currentUser.uid,
-        clientId: userId,
+        clientId: widget.userId,
       );
       if (!context.mounted) return;
       context.push(AppRoutes.chatDetailPath(chatId));
@@ -211,85 +109,856 @@ class ClientProfilePage extends StatelessWidget {
 
     final chatId = await repo.createOrGetDirectChat(
       userAId: currentUser.uid,
-      userBId: userId,
+      userBId: widget.userId,
     );
     if (!context.mounted) return;
     context.push(AppRoutes.chatDetailPath(chatId));
   }
 
-  Widget _likedBusinessesGrid(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('posts')
-          .where('likes', arrayContains: userId)
-          .snapshots(),
-      builder: (context, snapshot) {
-        final docs = snapshot.data?.docs ?? [];
-        if (docs.isEmpty) {
-          return const Text('No likes yet');
-        }
+  Future<int> _activeBusinessCount() async {
+    final snap = await FirebaseFirestore.instance
+        .collection('businesses')
+        .where('ownerId', isEqualTo: widget.userId)
+        .where('isActive', isEqualTo: true)
+        .get();
+    return snap.docs.length;
+  }
 
-        final seen = <String>{};
-        final items = <_BusinessItem>[];
-        for (final doc in docs) {
-          final data = doc.data() as Map<String, dynamic>;
-          final businessId = (data['businessId'] ?? '').toString();
-          if (businessId.isEmpty || seen.contains(businessId)) continue;
-          seen.add(businessId);
-          items.add(_BusinessItem(
-            id: businessId,
-            name: (data['businessName'] ?? 'Business').toString(),
-            imageUrl: data['businessImageUrl'] as String?,
-          ));
-        }
-
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
+  void _showPremiumDialog(String title, String message) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF141821) : Colors.white,
+            borderRadius: BorderRadius.circular(24),
           ),
-          itemCount: items.length,
-          itemBuilder: (context, index) {
-            final item = items[index];
-            return InkWell(
-              onTap: () => context.push(AppRoutes.businessProfilePath(item.id)),
-              child: Container(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 54,
+                height: 54,
                 decoration: BoxDecoration(
-                  color: AppColors.lightGrey,
-                  borderRadius: BorderRadius.circular(8),
-                  image: item.imageUrl != null
-                      ? DecorationImage(
-                          image: NetworkImage(item.imageUrl!),
-                          fit: BoxFit.cover,
-                        )
-                      : null,
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.primary.withOpacity(0.95),
+                      AppColors.primary.withOpacity(0.55),
+                    ],
+                  ),
                 ),
-                child: item.imageUrl == null
-                    ? Center(
-                        child: Text(
-                          item.name.isNotEmpty ? item.name[0] : '?',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      )
-                    : null,
+                child: const Icon(Icons.auto_awesome, color: Colors.white),
               ),
+              const SizedBox(height: 12),
+              Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              Text(message, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.grey)),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Not now'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Premium upgrade is coming soon!')),
+                        );
+                      },
+                      child: const Text('Go Premium'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createPage() async {
+    if (!_isSelf) return;
+    final count = await _activeBusinessCount();
+    if (count >= _maxBusinesses) {
+      _showPremiumDialog('Go Premium', 'Free creators can run up to 2 active pages. Upgrade to add more.');
+      return;
+    }
+    if (!mounted) return;
+    context.push(AppRoutes.businessSetup);
+  }
+
+  Future<void> _setBusinessActive(String businessId, bool isActive) async {
+    await FirebaseFirestore.instance.collection('businesses').doc(businessId).update({
+      'isActive': isActive,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  void _showEditDialog(String businessId, Map<String, dynamic> data) {
+    final nameController = TextEditingController(text: (data['name'] ?? '').toString());
+    final descController = TextEditingController(text: (data['description'] ?? '').toString());
+    final phoneController = TextEditingController(text: (data['phone'] ?? '').toString());
+    final emailController = TextEditingController(text: (data['email'] ?? '').toString());
+    final mapsController = TextEditingController(text: (data['googleMapsLink'] ?? '').toString());
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Page'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Page Name')),
+              const SizedBox(height: 8),
+              TextField(controller: descController, maxLines: 3, decoration: const InputDecoration(labelText: 'Description')),
+              const SizedBox(height: 8),
+              TextField(controller: phoneController, decoration: const InputDecoration(labelText: 'Phone')),
+              const SizedBox(height: 8),
+              TextField(controller: emailController, decoration: const InputDecoration(labelText: 'Email')),
+              const SizedBox(height: 8),
+              TextField(controller: mapsController, decoration: const InputDecoration(labelText: 'Google Maps Link')),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              final newName = nameController.text.trim();
+              await FirebaseFirestore.instance.collection('businesses').doc(businessId).update({
+                'name': newName,
+                'description': descController.text.trim(),
+                'phone': phoneController.text.trim(),
+                'email': emailController.text.trim(),
+                'googleMapsLink': mapsController.text.trim(),
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+              final posts = await FirebaseFirestore.instance.collection('posts').where('businessId', isEqualTo: businessId).get();
+              final batch = FirebaseFirestore.instance.batch();
+              for (final doc in posts.docs) {
+                batch.update(doc.reference, {'businessName': newName});
+              }
+              await batch.commit();
+              if (mounted) Navigator.of(context).pop();
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickLogo(String businessId) async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+    setState(() => _selectedLogo = File(picked.path));
+    try {
+      final url = await SupabaseStorageService.instance.uploadImage(
+        bucket: 'profile-images',
+        path: '$businessId/logo_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        bytes: await _selectedLogo!.readAsBytes(),
+      );
+      await FirebaseFirestore.instance.collection('businesses').doc(businessId).update({
+        if (url != null) 'imageUrl': url,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      if (url != null) {
+        final posts = await FirebaseFirestore.instance.collection('posts').where('businessId', isEqualTo: businessId).get();
+        final batch = FirebaseFirestore.instance.batch();
+        for (final doc in posts.docs) {
+          batch.update(doc.reference, {'businessImageUrl': url});
+        }
+        await batch.commit();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Logo upload failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _selectedLogo = null);
+    }
+  }
+
+  Future<void> _unsave(String postId) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUser.uid)
+        .collection('favorites')
+        .doc(postId)
+        .delete();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Profile')),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance.collection('users').doc(widget.userId).snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (!snapshot.hasData || !snapshot.data!.exists) {
+            return const Center(child: Text('User not found'));
+          }
+
+          final data = snapshot.data!.data() as Map<String, dynamic>;
+          final name = (data['name'] ?? 'User').toString();
+          final imageUrl = (data['imageUrl'] ?? '').toString();
+          final bio = (data['bio'] ?? '').toString();
+          final phone = (data['phone'] ?? '').toString();
+          final email = (data['email'] ?? '').toString();
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF151A24) : Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _circleAction(Icons.call, phone.isEmpty ? null : () => _dialPhone(context, phone)),
+                          const SizedBox(width: 18),
+                          CircleAvatar(
+                            radius: 54,
+                            backgroundColor: AppColors.primary,
+                            backgroundImage: imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null,
+                            child: imageUrl.isEmpty
+                                ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.bold))
+                                : null,
+                          ),
+                          const SizedBox(width: 18),
+                          _circleAction(Icons.message, FirebaseAuth.instance.currentUser == null ? null : () => _startChat(context)),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                      if (bio.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(bio, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.grey)),
+                      ],
+                      const SizedBox(height: 12),
+                      _profileStatsRow(context),
+                      const SizedBox(height: 14),
+                      if (_isSelf)
+                        OutlinedButton(
+                          onPressed: () => context.push(AppRoutes.profile),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            side: const BorderSide(color: AppColors.primary),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          child: const Text('Edit Profile'),
+                        ),
+                      if (!_isSelf && currentUserId != null)
+                        StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                          stream: _followDocStream(currentUserId, widget.userId),
+                          builder: (context, followSnap) {
+                            final isFollowing = followSnap.data?.exists == true;
+                            return ElevatedButton(
+                              onPressed: () => isFollowing ? _unfollowUser(currentUserId, widget.userId) : _followUser(currentUserId, widget.userId),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isFollowing ? Colors.transparent : AppColors.primary,
+                                foregroundColor: isFollowing ? AppColors.primary : Colors.white,
+                                elevation: 0,
+                                side: isFollowing ? const BorderSide(color: AppColors.primary) : BorderSide.none,
+                              ),
+                              child: Text(isFollowing ? 'Following' : 'Follow'),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                if (email.isNotEmpty || phone.isNotEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF151A24) : Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('About', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 10),
+                        if (email.isNotEmpty) _aboutRow(Icons.email_outlined, email),
+                        if (email.isNotEmpty && phone.isNotEmpty) const SizedBox(height: 8),
+                        if (phone.isNotEmpty) _aboutRow(Icons.phone_outlined, phone),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 22),
+                _pagesSection(context),
+                if (_isSelf) ...[
+                  const SizedBox(height: 22),
+                  _insightsSection(context),
+                ],
+                const SizedBox(height: 22),
+                _collectionsSection(context),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _circleAction(IconData icon, VoidCallback? onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(28),
+      child: Opacity(
+        opacity: onTap == null ? 0.4 : 1,
+        child: CircleAvatar(
+          radius: 22,
+          backgroundColor: AppColors.lightGrey,
+          child: Icon(icon, color: AppColors.primary),
+        ),
+      ),
+    );
+  }
+
+  Widget _aboutRow(IconData icon, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 8),
+        Expanded(child: Text(value, style: const TextStyle(color: AppColors.grey))),
+      ],
+    );
+  }
+
+  Widget _profileStatsRow(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('user_follows').where('followingId', isEqualTo: widget.userId).snapshots(),
+      builder: (context, followersSnap) {
+        final followersCount = followersSnap.data?.docs.length ?? 0;
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance.collection('user_follows').where('followerId', isEqualTo: widget.userId).snapshots(),
+          builder: (context, followingSnap) {
+            final followingUsers = followingSnap.data?.docs.length ?? 0;
+            return StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('page_follows').where('followerId', isEqualTo: widget.userId).snapshots(),
+              builder: (context, pageFollowingSnap) {
+                final followingPages = pageFollowingSnap.data?.docs.length ?? 0;
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    GestureDetector(
+                      onTap: () => context.push(AppRoutes.userFollowersPath(widget.userId)),
+                      child: _statPill('Followers', followersCount),
+                    ),
+                    const SizedBox(width: 12),
+                    GestureDetector(
+                      onTap: () => context.push(AppRoutes.userFollowingPath(widget.userId)),
+                      onLongPress: () {
+                        final isDark = Theme.of(context).brightness == Brightness.dark;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('$followingUsers users, $followingPages pages'),
+                            backgroundColor: isDark ? const Color(0xFF151A24) : null,
+                          ),
+                        );
+                      },
+                      child: _statPill('Following', followingUsers + followingPages),
+                    ),
+                  ],
+                );
+              },
             );
           },
         );
       },
     );
   }
+
+  Widget _statPill(String label, int value) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white10 : Colors.black.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
+      ),
+      child: Column(
+        children: [
+          Text('$value', style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(label, style: const TextStyle(fontSize: 11, color: AppColors.grey)),
+        ],
+      ),
+    );
+  }
+
+  Widget _pagesSection(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('businesses').where('ownerId', isEqualTo: widget.userId).snapshots(),
+      builder: (context, snapshot) {
+        final docs = [...(snapshot.data?.docs ?? [])];
+        docs.sort((a, b) {
+          final aActive = ((a.data() as Map<String, dynamic>)['isActive'] != false);
+          final bActive = ((b.data() as Map<String, dynamic>)['isActive'] != false);
+          if (aActive != bActive) return aActive ? -1 : 1;
+          return 0;
+        });
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('Pages', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+                const Spacer(),
+                if (_isSelf) TextButton.icon(onPressed: _createPage, icon: const Icon(Icons.add_circle_outline), label: const Text('Add page')),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (docs.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF151A24) : Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+                ),
+                child: Text(
+                  _isSelf ? 'No pages yet. Build your first creator page.' : 'No pages yet',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.grey),
+                ),
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: docs.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (context, index) {
+                  final doc = docs[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final imageUrl = (data['imageUrl'] ?? '').toString();
+                  final name = (data['name'] ?? 'Page').toString();
+                  final category = (data['category'] ?? '').toString();
+                  final isActive = data['isActive'] != false;
+                  final isVerified = data['isVerified'] == true;
+                  return InkWell(
+                    onTap: () => context.push(AppRoutes.businessProfilePath(doc.id)),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Ink(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF151A24) : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+                      ),
+                      child: Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: SizedBox(
+                              height: 72,
+                              width: 72,
+                              child: imageUrl.isNotEmpty
+                                  ? Image.network(imageUrl, fit: BoxFit.cover)
+                                  : Container(
+                                      color: AppColors.primary.withOpacity(0.15),
+                                      alignment: Alignment.center,
+                                      child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 24)),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16))),
+                                    if (isVerified) const Icon(Icons.verified, color: Color(0xFF61D1ED), size: 18),
+                                  ],
+                                ),
+                                if (category.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(category, style: const TextStyle(color: AppColors.grey, fontSize: 12)),
+                                ],
+                                const SizedBox(height: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: (isActive ? AppColors.primary : Colors.orange).withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    isActive ? 'Active' : 'Hidden',
+                                    style: TextStyle(color: isActive ? AppColors.primary : Colors.orange, fontSize: 11, fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (_isSelf)
+                            PopupMenuButton<String>(
+                              onSelected: (value) {
+                                if (value == 'edit') _showEditDialog(doc.id, data);
+                                if (value == 'logo') _pickLogo(doc.id);
+                                if (value == 'toggle') _setBusinessActive(doc.id, !isActive);
+                                if (value == 'verify') _showPremiumDialog('Premium Required', 'Verification is available on Premium. Upgrade when you are ready.');
+                              },
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                const PopupMenuItem(value: 'logo', child: Text('Update logo')),
+                                PopupMenuItem(value: 'toggle', child: Text(isActive ? 'Hide page' : 'Unhide page')),
+                                const PopupMenuItem(value: 'verify', child: Text('Verify (Premium)')),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _insightsSection(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('businesses')
+          .where('ownerId', isEqualTo: widget.userId)
+          .where('isActive', isEqualTo: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final activePages = snapshot.data?.docs.length ?? 0;
+        if (activePages == 0) {
+          return const SizedBox.shrink();
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Insights',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            InkWell(
+              onTap: () => context.push(AppRoutes.analytics),
+              borderRadius: BorderRadius.circular(20),
+              child: Ink(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF151A24) : Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isDark ? Colors.white10 : Colors.black12,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 54,
+                      height: 54,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.primary.withOpacity(0.95),
+                            AppColors.primary.withOpacity(0.55),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.insights_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Creator Insights',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            activePages == 1
+                                ? 'Track post performance, saved content, and chat activity for your page.'
+                                : 'Track performance across your $activePages active pages from one place.',
+                            style: const TextStyle(
+                              color: AppColors.grey,
+                              fontSize: 13,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Icon(Icons.chevron_right),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _collectionsSection(BuildContext context) {
+    final tabs = const ['Top Creators', 'Saved'];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(_isSelf ? 'Collections' : 'Top creators liked', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+            const Spacer(),
+            if (_isSelf)
+              Wrap(
+                spacing: 8,
+                children: List.generate(
+                  tabs.length,
+                  (index) => ChoiceChip(
+                    label: Text(tabs[index]),
+                    selected: _collectionTab == index,
+                    onSelected: (_) => setState(() => _collectionTab = index),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (!_isSelf || _collectionTab == 0) _likedBusinessesGrid() else _savedPostsGrid(),
+      ],
+    );
+  }
+
+  Widget _likedBusinessesGrid() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('posts').where('likes', arrayContains: widget.userId).snapshots(),
+      builder: (context, snapshot) {
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) return _emptyCard('No creator activity yet.');
+        final seen = <String>{};
+        final items = <Map<String, String>>[];
+        for (final doc in docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          final businessId = (data['businessId'] ?? '').toString();
+          if (businessId.isEmpty || seen.contains(businessId)) continue;
+          seen.add(businessId);
+          items.add({
+            'id': businessId,
+            'name': (data['businessName'] ?? 'Creator').toString(),
+            'imageUrl': (data['businessImageUrl'] ?? '').toString(),
+          });
+        }
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: items.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
+          itemBuilder: (context, index) => InkWell(
+            onTap: () => context.push(AppRoutes.businessProfilePath(items[index]['id']!)),
+            child: _squarePreview(items[index]['imageUrl']!, items[index]['name']!),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _savedPostsGrid() {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return _emptyCard('Sign in to see saved posts.');
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('users').doc(currentUser.uid).collection('favorites').orderBy('createdAt', descending: true).snapshots(),
+      builder: (context, snapshot) {
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) return _emptyCard('No saved posts yet.');
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: docs.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
+          itemBuilder: (context, index) => StreamBuilder<DocumentSnapshot>(
+            stream: FirebaseFirestore.instance.collection('posts').doc(docs[index].id).snapshots(),
+            builder: (context, postSnap) {
+              if (!postSnap.hasData || !postSnap.data!.exists) {
+                return InkWell(onTap: () => _unsave(docs[index].id), child: _squarePreview('', 'Deleted'));
+              }
+              final post = Post.fromFirestore(postSnap.data!);
+              return InkWell(
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => business_post.PostDetailPage(post: post, initialMediaIndex: 0))),
+                child: Stack(
+                  children: [
+                    Positioned.fill(child: _savedPreview(post)),
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Material(
+                        color: Colors.black.withOpacity(0.38),
+                        borderRadius: BorderRadius.circular(999),
+                        child: InkWell(
+                          onTap: () => _unsave(post.id),
+                          borderRadius: BorderRadius.circular(999),
+                          child: const Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Icon(Icons.bookmark_remove, size: 16, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _emptyCard(String text) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF151A24) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+      ),
+      child: Text(text, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.grey)),
+    );
+  }
+
+  Widget _squarePreview(String imageUrl, String fallback) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.lightGrey,
+        borderRadius: BorderRadius.circular(12),
+        image: imageUrl.isNotEmpty ? DecorationImage(image: NetworkImage(imageUrl), fit: BoxFit.cover) : null,
+      ),
+      child: imageUrl.isEmpty
+          ? Center(child: Text(fallback.isNotEmpty ? fallback[0].toUpperCase() : '?', style: const TextStyle(fontWeight: FontWeight.bold)))
+          : null,
+    );
+  }
+
+  Widget _savedPreview(Post post) {
+    final media = post.media;
+    String? previewUrl;
+    var isVideo = false;
+    if (media.isNotEmpty) {
+      previewUrl = media.first.url;
+      isVideo = media.first.isVideo;
+    } else if (post.imageUrl != null && post.imageUrl!.isNotEmpty) {
+      previewUrl = post.imageUrl;
+    } else if (post.videoUrl != null && post.videoUrl!.isNotEmpty) {
+      previewUrl = post.videoUrl;
+      isVideo = true;
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (previewUrl == null)
+            Container(color: AppColors.lightGrey, child: const Icon(Icons.image_outlined, color: AppColors.grey))
+          else if (isVideo)
+            _VideoThumb(url: previewUrl)
+          else
+            Image.network(previewUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: AppColors.lightGrey, child: const Icon(Icons.broken_image_outlined))),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(8, 20, 8, 8),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black54]),
+              ),
+              child: Text(
+                post.content.isEmpty ? 'Saved post' : post.content,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _BusinessItem {
-  final String id;
-  final String name;
-  final String? imageUrl;
+class _VideoThumb extends StatelessWidget {
+  const _VideoThumb({required this.url});
 
-  _BusinessItem({required this.id, required this.name, required this.imageUrl});
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List?>(
+      future: VideoThumbnail.thumbnailData(video: url, imageFormat: ImageFormat.JPEG, maxWidth: 300, quality: 70),
+      builder: (context, snapshot) {
+        final bytes = snapshot.data;
+        if (bytes == null) {
+          return Container(color: Colors.black26, child: const Center(child: Icon(Icons.play_circle_fill, color: Colors.white70)));
+        }
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.memory(bytes, fit: BoxFit.cover),
+            const Center(child: Icon(Icons.play_circle_fill, color: Colors.white70)),
+          ],
+        );
+      },
+    );
+  }
 }

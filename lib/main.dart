@@ -65,7 +65,7 @@ class MyApp extends ConsumerWidget {
         final themeMode =
             mode == AppThemeMode.dark ? ThemeMode.dark : ThemeMode.light;
         return MaterialApp.router(
-          title: 'Business Connector',
+          title: 'Spotlight',
           debugShowCheckedModeBanner: false,
           theme: isCyber ? AppTheme.cyberpunkTheme : AppTheme.lightTheme,
           darkTheme: isCyber ? AppTheme.cyberpunkTheme : AppTheme.darkTheme,

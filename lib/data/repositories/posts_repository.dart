@@ -194,6 +194,64 @@ class PostsRepository {
     }
   }
 
+  Future<void> updateComment({
+    required String postId,
+    required String commentId,
+    required String newContent,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final postRef = _firestore.collection('posts').doc(postId);
+    final postDoc = await postRef.get();
+    if (!postDoc.exists) return;
+
+    final post = Post.fromFirestore(postDoc);
+    final comments = List<Comment>.from(post.comments);
+    final index = comments.indexWhere((c) => c.id == commentId);
+    if (index == -1) return;
+    if (comments[index].userId != user.uid) return;
+
+    final updated = Comment(
+      id: comments[index].id,
+      userId: comments[index].userId,
+      userName: comments[index].userName,
+      content: newContent,
+      createdAt: comments[index].createdAt,
+    );
+    comments[index] = updated;
+
+    await postRef.update({
+      'comments': comments.map((c) => c.toMap()).toList(),
+      'updatedAt': Timestamp.now(),
+    });
+  }
+
+  Future<void> deleteComment({
+    required String postId,
+    required String commentId,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final postRef = _firestore.collection('posts').doc(postId);
+    final postDoc = await postRef.get();
+    if (!postDoc.exists) return;
+
+    final post = Post.fromFirestore(postDoc);
+    final comments = List<Comment>.from(post.comments);
+    final index = comments.indexWhere((c) => c.id == commentId);
+    if (index == -1) return;
+    if (comments[index].userId != user.uid) return;
+
+    comments.removeAt(index);
+
+    await postRef.update({
+      'comments': comments.map((c) => c.toMap()).toList(),
+      'updatedAt': Timestamp.now(),
+    });
+  }
+
   // Delete post (only by business owner)
   Future<void> deletePost(String postId) async {
     final user = _auth.currentUser;

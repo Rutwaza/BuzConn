@@ -21,6 +21,133 @@ class _BusinessesPageState extends State<BusinessesPage> {
   File? _selectedLogo;
   bool _showInactive = false;
 
+  void _showPremiumStyledDialog({
+    required String title,
+    required String message,
+  }) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF141821) : Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: isDark ? Colors.white10 : Colors.black12,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.primary.withOpacity(0.95),
+                        AppColors.primary.withOpacity(0.55),
+                      ],
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.stars_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  title,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(color: AppColors.grey),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.06)
+                        : Colors.black.withOpacity(0.04),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.check_circle,
+                          color: AppColors.primary, size: 18),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Unlimited pages • Priority review • Featured boost',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Not now'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Premium upgrade coming soon!'),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Go Premium'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<int> _getBusinessCount(String userId) async {
     final snapshot = await FirebaseFirestore.instance
         .collection('businesses')
@@ -31,30 +158,10 @@ class _BusinessesPageState extends State<BusinessesPage> {
   }
 
   void _showPremiumDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Go Premium'),
-        content: const Text(
-          'Free accounts can create up to 2 businesses. '
-          'Upgrade to Premium to add more.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Not now'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Premium upgrade coming soon!')),
-              );
-            },
-            child: const Text('Go Premium'),
-          ),
-        ],
-      ),
+    _showPremiumStyledDialog(
+      title: 'Go Premium',
+      message:
+          'Free accounts can create up to 2 pages. Upgrade to add more.',
     );
   }
 
@@ -83,13 +190,13 @@ class _BusinessesPageState extends State<BusinessesPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Edit Business'),
+        title: const Text('Edit Page'),
         content: SingleChildScrollView(
           child: Column(
             children: [
               TextField(
                 controller: nameController,
-                decoration: const InputDecoration(labelText: 'Business Name'),
+                decoration: const InputDecoration(labelText: 'Page Name'),
               ),
               const SizedBox(height: 8),
               TextField(
@@ -235,9 +342,9 @@ class _BusinessesPageState extends State<BusinessesPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Business'),
+        title: const Text('Delete Page'),
         content: const Text(
-          'This will hide the business from your profile and clients. '
+          'This will hide the page from your profile and followers. '
           'You can re-enable it later.',
         ),
         actions: [
@@ -266,29 +373,9 @@ class _BusinessesPageState extends State<BusinessesPage> {
   }
 
   void _showPremiumVerifyDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Premium Required'),
-        content: const Text(
-          'Business verification is available on Premium. Upgrade to verify.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Not now'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Premium upgrade coming soon!')),
-              );
-            },
-            child: const Text('Go Premium'),
-          ),
-        ],
-      ),
+    _showPremiumStyledDialog(
+      title: 'Premium Required',
+      message: 'Page verification is available on Premium. Upgrade to verify.',
     );
   }
 
@@ -307,9 +394,9 @@ class _BusinessesPageState extends State<BusinessesPage> {
         children: [
           const Icon(Icons.storefront, size: 64, color: AppColors.grey),
           const SizedBox(height: 12),
-          const Text('You have no businesses yet'),
+          const Text('You have no pages yet'),
           const SizedBox(height: 8),
-          const Text('Set up your first business profile'),
+          const Text('Set up your first creator page'),
           const SizedBox(height: 12),
           ElevatedButton(
             onPressed: _onCreateNewBusiness,
@@ -317,7 +404,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
               backgroundColor: scheme.primary,
               foregroundColor: scheme.onPrimary,
             ),
-            child: const Text('Create your business profile'),
+            child: const Text('Create your page'),
           ),
         ],
       ),
@@ -330,12 +417,12 @@ class _BusinessesPageState extends State<BusinessesPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Businesses'),
+        title: const Text('My Pages'),
         actions: [
           IconButton(
             onPressed: _onCreateNewBusiness,
             icon: const Icon(Icons.add),
-            tooltip: 'Create Business',
+            tooltip: 'Create Page',
           ),
           IconButton(
             onPressed: () {
@@ -349,7 +436,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
         ],
       ),
       body: user == null
-          ? const Center(child: Text('Please sign in to manage businesses.'))
+          ? const Center(child: Text('Please sign in to manage pages.'))
           : StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('businesses')
@@ -374,11 +461,11 @@ class _BusinessesPageState extends State<BusinessesPage> {
                       children: [
                         const Icon(Icons.business, size: 64, color: AppColors.grey),
                         const SizedBox(height: 12),
-                        const Text('No businesses yet'),
+                        const Text('No pages yet'),
                         const SizedBox(height: 12),
                         ElevatedButton(
                           onPressed: _onCreateNewBusiness,
-                          child: const Text('Create your first business'),
+                          child: const Text('Create your first page'),
                         ),
                       ],
                     ),
@@ -412,7 +499,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
                                   )
                                 : null,
                           ),
-                        title: Text(data['name'] ?? 'Unnamed Business'),
+                        title: Text(data['name'] ?? 'Unnamed Page'),
                         subtitle: Text(data['category'] ?? 'Category'),
                         trailing: PopupMenuButton<String>(
                           onSelected: (value) {
@@ -472,7 +559,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
                           if (inactiveDocs.isEmpty) {
                             return const Padding(
                               padding: EdgeInsets.all(16),
-                              child: Text('No inactive businesses.'),
+                              child: Text('No inactive pages.'),
                             );
                           }
                           return Column(
@@ -481,7 +568,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
                               const Padding(
                                 padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
                                 child: Text(
-                                  'Inactive Businesses',
+                                  'Inactive Pages',
                                   style: TextStyle(fontWeight: FontWeight.bold),
                                 ),
                               ),
@@ -492,7 +579,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
                                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                   child: ListTile(
                                     leading: const Icon(Icons.business_outlined),
-                                    title: Text(data['name'] ?? 'Unnamed Business'),
+                                    title: Text(data['name'] ?? 'Unnamed Page'),
                                     subtitle: const Text('Inactive'),
                                     trailing: TextButton(
                                       onPressed: () => _restoreBusiness(doc.id),
@@ -529,7 +616,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
               children: [
                 Expanded(
                   child: Text(
-                    'Businesses: $count / $_maxBusinesses',
+                    'Pages: $count / $_maxBusinesses',
                     style: TextStyle(
                       color: scheme.onSurface,
                     ),

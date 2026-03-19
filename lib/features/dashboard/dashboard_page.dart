@@ -1,7 +1,5 @@
-import 'dart:async';
-import 'dart:math';
-
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -20,10 +18,19 @@ class DashboardPage extends ConsumerStatefulWidget {
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
   User? _currentUser;
+  StreamSubscription<User?>? _authSub;
 
   @override
   void initState() {
     super.initState();
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (!mounted) return;
+      if (user == null) {
+        context.go(AppRoutes.login);
+        return;
+      }
+      _currentUser = user;
+    });
     _loadUserData();
   }
 
@@ -55,6 +62,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     }
   }
 
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
+
   Future<void> _signOut() async {
     await FirebaseAuth.instance.signOut();
     if (mounted) {
@@ -66,7 +79,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CityFigure'),
+        title: const Text('Spotlight'),
         leading: null,
         actions: [
           IconButton(
@@ -95,7 +108,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout, color: Colors.redAccent),
             onPressed: _signOut,
           ),
         ],
@@ -169,7 +182,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'Explore Cosmos!',
+                                          'Spotlight your work!',
                                           style: Theme.of(context).textTheme.headlineSmall,
                                         ),
                                         const SizedBox(height: 8),
@@ -204,7 +217,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                                         end: Alignment.bottomRight,
                                       ),
                                     ),
-                                    child: const _RotatingWelcomeIcon(),
+                                    child: _UserAvatar(
+                                      name: (userData['name'] ?? 'User')
+                                          .toString(),
+                                      imageUrl:
+                                          userData['imageUrl'] as String?,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -232,7 +250,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                             children: [
                               _buildActionCard(
                                 icon: Icons.feed,
-                                title: 'Business Feed',
+                                title: 'Spotlight Feed',
                                 onTap: () {
                                   context.push(AppRoutes.feed);
                                 },
@@ -276,7 +294,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                                   const SizedBox(height: 6),
                                   _buildStatusRow(
                                     icon: Icons.storefront,
-                                    label: 'Businesses',
+                                    label: 'Pages',
                                     value: '$businessCount / 2 active',
                                   ),
                                   if (userType == 'business') ...[
@@ -308,7 +326,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       return [
         _buildActionCard(
           icon: Icons.business,
-          title: 'My Business',
+          title: 'My Page',
           onTap: () {
             context.push(AppRoutes.businesses);
           },
@@ -330,14 +348,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         ),
         _buildActionCard(
           icon: Icons.search,
-          title: 'Find Services',
+          title: 'Discover',
           onTap: () {
             context.push(AppRoutes.search);
           },
         ),
         _buildActionCard(
           icon: Icons.analytics,
-          title: 'Analytics',
+          title: 'Insights',
           onTap: () {
             context.push(AppRoutes.analytics);
           },
@@ -347,7 +365,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       return [
         _buildActionCard(
           icon: Icons.business,
-          title: 'My Businesses',
+          title: 'My Pages',
           onTap: () {
             context.push(AppRoutes.businesses);
           },
@@ -369,14 +387,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         ),
         _buildActionCard(
           icon: Icons.search,
-          title: 'Find Services',
+          title: 'Discover',
           onTap: () {
             context.push(AppRoutes.search);
           },
         ),
         _buildActionCard(
-          icon: Icons.favorite,
-          title: 'Favorites',
+          icon: Icons.bookmark,
+          title: 'Saved',
           onTap: () {
             context.push(AppRoutes.favorites);
           },
@@ -470,60 +488,37 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   }
 }
 
-class _RotatingWelcomeIcon extends StatefulWidget {
-  const _RotatingWelcomeIcon();
+class _UserAvatar extends StatelessWidget {
+  const _UserAvatar({
+    required this.name,
+    required this.imageUrl,
+  });
 
-  @override
-  State<_RotatingWelcomeIcon> createState() => _RotatingWelcomeIconState();
-}
-
-class _RotatingWelcomeIconState extends State<_RotatingWelcomeIcon> {
-  static const List<String> _welcomeIcons = [
-    'assets/icons/alien.png',
-    'assets/icons/constellation.png',
-    'assets/icons/stars.png',
-  ];
-
-  int _welcomeIconIndex = 0;
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _welcomeIconIndex = Random().nextInt(_welcomeIcons.length);
-    _timer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (!mounted) return;
-      setState(() {
-        _welcomeIconIndex = (_welcomeIconIndex + 1) % _welcomeIcons.length;
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
+  final String name;
+  final String? imageUrl;
 
   @override
   Widget build(BuildContext context) {
     return ClipOval(
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 600),
-        transitionBuilder: (child, animation) {
-          return FadeTransition(
-            opacity: animation,
-            child: child,
-          );
-        },
-        child: SizedBox.expand(
-          key: ValueKey(_welcomeIcons[_welcomeIconIndex]),
-          child: Image.asset(
-            _welcomeIcons[_welcomeIconIndex],
-            fit: BoxFit.cover,
-          ),
-        ),
-      ),
+      child: imageUrl != null && imageUrl!.isNotEmpty
+          ? Image.network(
+              imageUrl!,
+              fit: BoxFit.cover,
+              width: 64,
+              height: 64,
+            )
+          : Container(
+              color: AppColors.primary,
+              alignment: Alignment.center,
+              child: Text(
+                name.isNotEmpty ? name[0].toUpperCase() : '?',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 22,
+                ),
+              ),
+            ),
     );
   }
 }

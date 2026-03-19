@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:country_code_picker/country_code_picker.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
@@ -124,7 +125,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       'createdAt': FieldValue.serverTimestamp(),
       'userType': 'client',
       'fcmTokens': [],
-      'themeMode': 'light',
+      'themeMode': 'dark',
     });
   }
 
@@ -416,12 +417,27 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      body: Stack(
-        children: [
+    final fieldFillColor = isDark
+        ? const Color(0xCC1A2230).withOpacity(0.52)
+        : Colors.white.withOpacity(0.22);
+    final fieldBorderColor = Colors.white.withOpacity(isDark ? 0.18 : 0.14);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBody: true,
+        extendBodyBehindAppBar: true,
+        body: Stack(
+          children: [
           Positioned.fill(
             child: Opacity(
-              opacity: isDark ? 0.7 : 0.5,
+              opacity: isDark ? 0.5 : 0.42,
               child: Image.asset(
                 'assets/images/chat_bg.gif',
                 fit: BoxFit.cover,
@@ -434,8 +450,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           Positioned.fill(
             child: Container(
               color: isDark
-                  ? Colors.black.withOpacity(0.18)
-                  : Colors.white.withOpacity(0.28),
+                  ? Colors.black.withOpacity(0.34)
+                  : Colors.black.withOpacity(0.18),
             ),
           ),
           SingleChildScrollView(
@@ -448,23 +464,30 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   // Header
                   const Center(
                     child: Text(
-                      'Welcome Back!',
+                      'Welcome Back to Spotlight',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.w700,
-                        color: AppColors.black,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black45,
+                            blurRadius: 10,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                   const SizedBox(height: 8),
                   const Center(
                     child: Text(
-                      'Sign in to continue',
+                      'Sign in to spotlight your work',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 16,
-                        color: AppColors.grey,
+                        color: Colors.white70,
                       ),
                     ),
                   ),
@@ -478,6 +501,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           label: 'Email Address',
                           hintText: 'Enter your email',
                           controller: _emailController,
+                          fillColor: fieldFillColor,
+                          textColor: Colors.white,
+                          hintColor: Colors.white60,
+                          borderColor: fieldBorderColor,
+                          errorStyle: const TextStyle(
+                            color: Colors.redAccent,
+                            backgroundColor: Colors.transparent,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.alternate_email_rounded,
+                            color: Colors.white70,
+                          ),
                           keyboardType: TextInputType.emailAddress,
                           validator: (value) {
                             if (value == null || value.isEmpty) {
@@ -496,6 +531,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           hintText: 'Enter your password',
                           controller: _passwordController,
                           obscureText: true,
+                          fillColor: fieldFillColor,
+                          textColor: Colors.white,
+                          hintColor: Colors.white60,
+                          borderColor: fieldBorderColor,
+                          errorStyle: const TextStyle(
+                            color: Colors.redAccent,
+                            backgroundColor: Colors.transparent,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.lock_outline_rounded,
+                            color: Colors.white70,
+                          ),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
                               return 'Please enter your password';
@@ -557,35 +604,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         const SizedBox(height: 32),
                         // Social Login Buttons
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: _handleGoogleSignIn,
-                                icon: const Icon(Icons.g_mobiledata),
-                                label: const Text('Google'),
-                                style: OutlinedButton.styleFrom(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 16),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                              ),
+                            _socialButton(
+                              onPressed: _handleGoogleSignIn,
+                              assetPath: 'assets/images/google.png',
+                              semanticLabel: 'Continue with Google',
                             ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: _handlePhoneSignIn,
-                                icon: const Icon(Icons.phone),
-                                label: const Text('Phone'),
-                                style: OutlinedButton.styleFrom(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 16),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                              ),
+                            const SizedBox(width: 18),
+                            _socialButton(
+                              onPressed: _handlePhoneSignIn,
+                              assetPath: 'assets/images/phone.png',
+                              semanticLabel: 'Continue with phone',
                             ),
                           ],
                         ),
@@ -621,7 +651,36 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               ),
             ),
           ),
-        ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _socialButton({
+    required VoidCallback onPressed,
+    required String assetPath,
+    required String semanticLabel,
+  }) {
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(20),
+        child: SizedBox(
+          width: 68,
+          height: 68,
+          child: Padding(
+            padding: EdgeInsets.all(
+              assetPath.contains('phone') ? 8 : 6,
+            ),
+            child: Image.asset(
+              assetPath,
+              fit: BoxFit.contain,
+            ),
+          ),
+        ),
       ),
     );
   }

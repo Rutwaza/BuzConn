@@ -21,6 +21,11 @@ class AppTextField extends StatelessWidget {
   final bool enabled;
   final TextCapitalization textCapitalization;
   final FocusNode? focusNode;
+  final Color? fillColor;
+  final Color? hintColor;
+  final Color? textColor;
+  final Color? borderColor;
+  final TextStyle? errorStyle;
 
   const AppTextField({
     super.key,
@@ -42,6 +47,11 @@ class AppTextField extends StatelessWidget {
     this.enabled = true,
     this.textCapitalization = TextCapitalization.none,
     this.focusNode,
+    this.fillColor,
+    this.hintColor,
+    this.textColor,
+    this.borderColor,
+    this.errorStyle,
   });
 
   @override
@@ -50,13 +60,18 @@ class AppTextField extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final labelStyle = theme.textTheme.labelLarge;
     final hintStyle = theme.textTheme.bodyMedium?.copyWith(
-      color: isDark ? Colors.white54 : AppColors.grey,
+      color: hintColor ?? (isDark ? Colors.white54 : AppColors.grey),
     );
     final textStyle = theme.textTheme.bodyMedium?.copyWith(
-      color: enabled ? (isDark ? Colors.white : AppColors.black) : AppColors.grey,
+      color: textColor ??
+          (enabled ? (isDark ? Colors.white : AppColors.black) : AppColors.grey),
     );
-    final fillColor =
-        enabled ? theme.cardColor : (isDark ? const Color(0xFF1C212B) : AppColors.lightGrey);
+    final resolvedFillColor = fillColor ??
+        (enabled
+            ? theme.cardColor
+            : (isDark ? const Color(0xFF1C212B) : AppColors.lightGrey));
+    final resolvedBorderColor =
+        borderColor ?? (isDark ? Colors.white24 : AppColors.lightGrey);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -81,17 +96,17 @@ class AppTextField extends StatelessWidget {
             hintText: hintText,
             hintStyle: hintStyle,
             filled: true,
-            fillColor: fillColor,
+            fillColor: resolvedFillColor,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(
-                color: isDark ? Colors.white24 : AppColors.lightGrey,
+                color: resolvedBorderColor,
               ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(
-                color: isDark ? Colors.white24 : AppColors.lightGrey,
+                color: resolvedBorderColor,
               ),
             ),
             focusedBorder: OutlineInputBorder(
@@ -102,6 +117,7 @@ class AppTextField extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: AppColors.error),
             ),
+            errorStyle: errorStyle,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 14,

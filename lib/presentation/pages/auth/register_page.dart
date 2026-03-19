@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:country_code_picker/country_code_picker.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
@@ -42,39 +43,42 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       });
 
       try {
-        // Create user with Firebase Auth
         UserCredential userCredential = await FirebaseAuth.instance
             .createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
 
-        // Store additional user data in Firestore
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(userCredential.user!.uid)
-            .set({
-          'name': _nameController.text.trim(),
-          'email': _emailController.text.trim(),
-          'createdAt': FieldValue.serverTimestamp(),
-          'userType': 'client', // Default to client, can be changed later
-          'fcmTokens': [],
-          'themeMode': 'light',
-        });
+        try {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userCredential.user!.uid)
+              .set({
+            'name': _nameController.text.trim(),
+            'email': _emailController.text.trim(),
+            'createdAt': FieldValue.serverTimestamp(),
+            'userType': 'client',
+            'fcmTokens': [],
+            'themeMode': 'dark',
+          }, SetOptions(merge: true));
+        } catch (_) {}
 
-        // Send email verification
-        await userCredential.user?.sendEmailVerification();
+        try {
+          await userCredential.user?.sendEmailVerification();
+        } catch (_) {}
 
-        setState(() {
-          _isLoading = false;
-        });
-
-        // Navigate to dashboard after successful registration
-        context.go(AppRoutes.dashboard);
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+          context.go(AppRoutes.dashboard);
+        }
       } on FirebaseAuthException catch (e) {
-        setState(() {
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
 
         String errorMessage = 'An error occurred';
         if (e.code == 'weak-password') {
@@ -88,14 +92,13 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(errorMessage)),
         );
-      } catch (e) {
-        setState(() {
-          _isLoading = false;
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('An unexpected error occurred')),
-        );
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+          context.go(AppRoutes.dashboard);
+        }
       }
     }
   }
@@ -116,7 +119,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       'createdAt': FieldValue.serverTimestamp(),
       'userType': 'client',
       'fcmTokens': [],
-      'themeMode': 'light',
+      'themeMode': 'dark',
     });
   }
 
@@ -177,45 +180,90 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     String dialCode = '+250';
     String fullPhone = '';
 
-    await showDialog(
+    await showModalBottomSheet(
       context: context,
-      barrierDismissible: false,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Continue with phone'),
-              content: Column(
+            final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+            return Container(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 16,
+                bottom: viewInsets + 20,
+              ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+              ),
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextField(
-                    controller: phoneController,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      hintText: '7XXXXXXXX',
-                      labelText: 'Phone number',
-                      prefixIcon: Icon(Icons.phone),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Text('Country'),
-                      const SizedBox(width: 12),
-                      CountryCodePicker(
-                        initialSelection: 'RW',
-                        favorite: const ['RW', 'KE', 'UG', 'TZ'],
-                        showFlag: true,
-                        showCountryOnly: false,
-                        showOnlyCountryWhenClosed: false,
-                        onChanged: (code) {
-                          dialCode = code.dialCode ?? '+250';
-                        },
+                      Expanded(
+                        child: Text(
+                          codeSent ? 'Verify your number' : 'Continue with phone',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: isSending || isVerifying
+                            ? null
+                            : () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  if (codeSent)
+                  const SizedBox(height: 6),
+                  Text(
+                    codeSent
+                        ? 'Enter the code we sent to $fullPhone'
+                        : 'We’ll send a one-time code to verify your number.',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(color: AppColors.grey),
+                  ),
+                  const SizedBox(height: 16),
+                  if (!codeSent) ...[
+                    Row(
+                      children: [
+                        CountryCodePicker(
+                          initialSelection: 'RW',
+                          favorite: const ['RW', 'KE', 'UG', 'TZ'],
+                          showFlag: true,
+                          showCountryOnly: false,
+                          showOnlyCountryWhenClosed: false,
+                          onChanged: (code) {
+                            dialCode = code.dialCode ?? '+250';
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: phoneController,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              hintText: '7XXXXXXXX',
+                              labelText: 'Phone number',
+                              prefixIcon: Icon(Icons.phone),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (codeSent) ...[
                     TextField(
                       controller: codeController,
                       keyboardType: TextInputType.number,
@@ -224,127 +272,139 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                         labelText: 'Verification code',
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                        onPressed: isVerifying
+                            ? null
+                            : () {
+                                setState(() {
+                                  codeSent = false;
+                                  isSending = false;
+                                  isVerifying = false;
+                                  verificationId = null;
+                                });
+                              },
+                        child: const Text('Edit phone number'),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: isSending || isVerifying
+                          ? null
+                          : () async {
+                              if (!codeSent) {
+                                final phone = phoneController.text.trim();
+                                if (phone.isEmpty) return;
+                                fullPhone = '$dialCode$phone';
+                                setState(() {
+                                  isSending = true;
+                                });
+                                await FirebaseAuth.instance.verifyPhoneNumber(
+                                  phoneNumber: fullPhone,
+                                  verificationCompleted:
+                                      (PhoneAuthCredential credential) async {
+                                    final userCredential = await FirebaseAuth
+                                        .instance
+                                        .signInWithCredential(credential);
+                                    final user = userCredential.user;
+                                    if (user != null) {
+                                      await _ensureUserDocument(
+                                        user,
+                                        phone: user.phoneNumber ?? fullPhone,
+                                      );
+                                    }
+                                    if (mounted) {
+                                      Navigator.pop(context);
+                                      context.go(AppRoutes.dashboard);
+                                    }
+                                  },
+                                  verificationFailed:
+                                      (FirebaseAuthException e) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          e.message ??
+                                              'Phone verification failed',
+                                        ),
+                                      ),
+                                    );
+                                    setState(() {
+                                      isSending = false;
+                                    });
+                                  },
+                                  codeSent: (String id, int? resendToken) {
+                                    verificationId = id;
+                                    setState(() {
+                                      codeSent = true;
+                                      isSending = false;
+                                    });
+                                  },
+                                  codeAutoRetrievalTimeout: (String id) {
+                                    verificationId = id;
+                                  },
+                                );
+                              } else {
+                                final code = codeController.text.trim();
+                                if (code.isEmpty || verificationId == null) {
+                                  return;
+                                }
+                                setState(() {
+                                  isVerifying = true;
+                                });
+                                try {
+                                  final credential =
+                                      PhoneAuthProvider.credential(
+                                    verificationId: verificationId!,
+                                    smsCode: code,
+                                  );
+                                  final userCredential =
+                                      await FirebaseAuth.instance
+                                          .signInWithCredential(credential);
+                                  final user = userCredential.user;
+                                  if (user != null) {
+                                    await _ensureUserDocument(
+                                      user,
+                                      phone: user.phoneNumber ?? fullPhone,
+                                    );
+                                  }
+                                  if (mounted) {
+                                    Navigator.pop(context);
+                                    context.go(AppRoutes.dashboard);
+                                  }
+                                } on FirebaseAuthException catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        e.message ??
+                                            'Invalid verification code',
+                                      ),
+                                    ),
+                                  );
+                                } finally {
+                                  if (mounted) {
+                                    setState(() {
+                                      isVerifying = false;
+                                    });
+                                  }
+                                }
+                              }
+                            },
+                      child: (isSending || isVerifying)
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(codeSent ? 'Verify' : 'Send code'),
+                    ),
+                  ),
                 ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: isSending || isVerifying
-                      ? null
-                      : () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                if (!codeSent)
-                  ElevatedButton(
-                    onPressed: isSending
-                        ? null
-                        : () async {
-                            final phone = phoneController.text.trim();
-                            if (phone.isEmpty) return;
-                            fullPhone = '$dialCode$phone';
-                            setState(() {
-                              isSending = true;
-                            });
-                            await FirebaseAuth.instance.verifyPhoneNumber(
-                              phoneNumber: fullPhone,
-                              verificationCompleted:
-                                  (PhoneAuthCredential credential) async {
-                                final userCredential = await FirebaseAuth
-                                    .instance
-                                    .signInWithCredential(credential);
-                                final user = userCredential.user;
-                                if (user != null) {
-                                  await _ensureUserDocument(
-                                    user,
-                                    phone: user.phoneNumber ?? fullPhone,
-                                  );
-                                }
-                                if (mounted) {
-                                  Navigator.pop(context);
-                                  context.go(AppRoutes.dashboard);
-                                }
-                              },
-                              verificationFailed: (FirebaseAuthException e) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      e.message ?? 'Phone verification failed',
-                                    ),
-                                  ),
-                                );
-                              },
-                              codeSent: (String id, int? resendToken) {
-                                verificationId = id;
-                                setState(() {
-                                  codeSent = true;
-                                  isSending = false;
-                                });
-                              },
-                              codeAutoRetrievalTimeout: (String id) {
-                                verificationId = id;
-                              },
-                            );
-                          },
-                    child: isSending
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Send code'),
-                  ),
-                if (codeSent)
-                  ElevatedButton(
-                    onPressed: isVerifying
-                        ? null
-                        : () async {
-                            final code = codeController.text.trim();
-                            if (code.isEmpty || verificationId == null) return;
-                            setState(() {
-                              isVerifying = true;
-                            });
-                            try {
-                            final credential = PhoneAuthProvider.credential(
-                              verificationId: verificationId!,
-                              smsCode: code,
-                            );
-                            final userCredential = await FirebaseAuth.instance
-                                .signInWithCredential(credential);
-                            final user = userCredential.user;
-                            if (user != null) {
-                              await _ensureUserDocument(
-                                user,
-                                phone: user.phoneNumber ?? fullPhone,
-                              );
-                            }
-                              if (mounted) {
-                                Navigator.pop(context);
-                                context.go(AppRoutes.dashboard);
-                              }
-                            } on FirebaseAuthException catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    e.message ?? 'Invalid verification code',
-                                  ),
-                                ),
-                              );
-                            } finally {
-                              if (mounted) {
-                                setState(() {
-                                  isVerifying = false;
-                                });
-                              }
-                            }
-                          },
-                    child: isVerifying
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Verify'),
-                  ),
-              ],
             );
           },
         );
@@ -355,12 +415,27 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      body: Stack(
-        children: [
+    final fieldFillColor = isDark
+        ? const Color(0xCC1A2230).withOpacity(0.52)
+        : Colors.white.withOpacity(0.22);
+    final fieldBorderColor = Colors.white.withOpacity(isDark ? 0.18 : 0.14);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBody: true,
+        extendBodyBehindAppBar: true,
+        body: Stack(
+          children: [
           Positioned.fill(
             child: Opacity(
-              opacity: isDark ? 0.7 : 0.5,
+              opacity: isDark ? 0.5 : 0.42,
               child: Image.asset(
                 'assets/images/chat_bg.gif',
                 fit: BoxFit.cover,
@@ -373,8 +448,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           Positioned.fill(
             child: Container(
               color: isDark
-                  ? Colors.black.withOpacity(0.18)
-                  : Colors.white.withOpacity(0.28),
+                  ? Colors.black.withOpacity(0.34)
+                  : Colors.black.withOpacity(0.18),
             ),
           ),
           SingleChildScrollView(
@@ -387,22 +462,29 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                   const SizedBox(height: 80),
                   Center(
                     child: Text(
-                      'Create Account',
+                      'Create Your Spotlight',
                       textAlign: TextAlign.center,
                       style:
                           Theme.of(context).textTheme.headlineMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
-                                color: AppColors.primary,
+                                color: Colors.white,
+                                shadows: const [
+                                  Shadow(
+                                    color: Colors.black45,
+                                    blurRadius: 10,
+                                    offset: Offset(0, 2),
+                                  ),
+                                ],
                               ),
                     ),
                   ),
                   const SizedBox(height: 8),
                   Center(
                     child: Text(
-                      'Join Business Connector and start connecting',
+                      'Join Spotlight and share your story',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: AppColors.darkGrey,
+                            color: Colors.white70,
                           ),
                     ),
                   ),
@@ -411,6 +493,18 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     controller: _nameController,
                     label: 'Full Name',
                     hintText: 'Enter your full name',
+                    fillColor: fieldFillColor,
+                    textColor: Colors.white,
+                    hintColor: Colors.white60,
+                    borderColor: fieldBorderColor,
+                    errorStyle: const TextStyle(
+                      color: Colors.redAccent,
+                      backgroundColor: Colors.transparent,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.person_outline_rounded,
+                      color: Colors.white70,
+                    ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Please enter your name';
@@ -424,6 +518,18 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     label: 'Email',
                     hintText: 'Enter your email',
                     keyboardType: TextInputType.emailAddress,
+                    fillColor: fieldFillColor,
+                    textColor: Colors.white,
+                    hintColor: Colors.white60,
+                    borderColor: fieldBorderColor,
+                    errorStyle: const TextStyle(
+                      color: Colors.redAccent,
+                      backgroundColor: Colors.transparent,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.alternate_email_rounded,
+                      color: Colors.white70,
+                    ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Please enter your email';
@@ -440,6 +546,18 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     label: 'Password',
                     hintText: 'Enter your password',
                     obscureText: true,
+                    fillColor: fieldFillColor,
+                    textColor: Colors.white,
+                    hintColor: Colors.white60,
+                    borderColor: fieldBorderColor,
+                    errorStyle: const TextStyle(
+                      color: Colors.redAccent,
+                      backgroundColor: Colors.transparent,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.lock_outline_rounded,
+                      color: Colors.white70,
+                    ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Please enter your password';
@@ -456,6 +574,18 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     label: 'Confirm Password',
                     hintText: 'Confirm your password',
                     obscureText: true,
+                    fillColor: fieldFillColor,
+                    textColor: Colors.white,
+                    hintColor: Colors.white60,
+                    borderColor: fieldBorderColor,
+                    errorStyle: const TextStyle(
+                      color: Colors.redAccent,
+                      backgroundColor: Colors.transparent,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.verified_user_outlined,
+                      color: Colors.white70,
+                    ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Please confirm your password';
@@ -492,33 +622,18 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                   ),
                   const SizedBox(height: 24),
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _handleGoogleSignIn,
-                          icon: const Icon(Icons.g_mobiledata),
-                          label: const Text('Google'),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
+                      _socialButton(
+                        onPressed: _handleGoogleSignIn,
+                        assetPath: 'assets/images/google.png',
+                        semanticLabel: 'Continue with Google',
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _handlePhoneSignIn,
-                          icon: const Icon(Icons.phone),
-                          label: const Text('Phone'),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
+                      const SizedBox(width: 18),
+                      _socialButton(
+                        onPressed: _handlePhoneSignIn,
+                        assetPath: 'assets/images/phone.png',
+                        semanticLabel: 'Continue with phone',
                       ),
                     ],
                   ),
@@ -549,7 +664,36 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
               ),
             ),
           ),
-        ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _socialButton({
+    required VoidCallback onPressed,
+    required String assetPath,
+    required String semanticLabel,
+  }) {
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(20),
+        child: SizedBox(
+          width: 68,
+          height: 68,
+          child: Padding(
+            padding: EdgeInsets.all(
+              assetPath.contains('phone') ? 8 : 6,
+            ),
+            child: Image.asset(
+              assetPath,
+              fit: BoxFit.contain,
+            ),
+          ),
+        ),
       ),
     );
   }

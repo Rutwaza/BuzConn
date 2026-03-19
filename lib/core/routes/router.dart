@@ -19,7 +19,9 @@ import 'package:businessfinder/presentation/pages/profile/client_profile_page.da
 import 'package:businessfinder/presentation/pages/notifications/notifications_page.dart';
 import 'package:businessfinder/presentation/pages/favorites/favorites_page.dart';
 import 'package:businessfinder/presentation/pages/analytics/analytics_page.dart';
-import 'package:businessfinder/features/dashboard/dashboard_page.dart';
+import 'package:businessfinder/presentation/pages/profile/follow_list_page.dart';
+import 'package:businessfinder/presentation/pages/business/page_followers_page.dart';
+import 'package:businessfinder/presentation/pages/settings/settings_page.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
@@ -79,7 +81,7 @@ class AppRouter {
       ),
       GoRoute(
         path: AppRoutes.dashboard,
-        builder: (context, state) => const DashboardPage(),
+        builder: (context, state) => const PostsFeedPage(),
       ),
       GoRoute(
         path: AppRoutes.search,
@@ -105,6 +107,30 @@ class AppRouter {
       GoRoute(
         path: AppRoutes.analytics,
         builder: (context, state) => const AnalyticsPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.settings,
+        builder: (context, state) => const SettingsPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.userFollowers,
+        builder: (context, state) => FollowListPage(
+          userId: state.pathParameters['id']!,
+          type: FollowListType.followers,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.userFollowing,
+        builder: (context, state) => FollowListPage(
+          userId: state.pathParameters['id']!,
+          type: FollowListType.following,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.pageFollowers,
+        builder: (context, state) => PageFollowersPage(
+          pageId: state.pathParameters['id']!,
+        ),
       ),
     ],
   );

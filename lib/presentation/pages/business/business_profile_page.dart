@@ -51,31 +51,33 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (!businessSnapshot.hasData || !businessSnapshot.data!.exists) {
-            return const Center(child: Text('Business not found'));
+            return const Center(child: Text('Page not found'));
           }
 
           final raw = businessSnapshot.data!.data();
           if (raw == null) {
-            return const Center(child: Text('Business not found'));
+            return const Center(child: Text('Page not found'));
           }
           final business = raw as Map<String, dynamic>;
-          final name = business['name'] ?? 'Business';
+          final name = business['name'] ?? 'Page';
           final imageUrl = business['imageUrl'] as String?;
           final category = business['category'] ?? '';
           final phone = business['phone'] ?? '';
           // final email = business['email'] ?? '';
           final isVerified = business['isVerified'] == true;
           final ownerId = business['ownerId'] ?? '';
+          final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+          final isOwner = currentUserId == ownerId;
 
           return CustomScrollView(
             slivers: [
               SliverAppBar(
                 pinned: true,
-                expandedHeight: 200,
+                expandedHeight: 230,
                 title: const Text(''),
                 flexibleSpace: FlexibleSpaceBar(
                   background: Container(
-                    padding: const EdgeInsets.fromLTRB(16, 60, 16, 8),
+                    padding: const EdgeInsets.fromLTRB(16, 52, 16, 8),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -90,9 +92,9 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                       await _dialPhone(context, phone);
                                     },
                             ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: 8),
                             CircleAvatar(
-                              radius: 36,
+                              radius: 32,
                               backgroundColor: AppColors.primary,
                               backgroundImage:
                                   imageUrl != null && imageUrl.isNotEmpty
@@ -100,7 +102,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                       : null,
                               child: null,
                             ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: 8),
                             _circleIconButton(
                               icon: Icons.message,
                               onTap: () async {
@@ -142,12 +144,96 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          isVerified ? 'Verified business' : 'Not verified',
+                          isVerified ? 'Verified page' : 'Not verified',
                           style: TextStyle(
                             color: isVerified ? Colors.green : AppColors.grey,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),
+                        ),
+                        const SizedBox(height: 8),
+                        StreamBuilder<QuerySnapshot>(
+                          stream: _pageFollowers(widget.businessId),
+                          builder: (context, followersSnap) {
+                            final followersCount =
+                                followersSnap.data?.docs.length ?? 0;
+                            return Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 10,
+                              runSpacing: 6,
+                              children: [
+                                _StatPill(
+                                  label: 'Followers',
+                                  value: followersCount,
+                                ),
+                                if (!isOwner && currentUserId != null) ...[
+                                  StreamBuilder<
+                                      DocumentSnapshot<Map<String, dynamic>>>(
+                                    stream: _pageFollowDoc(
+                                      currentUserId,
+                                      widget.businessId,
+                                    ),
+                                    builder: (context, followSnap) {
+                                      final isFollowing =
+                                          followSnap.data?.exists == true;
+                                      return ElevatedButton(
+                                        onPressed: () async {
+                                          if (isFollowing) {
+                                            await _unfollowPage(
+                                              currentUserId,
+                                              widget.businessId,
+                                            );
+                                          } else {
+                                            await _followPage(
+                                              currentUserId,
+                                              widget.businessId,
+                                            );
+                                          }
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: isFollowing
+                                              ? Colors.transparent
+                                              : AppColors.primary,
+                                          foregroundColor: isFollowing
+                                              ? AppColors.primary
+                                              : Colors.white,
+                                          elevation: 0,
+                                          side: isFollowing
+                                              ? const BorderSide(
+                                                  color: AppColors.primary)
+                                              : BorderSide.none,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 6,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          isFollowing
+                                              ? 'Following'
+                                              : 'Follow',
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                                if (isOwner) ...[
+                                  TextButton(
+                                    onPressed: () {
+                                      context.push(
+                                        AppRoutes.pageFollowersPath(
+                                            widget.businessId),
+                                      );
+                                    },
+                                    child: const Text('View'),
+                                  ),
+                                ],
+                              ],
+                            );
+                          },
                         ),
                         if (category.toString().isNotEmpty) ...[
                           const SizedBox(height: 4),
@@ -314,6 +400,42 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
     );
   }
 
+  Future<void> _followPage(String followerId, String pageId) async {
+    final docId = '${followerId}_$pageId';
+    await FirebaseFirestore.instance
+        .collection('page_follows')
+        .doc(docId)
+        .set({
+      'followerId': followerId,
+      'pageId': pageId,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> _unfollowPage(String followerId, String pageId) async {
+    final docId = '${followerId}_$pageId';
+    await FirebaseFirestore.instance
+        .collection('page_follows')
+        .doc(docId)
+        .delete();
+  }
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> _pageFollowDoc(
+      String followerId, String pageId) {
+    final docId = '${followerId}_$pageId';
+    return FirebaseFirestore.instance
+        .collection('page_follows')
+        .doc(docId)
+        .snapshots();
+  }
+
+  Stream<QuerySnapshot> _pageFollowers(String pageId) {
+    return FirebaseFirestore.instance
+        .collection('page_follows')
+        .where('pageId', isEqualTo: pageId)
+        .snapshots();
+  }
+
   Future<void> _dialPhone(BuildContext context, String phone) async {
     final trimmed = phone.trim();
     if (trimmed.isEmpty) return;
@@ -330,4 +452,44 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
     }
   }
 
+}
+
+class _StatPill extends StatelessWidget {
+  const _StatPill({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white10 : Colors.black.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: isDark ? Colors.white12 : Colors.black12,
+        ),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value.toString(),
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10,
+              color: AppColors.grey,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

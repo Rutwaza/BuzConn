@@ -20,19 +20,19 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
 
   final List<OnboardingItem> _onboardingItems = [
     OnboardingItem(
-      title: 'Connect with Local Businesses',
-      description: 'Discover amazing services and products from businesses near you.',
-      icon: Icons.handshake,
+      title: 'Spotlight Your Work',
+      description: 'Share your posts and shine in a creator-first community.',
+      icon: Icons.auto_awesome,
     ),
     OnboardingItem(
-      title: 'Grow Your Business',
-      description: 'Reach potential clients and showcase your services effectively.',
-      icon: Icons.trending_up,
+      title: 'Discover & Follow',
+      description: 'Find creators, trends, and ideas worth saving.',
+      icon: Icons.explore,
     ),
     OnboardingItem(
-      title: 'Easy Communication',
-      description: 'Chat directly with businesses and get instant responses.',
-      icon: Icons.chat,
+      title: 'Connect & Share',
+      description: 'Chat, collaborate, and grow your audience together.',
+      icon: Icons.chat_bubble,
     ),
   ];
 

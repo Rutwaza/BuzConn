@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:country_code_picker/country_code_picker.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
@@ -24,6 +25,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
   final _bioController = TextEditingController();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  String _dialCode = '+250';
 
   bool _isLoading = false;
   bool _isUploadingImage = false;
@@ -46,14 +48,54 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
       if (userDoc.exists) {
         final data = userDoc.data()!;
         setState(() {
-          _nameController.text = data['name'] ?? '';
-          _emailController.text = data['email'] ?? '';
-          _phoneController.text = data['phone'] ?? '';
+          _nameController.text =
+              (data['name'] ?? user.displayName ?? '').toString();
+          _emailController.text =
+              (data['email'] ?? user.email ?? '').toString();
+          final rawPhone =
+              (data['phone'] ?? user.phoneNumber ?? '').toString();
+          if (rawPhone.startsWith('+')) {
+            final match = RegExp(r'^\+\d{1,4}').firstMatch(rawPhone);
+            if (match != null) {
+              _dialCode = match.group(0)!;
+              _phoneController.text =
+                  rawPhone.substring(_dialCode.length).trim();
+            } else {
+              _phoneController.text = rawPhone;
+            }
+          } else {
+            _phoneController.text = rawPhone;
+          }
           _bioController.text = data['bio'] ?? '';
           _profileImageUrl = data['imageUrl'];
         });
+      } else {
+        setState(() {
+          _nameController.text = user.displayName ?? '';
+          _emailController.text = user.email ?? '';
+          final rawPhone = user.phoneNumber ?? '';
+          if (rawPhone.startsWith('+')) {
+            final match = RegExp(r'^\+\d{1,4}').firstMatch(rawPhone);
+            if (match != null) {
+              _dialCode = match.group(0)!;
+              _phoneController.text =
+                  rawPhone.substring(_dialCode.length).trim();
+            } else {
+              _phoneController.text = rawPhone;
+            }
+          } else {
+            _phoneController.text = rawPhone;
+          }
+        });
       }
     }
+  }
+
+  String _normalizedPhone() {
+    final raw = _phoneController.text.trim();
+    if (raw.isEmpty) return '';
+    if (raw.startsWith('+')) return raw;
+    return '$_dialCode$raw';
   }
 
   Future<void> _pickProfileImage() async {
@@ -118,7 +160,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
             'userType': 'client',
             'name': _nameController.text.trim(),
             'email': _emailController.text.trim(),
-            'phone': _phoneController.text.trim(),
+            'phone': _normalizedPhone(),
             'bio': _bioController.text.trim(),
             'profileCompleted': true,
             'updatedAt': FieldValue.serverTimestamp(),
@@ -214,40 +256,37 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pickerTextColor = isDark ? Colors.white : Colors.black87;
+    final pickerBg = isDark ? const Color(0xFF0F131B) : Colors.white;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Profile'),
+        title: const Text('Edit Profile'),
         automaticallyImplyLeading: false,
+        centerTitle: true,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Header
-              Text(
-                'Your Profile',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF151A24) : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isDark ? Colors.white10 : Colors.black12,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Keep your info up to date so businesses can reach you.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppColors.grey,
-                ),
-              ),
-
-              const SizedBox(height: 32),
-
-              Center(
                 child: Column(
                   children: [
                     CircleAvatar(
-                      radius: 44,
+                      radius: 50,
                       backgroundColor: AppColors.primary,
                       backgroundImage: _profileImageUrl != null
                           ? NetworkImage(_profileImageUrl!)
@@ -265,24 +304,59 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
                             )
                           : null,
                     ),
-                    const SizedBox(height: 8),
-                    TextButton(
+                    const SizedBox(height: 10),
+                    Text(
+                      _nameController.text.isEmpty
+                          ? 'Your Name'
+                          : _nameController.text,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
+                    if (_emailController.text.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        _emailController.text,
+                        style: const TextStyle(
+                          color: AppColors.grey,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
                       onPressed: _isUploadingImage ? null : _pickProfileImage,
-                      child: Text(
+                      icon: const Icon(Icons.photo_camera),
+                      label: Text(
                         _isUploadingImage ? 'Uploading...' : 'Change photo',
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: const BorderSide(color: AppColors.primary),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
+              Text(
+                'About you',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 12),
 
               // Name
               AppTextField(
                 controller: _nameController,
-                label: 'Full Name',
-                hintText: 'Enter your full name',
+                label: 'Display Name',
+                hintText: 'How people see you',
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Please enter your name';
@@ -297,7 +371,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
               AppTextField(
                 controller: _emailController,
                 label: 'Email',
-                hintText: 'Enter your email',
+                hintText: 'Email address',
                 keyboardType: TextInputType.emailAddress,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -313,17 +387,67 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
               const SizedBox(height: 24),
 
               // Phone Number
-              AppTextField(
-                controller: _phoneController,
-                label: 'Phone Number',
-                hintText: '+1 (555) 123-4567',
-                keyboardType: TextInputType.phone,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your phone number';
-                  }
-                  return null;
-                },
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Phone',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      CountryCodePicker(
+                        initialSelection: _dialCode,
+                        favorite: const ['RW', 'KE', 'UG', 'TZ'],
+                        showFlag: true,
+                        showCountryOnly: false,
+                        showOnlyCountryWhenClosed: false,
+                        textStyle: TextStyle(color: pickerTextColor),
+                        dialogBackgroundColor: pickerBg,
+                        dialogTextStyle: TextStyle(color: pickerTextColor),
+                        searchDecoration: InputDecoration(
+                          hintText: 'Search country',
+                          hintStyle: TextStyle(
+                            color: pickerTextColor.withOpacity(0.6),
+                          ),
+                          enabledBorder: UnderlineInputBorder(
+                            borderSide: BorderSide(
+                              color: pickerTextColor.withOpacity(0.3),
+                            ),
+                          ),
+                          focusedBorder: UnderlineInputBorder(
+                            borderSide: BorderSide(
+                              color: pickerTextColor.withOpacity(0.6),
+                            ),
+                          ),
+                        ),
+                        onChanged: (code) {
+                          setState(() {
+                            _dialCode = code.dialCode ?? _dialCode;
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: AppTextField(
+                          controller: _phoneController,
+                          label: '',
+                          hintText: 'Phone number',
+                          keyboardType: TextInputType.phone,
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter your phone number';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
 
               const SizedBox(height: 24),
@@ -331,8 +455,8 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
               // Bio
               AppTextField(
                 controller: _bioController,
-                label: 'Bio (Optional)',
-                hintText: 'Tell us a bit about yourself...',
+                label: 'Bio',
+                hintText: 'Tell people about you...',
                 maxLines: 3,
                 maxLength: 200,
               ),
@@ -341,23 +465,46 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
 
               // Save Button
               AppButton(
-                text: 'Save Profile',
+                text: 'Save Changes',
                 onPressed: _saveProfile,
                 isLoading: _isLoading,
               ),
 
               const SizedBox(height: 12),
-              TextButton(
-                onPressed: _changePassword,
-                child: const Text('Change Password'),
-              ),
-
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: () {
-                  context.go(AppRoutes.dashboard);
-                },
-                child: const Text('Back to dashboard'),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _changePassword,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: const BorderSide(color: AppColors.primary),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Change Password'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () {
+                        context.go(AppRoutes.dashboard);
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.grey,
+                        side: BorderSide(
+                          color: isDark ? Colors.white24 : Colors.black12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Back'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

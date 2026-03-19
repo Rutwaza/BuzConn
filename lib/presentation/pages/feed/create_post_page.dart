@@ -98,7 +98,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
       _businesses = snapshot.docs
           .map((doc) => {
                 'id': doc.id,
-                'name': (doc.data())['name'] ?? 'Unnamed Business',
+                'name': (doc.data())['name'] ?? 'Unnamed Page',
               })
           .toList();
       if (_businesses.isNotEmpty) {
@@ -205,7 +205,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
     if (!_isBusinessUser) return;
     if (_selectedBusinessId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a business.')),
+        const SnackBar(content: Text('Please select a page.')),
       );
       return;
     }
@@ -290,22 +290,22 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
     if (!_isBusinessUser) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text('Create Post'),
+          title: const Text('New Post'),
         ),
         body: const Center(
-          child: Text('Only business accounts can create posts.'),
+          child: Text('Only creator pages can create posts.'),
         ),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create Post'),
+        title: const Text('New Post'),
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _createPost,
             child: Text(
-              'Post',
+              'Share',
               style: TextStyle(
                 color: _isLoading ? AppColors.grey : AppColors.primary,
                 fontWeight: FontWeight.bold,
@@ -333,12 +333,12 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                       color: AppColors.lightGrey,
                       child: Padding(
                         padding: EdgeInsets.all(12),
-                        child: Text('You have no active businesses to post from.'),
+                        child: Text('You have no active pages to post from.'),
                       ),
                     ),
                   if (_businesses.isNotEmpty) ...[
                     const Text(
-                      'Posting as',
+                      'Posting from',
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
@@ -367,8 +367,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                   // Content field
                   AppTextField(
                     controller: _contentController,
-                    label: 'What\'s happening?',
-                    hintText: 'Share something with your customers...',
+                    label: 'Caption',
+                    hintText: 'Share your spotlight...',
                     maxLines: 3,
                     maxLength: 300,
                     validator: (value) {
@@ -387,16 +387,16 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: _pickImages,
-                          icon: const Icon(Icons.image),
-                          label: const Text('Photos'),
+                          icon: const Icon(Icons.photo_library_outlined),
+                          label: const Text('Photo'),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: _pickVideos,
-                          icon: const Icon(Icons.videocam),
-                          label: const Text('Videos'),
+                          icon: const Icon(Icons.movie_creation_outlined),
+                          label: const Text('Video'),
                         ),
                       ),
                     ],
@@ -404,7 +404,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                   if (_selectedMedia.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     SizedBox(
-                      height: 220,
+                      height: 260,
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: PageView.builder(
@@ -464,7 +464,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                   const SizedBox(height: 24),
 
                   const Text(
-                    'Location will be shared from your business profile.',
+                    'Location will be shared from your page profile.',
                     style: TextStyle(color: AppColors.grey),
                   ),
 
@@ -516,7 +516,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
 
                   // Create post button
                   AppButton(
-                    text: 'Create Post',
+                    text: 'Share Post',
                     onPressed: _createPost,
                     isLoading: _isLoading,
                   ),

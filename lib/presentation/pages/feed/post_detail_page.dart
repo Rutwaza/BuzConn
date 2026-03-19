@@ -267,13 +267,15 @@ class _PostDetailPageState extends State<PostDetailPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Text(post.content),
+                    if (media.isEmpty) ...[
+                      Text(post.content),
+                    ],
                     if (media.isNotEmpty) ...[
                       const SizedBox(height: 12),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: SizedBox(
-                          height: 300,
+                          height: 360,
                           child: PageView.builder(
                             key: PageStorageKey(
                               'post_media_${widget.postId}',
@@ -287,15 +289,53 @@ class _PostDetailPageState extends State<PostDetailPage> {
                             },
                             itemBuilder: (context, index) {
                               final item = media[index];
+                              final overlayBottom = item.isVideo ? 56.0 : 0.0;
                               return KeyedSubtree(
                                 key: ValueKey(item.url),
-                                child: !item.isVideo
-                                    ? Image.network(
-                                        item.url,
-                                        width: double.infinity,
-                                        fit: BoxFit.cover,
-                                      )
-                                    : _buildVideoPage(item, index),
+                                child: Stack(
+                                  children: [
+                                    Positioned.fill(
+                                      child: !item.isVideo
+                                          ? Image.network(
+                                              item.url,
+                                              width: double.infinity,
+                                              fit: BoxFit.cover,
+                                            )
+                                          : _buildVideoPage(item, index),
+                                    ),
+                                    if (post.content.trim().isNotEmpty)
+                                      Positioned(
+                                        left: 0,
+                                        right: 0,
+                                        bottom: overlayBottom,
+                                        child: Container(
+                                          padding: const EdgeInsets.fromLTRB(
+                                              12, 24, 12, 10),
+                                          decoration: const BoxDecoration(
+                                            gradient: LinearGradient(
+                                              begin: Alignment.topCenter,
+                                              end: Alignment.bottomCenter,
+                                              colors: [
+                                                Colors.transparent,
+                                                Colors.black54,
+                                              ],
+                                            ),
+                                          ),
+                                          child: Text(
+                                            post.content,
+                                            maxLines: 3,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              height: 1.3,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               );
                             },
                           ),
@@ -332,19 +372,19 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           children: [
                             IconButton(
                               icon: Icon(
-                                isLiked ? Icons.star : Icons.star_border,
-                                color: isLiked ? Colors.amber : null,
+                                isLiked ? Icons.favorite : Icons.favorite_border,
+                                color: isLiked ? Colors.pinkAccent : null,
                               ),
                               onPressed: () => _repo.toggleLike(post.id),
                             ),
                             Text('${post.likes.length}'),
                             const SizedBox(width: 16),
-                            const Icon(Icons.comment),
+                            const Icon(Icons.chat_bubble_outline),
                             const SizedBox(width: 6),
                             Text('${post.comments.length}'),
                             const SizedBox(width: 16),
                             IconButton(
-                              icon: const Icon(Icons.share),
+                              icon: const Icon(Icons.forward),
                               onPressed: () {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(

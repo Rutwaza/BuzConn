@@ -10,7 +10,7 @@ class ThemeModeService {
   static final ThemeModeService instance = ThemeModeService._();
 
   final ValueNotifier<AppThemeMode> mode =
-      ValueNotifier<AppThemeMode>(AppThemeMode.light);
+      ValueNotifier<AppThemeMode>(AppThemeMode.dark);
 
   Future<void> loadFromUser() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -20,7 +20,7 @@ class ThemeModeService {
         .doc(user.uid)
         .get();
     final data = doc.data() ?? {};
-    final value = (data['themeMode'] ?? 'light').toString();
+    final value = (data['themeMode'] ?? 'dark').toString();
     if (value == 'dark') {
       mode.value = AppThemeMode.dark;
     } else if (value == 'cyber') {

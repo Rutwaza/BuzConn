@@ -1,6 +1,6 @@
 class AppConstants {
   // App Info
-  static const String appName = 'Business Connector';
+  static const String appName = 'Spotlight';
   static const String appVersion = '1.0.0';
   
   // Storage Keys
@@ -49,11 +49,17 @@ class AppRoutes {
   static const String chatDetail = '/chats/:id';
   static const String favorites = '/favorites';
   static const String analytics = '/analytics';
+  static const String userFollowers = '/user/:id/followers';
+  static const String userFollowing = '/user/:id/following';
+  static const String pageFollowers = '/page/:id/followers';
 
   static String businessProfilePath(String id) => '/business/$id';
   static String clientProfilePath(String id) => '/user/$id';
   static String chatDetailPath(String id) => '/chats/$id';
   static String favoritesPath() => favorites;
+  static String userFollowersPath(String id) => '/user/$id/followers';
+  static String userFollowingPath(String id) => '/user/$id/following';
+  static String pageFollowersPath(String id) => '/page/$id/followers';
 }
 
 class AppAssets {
