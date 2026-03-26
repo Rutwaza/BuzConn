@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/social_notification_service.dart';
 import '../../../core/services/supabase_storage_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
@@ -27,10 +28,19 @@ class ClientProfilePage extends StatefulWidget {
 
 class _ClientProfilePageState extends State<ClientProfilePage> {
   static const int _maxBusinesses = 2;
+  int _profileTab = 0;
+  int _previousProfileTab = 0;
+  final ValueNotifier<int> _profileTabNotifier = ValueNotifier<int>(0);
   int _collectionTab = 0;
   File? _selectedLogo;
 
   bool get _isSelf => FirebaseAuth.instance.currentUser?.uid == widget.userId;
+
+  @override
+  void dispose() {
+    _profileTabNotifier.dispose();
+    super.dispose();
+  }
 
   Future<void> _followUser(String followerId, String followingId) async {
     await FirebaseFirestore.instance
@@ -41,6 +51,10 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
       'followingId': followingId,
       'createdAt': FieldValue.serverTimestamp(),
     });
+    await SocialNotificationService.createFollowNotification(
+      followerId: followerId,
+      followingId: followingId,
+    );
   }
 
   Future<void> _unfollowUser(String followerId, String followingId) async {
@@ -417,13 +431,47 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                     ),
                   ),
                 const SizedBox(height: 22),
-                _pagesSection(context),
-                if (_isSelf) ...[
-                  const SizedBox(height: 22),
-                  _insightsSection(context),
-                ],
-                const SizedBox(height: 22),
-                _collectionsSection(context),
+                ValueListenableBuilder<int>(
+                  valueListenable: _profileTabNotifier,
+                  builder: (context, currentTab, _) {
+                    return Column(
+                      children: [
+                        _profileTabs(currentTab),
+                        const SizedBox(height: 16),
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          alignment: Alignment.topCenter,
+                          child: Column(
+                            children: [
+                              _animatedProfilePane(
+                                index: 0,
+                                child: TickerMode(
+                                  enabled: currentTab == 0,
+                                  child: _postsSection(context),
+                                ),
+                              ),
+                              _animatedProfilePane(
+                                index: 1,
+                                child: TickerMode(
+                                  enabled: currentTab == 1,
+                                  child: _pagesSection(context),
+                                ),
+                              ),
+                              _animatedProfilePane(
+                                index: 2,
+                                child: TickerMode(
+                                  enabled: currentTab == 2,
+                                  child: _hubSection(context),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ],
             ),
           );
@@ -443,6 +491,45 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
           backgroundColor: AppColors.lightGrey,
           child: Icon(icon, color: AppColors.primary),
         ),
+      ),
+    );
+  }
+
+  Widget _animatedProfilePane({
+    required int index,
+    required Widget child,
+  }) {
+    final isActive = _profileTab == index;
+    final movingForward = _profileTab >= _previousProfileTab;
+    final beginOffset = Offset(
+      isActive ? (movingForward ? 0.08 : -0.08) : 0,
+      0,
+    );
+
+    return Visibility(
+      visible: isActive,
+      maintainState: true,
+      maintainAnimation: true,
+      maintainSize: false,
+      child: TweenAnimationBuilder<Offset>(
+        key: ValueKey('profile-pane-$_profileTab'),
+        tween: Tween<Offset>(
+          begin: beginOffset,
+          end: Offset.zero,
+        ),
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        child: child,
+        builder: (context, offset, paneChild) {
+          return Transform.translate(
+            offset: Offset(offset.dx * 120, 0),
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 180),
+              opacity: isActive ? 1 : 0,
+              child: paneChild,
+            ),
+          );
+        },
       ),
     );
   }
@@ -654,6 +741,127 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
     );
   }
 
+  Widget _profileTabs(int currentTab) {
+    final labels = _isSelf
+        ? const ['Posts', 'Pages', 'Creator Hub']
+        : const ['Posts', 'Pages', 'Collections'];
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFF151A24)
+            : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Colors.white10
+              : Colors.black12,
+        ),
+      ),
+      child: Row(
+        children: List.generate(
+          labels.length,
+          (index) => Expanded(
+            child: GestureDetector(
+              onTap: () {
+                if (_profileTab == index) return;
+                _previousProfileTab = _profileTab;
+                _profileTab = index;
+                _profileTabNotifier.value = index;
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: currentTab == index
+                      ? AppColors.primary.withOpacity(0.14)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  labels[index],
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: currentTab == index ? AppColors.primary : null,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _postsSection(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('posts')
+          .where('ownerId', isEqualTo: widget.userId)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) {
+          return _emptyCard(
+            _isSelf ? 'No posts yet. Start posting to build your Spotlight.' : 'No posts yet.',
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  _isSelf ? 'Your Posts' : 'Posts',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const Spacer(),
+                Text(
+                  '${docs.length}',
+                  style: const TextStyle(
+                    color: AppColors.grey,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: docs.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemBuilder: (context, index) {
+                final post = Post.fromFirestore(docs[index]);
+                return InkWell(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => business_post.PostDetailPage(
+                        post: post,
+                        initialMediaIndex: 0,
+                      ),
+                    ),
+                  ),
+                  child: _postGridPreview(post),
+                );
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _insightsSection(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return StreamBuilder<QuerySnapshot>(
@@ -751,7 +959,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
   }
 
   Widget _collectionsSection(BuildContext context) {
-    final tabs = const ['Top Creators', 'Saved'];
+    const tabs = ['Top Creators', 'Saved'];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -775,6 +983,17 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
         ),
         const SizedBox(height: 12),
         if (!_isSelf || _collectionTab == 0) _likedBusinessesGrid() else _savedPostsGrid(),
+      ],
+    );
+  }
+
+  Widget _hubSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_isSelf) _insightsSection(context),
+        if (_isSelf) const SizedBox(height: 22),
+        _collectionsSection(context),
       ],
     );
   }
@@ -928,6 +1147,99 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _postGridPreview(Post post) {
+    final media = post.media;
+    String? previewUrl;
+    var isVideo = false;
+
+    if (media.isNotEmpty) {
+      previewUrl = media.first.url;
+      isVideo = media.first.isVideo;
+    } else if (post.imageUrl != null && post.imageUrl!.isNotEmpty) {
+      previewUrl = post.imageUrl;
+    } else if (post.videoUrl != null && post.videoUrl!.isNotEmpty) {
+      previewUrl = post.videoUrl;
+      isVideo = true;
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (previewUrl == null)
+            Container(
+              color: AppColors.lightGrey,
+              alignment: Alignment.center,
+              child: Text(
+                post.content.isNotEmpty ? post.content[0].toUpperCase() : '?',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                ),
+              ),
+            )
+          else if (isVideo)
+            _VideoThumb(url: previewUrl)
+          else
+            Image.network(
+              previewUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                color: AppColors.lightGrey,
+                child: const Icon(Icons.broken_image_outlined),
+              ),
+            ),
+          if (isVideo)
+            const Positioned(
+              top: 6,
+              right: 6,
+              child: Icon(
+                Icons.play_circle_fill,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(6, 18, 6, 6),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black54,
+                  ],
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.favorite_border, color: Colors.white, size: 12),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${post.likes.length}',
+                    style: const TextStyle(color: Colors.white, fontSize: 11),
+                  ),
+                  const SizedBox(width: 10),
+                  const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 12),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${post.comments.length}',
+                    style: const TextStyle(color: Colors.white, fontSize: 11),
+                  ),
+                ],
               ),
             ),
           ),

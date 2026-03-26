@@ -40,7 +40,7 @@ class PostsRepository {
   // Create a new post
   Future<String> createPost({
     required String content,
-    required String businessId,
+    String? businessId,
     List<PostMedia> media = const [],
     String? imageUrl,
     String? videoUrl,
@@ -48,25 +48,35 @@ class PostsRepository {
     final user = _auth.currentUser;
     if (user == null) throw Exception('User not authenticated');
 
-    final userDoc = await _firestore.collection('users').doc(user.uid).get();
-    final userType = userDoc.data()?['userType'];
-    if (userType != 'business') {
-      throw Exception('Only business accounts can create posts');
-    }
+    final userProfile = await _currentUserProfile();
+    String resolvedBusinessId = '';
+    String displayName = (userProfile['name'] ?? user.displayName ?? 'User')
+        .toString();
+    String? displayImageUrl =
+        (userProfile['imageUrl'] ?? '').toString().trim().isEmpty
+            ? null
+            : (userProfile['imageUrl'] ?? '').toString().trim();
+    String? googleMapsLink;
 
-    // Get business info
-    final businessSnap =
-        await _firestore.collection('businesses').doc(businessId).get();
-    if (!businessSnap.exists) {
-      throw Exception('Business not found');
+    if (businessId != null && businessId.trim().isNotEmpty) {
+      final businessSnap =
+          await _firestore.collection('businesses').doc(businessId.trim()).get();
+      if (!businessSnap.exists) {
+        throw Exception('Business not found');
+      }
+      final business = businessSnap.data() as Map<String, dynamic>;
+      if (business['ownerId'] != user.uid) {
+        throw Exception('Not authorized for this business');
+      }
+      resolvedBusinessId = businessId.trim();
+      displayName = (business['name'] ?? displayName).toString();
+      final businessImage = (business['imageUrl'] ?? '').toString().trim();
+      displayImageUrl = businessImage.isEmpty ? displayImageUrl : businessImage;
+      googleMapsLink = (business['googleMapsLink'] ?? '').toString().trim();
+      if (googleMapsLink.isEmpty) {
+        googleMapsLink = null;
+      }
     }
-    final business = businessSnap.data() as Map<String, dynamic>;
-    if (business['ownerId'] != user.uid) {
-      throw Exception('Not authorized for this business');
-    }
-    final businessName = business['name'] ?? 'Unknown Business';
-    final businessImageUrl = business['imageUrl'];
-    final googleMapsLink = business['googleMapsLink'];
 
     final postRef = _firestore.collection('posts').doc();
     String? primaryImageUrl = imageUrl;
@@ -87,14 +97,16 @@ class PostsRepository {
     final post = Post(
       id: postRef.id,
       ownerId: user.uid,
-      businessId: businessId,
-      businessName: businessName,
-      businessImageUrl: businessImageUrl,
+      businessId: resolvedBusinessId,
+      businessName: displayName,
+      businessImageUrl: displayImageUrl,
       content: content,
       imageUrl: primaryImageUrl,
       videoUrl: primaryVideoUrl,
       media: media,
       googleMapsLink: googleMapsLink,
+      viewCount: 0,
+      playCount: 0,
       likes: [],
       comments: [],
       createdAt: DateTime.now(),
@@ -148,7 +160,11 @@ class PostsRepository {
   }
 
   // Add comment to post
-  Future<void> addComment(String postId, String content) async {
+  Future<void> addComment(
+    String postId,
+    String content, {
+    Comment? replyTo,
+  }) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
@@ -162,6 +178,9 @@ class PostsRepository {
       userName: userName,
       content: content,
       createdAt: DateTime.now(),
+      replyToUserId: replyTo?.userId,
+      replyToUserName: replyTo?.userName,
+      replyToCommentId: replyTo?.id,
     );
 
     final postRef = _firestore.collection('posts').doc(postId);
@@ -191,6 +210,23 @@ class PostsRepository {
         'readAt': null,
         'hidden': false,
       });
+      if (replyTo != null &&
+          replyTo.userId.isNotEmpty &&
+          replyTo.userId != user.uid &&
+          replyTo.userId != post.ownerId) {
+        await _firestore.collection('notifications').add({
+          'toUserId': replyTo.userId,
+          'fromUserId': user.uid,
+          'fromUserName': profile['name'] ?? 'User',
+          'fromUserImageUrl': profile['imageUrl'],
+          'postId': post.id,
+          'type': 'comment',
+          'preview': '@${replyTo.userName} $content',
+          'createdAt': FieldValue.serverTimestamp(),
+          'readAt': null,
+          'hidden': false,
+        });
+      }
     }
   }
 
@@ -218,6 +254,10 @@ class PostsRepository {
       userName: comments[index].userName,
       content: newContent,
       createdAt: comments[index].createdAt,
+      likes: comments[index].likes,
+      replyToUserId: comments[index].replyToUserId,
+      replyToUserName: comments[index].replyToUserName,
+      replyToCommentId: comments[index].replyToCommentId,
     );
     comments[index] = updated;
 
@@ -225,6 +265,65 @@ class PostsRepository {
       'comments': comments.map((c) => c.toMap()).toList(),
       'updatedAt': Timestamp.now(),
     });
+  }
+
+  Future<void> toggleCommentLike({
+    required String postId,
+    required String commentId,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final postRef = _firestore.collection('posts').doc(postId);
+    final postDoc = await postRef.get();
+    if (!postDoc.exists) return;
+
+    final post = Post.fromFirestore(postDoc);
+    final comments = List<Comment>.from(post.comments);
+    final index = comments.indexWhere((c) => c.id == commentId);
+    if (index == -1) return;
+
+    final likes = List<String>.from(comments[index].likes);
+    bool addedLike = false;
+    if (likes.contains(user.uid)) {
+      likes.remove(user.uid);
+    } else {
+      likes.add(user.uid);
+      addedLike = true;
+    }
+
+    comments[index] = Comment(
+      id: comments[index].id,
+      userId: comments[index].userId,
+      userName: comments[index].userName,
+      content: comments[index].content,
+      createdAt: comments[index].createdAt,
+      likes: likes,
+      replyToUserId: comments[index].replyToUserId,
+      replyToUserName: comments[index].replyToUserName,
+      replyToCommentId: comments[index].replyToCommentId,
+    );
+
+    await postRef.update({
+      'comments': comments.map((c) => c.toMap()).toList(),
+      'updatedAt': Timestamp.now(),
+    });
+
+    if (addedLike && comments[index].userId != user.uid) {
+      final profile = await _currentUserProfile();
+      await _firestore.collection('notifications').add({
+        'toUserId': comments[index].userId,
+        'fromUserId': user.uid,
+        'fromUserName': profile['name'] ?? 'User',
+        'fromUserImageUrl': profile['imageUrl'],
+        'postId': post.id,
+        'type': 'like',
+        'preview': 'liked your comment',
+        'readAt': null,
+        'hidden': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
   }
 
   Future<void> deleteComment({
@@ -262,9 +361,12 @@ class PostsRepository {
 
     final post = Post.fromFirestore(postDoc);
 
-    // Check if user owns the business
-    final businessDoc = await _firestore.collection('businesses').doc(post.businessId).get();
-    if (businessDoc.data()?['ownerId'] != user.uid) return;
+    if (post.ownerId != user.uid) return;
+    if (post.businessId.isNotEmpty) {
+      final businessDoc =
+          await _firestore.collection('businesses').doc(post.businessId).get();
+      if (businessDoc.data()?['ownerId'] != user.uid) return;
+    }
 
     await _firestore.collection('posts').doc(postId).delete();
   }

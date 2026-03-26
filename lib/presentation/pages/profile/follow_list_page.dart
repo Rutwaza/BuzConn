@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/social_notification_service.dart';
 import '../../../core/theme/colors.dart';
 
 enum FollowListType { followers, following }
@@ -30,6 +31,10 @@ class FollowListPage extends StatelessWidget {
       'followingId': followingId,
       'createdAt': FieldValue.serverTimestamp(),
     });
+    await SocialNotificationService.createFollowNotification(
+      followerId: followerId,
+      followingId: followingId,
+    );
   }
 
   Future<void> _unfollowUser(String followerId, String followingId) async {

@@ -11,6 +11,8 @@ class Post {
   final String? videoUrl;
   final List<PostMedia> media;
   final String? googleMapsLink;
+  final int viewCount;
+  final int playCount;
   final List<String> likes;
   final List<Comment> comments;
   final DateTime createdAt;
@@ -27,6 +29,8 @@ class Post {
     this.videoUrl,
     required this.media,
     this.googleMapsLink,
+    this.viewCount = 0,
+    this.playCount = 0,
     required this.likes,
     required this.comments,
     required this.createdAt,
@@ -59,6 +63,8 @@ class Post {
       videoUrl: videoUrl,
       media: media,
       googleMapsLink: _nullableStringFromDynamic(data['googleMapsLink']),
+      viewCount: _intFromDynamic(data['viewCount']),
+      playCount: _intFromDynamic(data['playCount']),
       likes: _stringListFromDynamic(data['likes']),
       comments: (data['comments'] is List)
           ? (data['comments'] as List<dynamic>).map((comment) => Comment.fromMap(comment)).toList()
@@ -79,6 +85,8 @@ class Post {
       'videoUrl': videoUrl,
       'media': media.map((m) => m.toMap()).toList(),
       'googleMapsLink': googleMapsLink,
+      'viewCount': viewCount,
+      'playCount': playCount,
       'likes': likes,
       'comments': comments.map((comment) => comment.toMap()).toList(),
       'createdAt': Timestamp.fromDate(createdAt),
@@ -93,6 +101,10 @@ class Comment {
   final String userName;
   final String content;
   final DateTime createdAt;
+  final List<String> likes;
+  final String? replyToUserId;
+  final String? replyToUserName;
+  final String? replyToCommentId;
 
   Comment({
     required this.id,
@@ -100,6 +112,10 @@ class Comment {
     required this.userName,
     required this.content,
     required this.createdAt,
+    this.likes = const [],
+    this.replyToUserId,
+    this.replyToUserName,
+    this.replyToCommentId,
   });
 
   factory Comment.fromMap(Map<String, dynamic> map) {
@@ -109,6 +125,10 @@ class Comment {
       userName: _stringFromDynamic(map['userName']),
       content: _stringFromDynamic(map['content']),
       createdAt: _parseTimestamp(map['createdAt']),
+      likes: _stringListFromDynamic(map['likes']),
+      replyToUserId: _nullableStringFromDynamic(map['replyToUserId']),
+      replyToUserName: _nullableStringFromDynamic(map['replyToUserName']),
+      replyToCommentId: _nullableStringFromDynamic(map['replyToCommentId']),
     );
   }
 
@@ -119,6 +139,10 @@ class Comment {
       'userName': userName,
       'content': content,
       'createdAt': Timestamp.fromDate(createdAt),
+      'likes': likes,
+      'replyToUserId': replyToUserId,
+      'replyToUserName': replyToUserName,
+      'replyToCommentId': replyToCommentId,
     };
   }
 }
@@ -128,8 +152,13 @@ enum PostMediaType { image, video }
 class PostMedia {
   final PostMediaType type;
   final String url;
+  final String? thumbnailUrl;
 
-  const PostMedia({required this.type, required this.url});
+  const PostMedia({
+    required this.type,
+    required this.url,
+    this.thumbnailUrl,
+  });
 
   bool get isVideo => type == PostMediaType.video;
 
@@ -138,6 +167,7 @@ class PostMedia {
     return PostMedia(
       type: typeValue == 'video' ? PostMediaType.video : PostMediaType.image,
       url: _stringFromDynamic(map['url']),
+      thumbnailUrl: _nullableStringFromDynamic(map['thumbnailUrl']),
     );
   }
 
@@ -145,6 +175,7 @@ class PostMedia {
     return {
       'type': type == PostMediaType.video ? 'video' : 'image',
       'url': url,
+      'thumbnailUrl': thumbnailUrl,
     };
   }
 }
@@ -187,6 +218,12 @@ List<String> _stringListFromDynamic(dynamic value) {
     return value.map(_stringFromDynamic).where((s) => s.isNotEmpty).toList();
   }
   return [];
+}
+
+int _intFromDynamic(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? 0;
 }
 
 List<PostMedia> _mediaListFromDynamic(dynamic value) {

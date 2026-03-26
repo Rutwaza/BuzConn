@@ -1,9 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/social_notification_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
 
@@ -281,15 +283,62 @@ class _SearchPageState extends State<SearchPage> {
               onChanged: (_) => setState(() {}),
             ),
           ),
+          if (query.isEmpty) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: _DiscoverSpotlightCard(
+                pageCount: _businessResults.length,
+                userCount: _userResults.length,
+                postCount: _postResults.length,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
-                _buildFilterChip(SearchFilter.all, 'All'),
-                _buildFilterChip(SearchFilter.businesses, 'Pages'),
-                _buildFilterChip(SearchFilter.users, 'Users'),
-                _buildFilterChip(SearchFilter.posts, 'Posts'),
+                _quickExplorePill(
+                  icon: Icons.trending_up_rounded,
+                  label: 'Trending posts',
+                  selected: _filter == SearchFilter.posts,
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      _filter = _filter == SearchFilter.posts
+                          ? SearchFilter.all
+                          : SearchFilter.posts;
+                    });
+                  },
+                ),
+                _quickExplorePill(
+                  icon: Icons.storefront_rounded,
+                  label: 'Fresh pages',
+                  selected: _filter == SearchFilter.businesses,
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      _filter = _filter == SearchFilter.businesses
+                          ? SearchFilter.all
+                          : SearchFilter.businesses;
+                    });
+                  },
+                ),
+                _quickExplorePill(
+                  icon: Icons.people_alt_rounded,
+                  label: 'Meet users',
+                  selected: _filter == SearchFilter.users,
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      _filter = _filter == SearchFilter.users
+                          ? SearchFilter.all
+                          : SearchFilter.users;
+                    });
+                  },
+                ),
               ],
             ),
           ),
@@ -446,7 +495,10 @@ class _SearchPageState extends State<SearchPage> {
                       title: Text(item.title),
                       subtitle: Text(item.subtitle),
                       trailing: _buildTrailing(item),
-                      onTap: item.onTap,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        item.onTap();
+                      },
                     );
                   },
                 );
@@ -503,23 +555,41 @@ class _SearchPageState extends State<SearchPage> {
       title: Text(item.title),
       subtitle: Text(item.subtitle),
       trailing: _buildTrailing(item),
-      onTap: item.onTap,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        item.onTap();
+      },
     );
   }
 
-  Widget _buildFilterChip(SearchFilter filter, String label) {
-    final isSelected = _filter == filter;
+  Widget _quickExplorePill({
+    required IconData icon,
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
     return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        selected: isSelected,
+      padding: const EdgeInsets.only(right: 10),
+      child: ActionChip(
+        onPressed: onTap,
+        avatar: Icon(
+          icon,
+          size: 18,
+          color: selected ? Colors.white : AppColors.primary,
+        ),
         label: Text(label),
-        onSelected: (_) {
-          setState(() {
-            _filter = filter;
-            _lastResultQuery = '';
-          });
-        },
+        side: BorderSide(
+          color: selected
+              ? AppColors.primary
+              : AppColors.primary.withValues(alpha: 0.18),
+        ),
+        backgroundColor: selected
+            ? AppColors.primary
+            : AppColors.primary.withValues(alpha: 0.08),
+        labelStyle: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: selected ? Colors.white : null,
+        ),
       ),
     );
   }
@@ -619,6 +689,7 @@ class _SearchPageState extends State<SearchPage> {
           final isFollowing = snap.data?.exists == true;
           return TextButton(
             onPressed: () async {
+              HapticFeedback.lightImpact();
               if (isFollowing) {
                 await FirebaseFirestore.instance
                     .collection('page_follows')
@@ -652,6 +723,7 @@ class _SearchPageState extends State<SearchPage> {
           final isFollowing = snap.data?.exists == true;
           return TextButton(
             onPressed: () async {
+              HapticFeedback.lightImpact();
               if (isFollowing) {
                 await FirebaseFirestore.instance
                     .collection('user_follows')
@@ -666,6 +738,10 @@ class _SearchPageState extends State<SearchPage> {
                   'followingId': item.targetId,
                   'createdAt': FieldValue.serverTimestamp(),
                 });
+                await SocialNotificationService.createFollowNotification(
+                  followerId: _currentUserId!,
+                  followingId: item.targetId,
+                );
               }
             },
             child: Text(isFollowing ? 'Following' : 'Follow'),
@@ -675,6 +751,74 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     return Icon(item.typeIcon, color: AppColors.grey);
+  }
+}
+
+class _DiscoverSpotlightCard extends StatelessWidget {
+  const _DiscoverSpotlightCard({
+    required this.pageCount,
+    required this.userCount,
+    required this.postCount,
+  });
+
+  final int pageCount;
+  final int userCount;
+  final int postCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.primary.withValues(alpha: 0.18),
+            Colors.orange.withValues(alpha: 0.14),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.auto_awesome_rounded,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Discover what is moving right now',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$pageCount pages  •  $userCount users  •  $postCount posts loaded',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.82),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -785,4 +929,4 @@ class _SearchItem {
   });
 }
 
-enum _SearchItemType { user, page, other }
+enum _SearchItemType { user, page }
