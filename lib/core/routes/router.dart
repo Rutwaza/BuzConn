@@ -22,6 +22,10 @@ import 'package:businessfinder/presentation/pages/analytics/analytics_page.dart'
 import 'package:businessfinder/presentation/pages/profile/follow_list_page.dart';
 import 'package:businessfinder/presentation/pages/business/page_followers_page.dart';
 import 'package:businessfinder/presentation/pages/settings/settings_page.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:businessfinder/data/models/post_model.dart';
+import 'package:businessfinder/presentation/pages/business/post_detail_page.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
@@ -74,6 +78,29 @@ class AppRouter {
         builder: (context, state) => PostsFeedPage(
           initialPostId: state.uri.queryParameters['postId'],
         ),
+      ),
+      GoRoute(
+        path: AppRoutes.post,
+        builder: (context, state) {
+          final postId = state.pathParameters['id']!;
+          return FutureBuilder<DocumentSnapshot>(
+            future: FirebaseFirestore.instance.collection('posts').doc(postId).get(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (!snapshot.data!.exists) {
+                return const Scaffold(
+                  body: Center(child: Text('Post not found')),
+                );
+              }
+              final post = Post.fromFirestore(snapshot.data!);
+              return PostDetailPage(post: post);
+            },
+          );
+        },
       ),
       GoRoute(
         path: AppRoutes.createPost,

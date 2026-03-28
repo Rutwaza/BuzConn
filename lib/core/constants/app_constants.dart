@@ -47,6 +47,7 @@ class AppRoutes {
   static const String notifications = '/notifications';
   static const String chats = '/chats';
   static const String chatDetail = '/chats/:id';
+  static const String post = '/post/:id';
   static const String favorites = '/favorites';
   static const String analytics = '/analytics';
   static const String userFollowers = '/user/:id/followers';
@@ -56,6 +57,7 @@ class AppRoutes {
   static String businessProfilePath(String id) => '/business/$id';
   static String clientProfilePath(String id) => '/user/$id';
   static String chatDetailPath(String id) => '/chats/$id';
+  static String postPath(String id) => '/post/$id';
   static String favoritesPath() => favorites;
   static String userFollowersPath(String id) => '/user/$id/followers';
   static String userFollowingPath(String id) => '/user/$id/following';
