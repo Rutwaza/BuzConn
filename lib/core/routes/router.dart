@@ -12,6 +12,7 @@ import 'package:businessfinder/presentation/pages/feed/posts_feed_page.dart';
 import 'package:businessfinder/presentation/pages/feed/create_post_page.dart';
 import 'package:businessfinder/presentation/pages/business/business_profile_page.dart';
 import 'package:businessfinder/presentation/pages/traffic/traffic_management_page.dart';
+import 'package:businessfinder/presentation/pages/admin/admin_dashboard_page.dart';
 import 'package:businessfinder/presentation/pages/chat/chat_list_page.dart';
 import 'package:businessfinder/presentation/pages/chat/chat_page.dart';
 import 'package:businessfinder/presentation/pages/search/search_page.dart';
@@ -53,7 +54,9 @@ class AppRouter {
       ),
       GoRoute(
         path: AppRoutes.businessSetup,
-        builder: (context, state) => const BusinessSetupPage(),
+        builder: (context, state) => BusinessSetupPage(
+          editBusinessId: state.uri.queryParameters['businessId'],
+        ),
       ),
       GoRoute(
         path: AppRoutes.businesses,
@@ -117,6 +120,10 @@ class AppRouter {
       GoRoute(
         path: AppRoutes.trafficManagement,
         builder: (context, state) => const TrafficManagementPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.adminDashboard,
+        builder: (context, state) => const AdminDashboardPage(),
       ),
       GoRoute(
         path: AppRoutes.chats,

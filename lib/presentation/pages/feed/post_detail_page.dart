@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
+import 'dart:io';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
@@ -29,6 +32,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
   late final PageController _pageController;
   int _mediaIndex = 0;
   VideoPlayerController? _videoController;
+  Player? _mediaKitPlayer;
+  VideoController? _mediaKitController;
   String? _currentVideoUrl;
   final ValueNotifier<bool> _isMuted = ValueNotifier<bool>(false);
 
@@ -46,23 +51,44 @@ class _PostDetailPageState extends State<PostDetailPage> {
   void dispose() {
     _commentController.dispose();
     _pageController.dispose();
-    _videoController?.dispose();
+    if (Platform.isWindows) {
+      _mediaKitPlayer?.dispose();
+    } else {
+      _videoController?.dispose();
+    }
     _isMuted.dispose();
     super.dispose();
   }
 
-  void _initVideo(String url) {
-    _videoController?.dispose();
-    final controller = VideoPlayerController.networkUrl(Uri.parse(url));
-    _videoController = controller;
-    _currentVideoUrl = url;
-    controller.initialize().then((_) {
-      if (mounted) {
-        setState(() {});
-        controller.setVolume(_isMuted.value ? 0 : 1);
-        controller.play();
+  void _initVideo(String url) async {
+    if (Platform.isWindows) {
+      _mediaKitPlayer?.dispose();
+      _mediaKitPlayer = Player();
+      _mediaKitController = VideoController(_mediaKitPlayer!);
+      try {
+        await _mediaKitPlayer!.open(Media(url));
+        _currentVideoUrl = url;
+        if (mounted) {
+          setState(() {});
+          _mediaKitPlayer!.setVolume(_isMuted.value ? 0 : 100);
+          _mediaKitPlayer!.play();
+        }
+      } catch (e) {
+        // Handle error silently
       }
-    });
+    } else {
+      _videoController?.dispose();
+      final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      _videoController = controller;
+      _currentVideoUrl = url;
+      controller.initialize().then((_) {
+        if (mounted) {
+          setState(() {});
+          controller.setVolume(_isMuted.value ? 0 : 1);
+          controller.play();
+        }
+      });
+    }
   }
 
   void _handleMediaIndexChange(List<PostMedia> media, int index) {
@@ -73,7 +99,11 @@ class _PostDetailPageState extends State<PostDetailPage> {
         _initVideo(current.url);
       }
     } else {
-      _videoController?.pause();
+      if (Platform.isWindows) {
+        _mediaKitPlayer?.pause();
+      } else {
+        _videoController?.pause();
+      }
       _currentVideoUrl = null;
     }
   }
@@ -133,31 +163,37 @@ class _PostDetailPageState extends State<PostDetailPage> {
         ),
       );
     }
-    return _videoController != null && _videoController!.value.isInitialized
+    final isInitialized = Platform.isWindows
+        ? _mediaKitPlayer != null
+        : _videoController != null && _videoController!.value.isInitialized;
+    return isInitialized
         ? Column(
             children: [
               Expanded(
                 child: SizedBox(
                   width: double.infinity,
-                  child: FittedBox(
-                    fit: BoxFit.cover,
-                    child: SizedBox(
-                      width: _videoController!.value.size.width,
-                      height: _videoController!.value.size.height,
-                      child: VideoPlayer(_videoController!),
-                    ),
+                  child: Platform.isWindows
+                      ? Video(controller: _mediaKitController!)
+                      : FittedBox(
+                          fit: BoxFit.cover,
+                          child: SizedBox(
+                            width: _videoController!.value.size.width,
+                            height: _videoController!.value.size.height,
+                            child: VideoPlayer(_videoController!),
+                          ),
+                        ),
+                ),
+              ),
+              if (!Platform.isWindows)
+                VideoProgressIndicator(
+                  _videoController!,
+                  allowScrubbing: true,
+                  colors: VideoProgressColors(
+                    playedColor: Theme.of(context).colorScheme.primary,
+                    bufferedColor: Colors.white24,
+                    backgroundColor: Colors.white10,
                   ),
                 ),
-              ),
-              VideoProgressIndicator(
-                _videoController!,
-                allowScrubbing: true,
-                colors: VideoProgressColors(
-                  playedColor: Theme.of(context).colorScheme.primary,
-                  bufferedColor: Colors.white24,
-                  backgroundColor: Colors.white10,
-                ),
-              ),
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 8,
@@ -165,30 +201,29 @@ class _PostDetailPageState extends State<PostDetailPage> {
                 ),
                 child: Row(
                   children: [
-                    ValueListenableBuilder(
-                      valueListenable: _videoController!,
-                      builder: (context, value, _) {
-                        final isPlaying = value.isPlaying;
-                        return IconButton(
-                          icon: Icon(
-                            isPlaying ? Icons.pause : Icons.play_arrow,
-                          ),
-                          onPressed: () {
-                            isPlaying
-                                ? _videoController!.pause()
-                                : _videoController!.play();
-                          },
-                        );
+                    IconButton(
+                      icon: Icon(
+                        Platform.isWindows
+                            ? (_mediaKitPlayer!.state.playing ? Icons.pause : Icons.play_arrow)
+                            : (_videoController!.value.isPlaying ? Icons.pause : Icons.play_arrow),
+                      ),
+                      onPressed: () {
+                        if (Platform.isWindows) {
+                          _mediaKitPlayer!.state.playing
+                              ? _mediaKitPlayer!.pause()
+                              : _mediaKitPlayer!.play();
+                        } else {
+                          _videoController!.value.isPlaying
+                              ? _videoController!.pause()
+                              : _videoController!.play();
+                        }
                       },
                     ),
-                    ValueListenableBuilder(
-                      valueListenable: _videoController!,
-                      builder: (context, value, _) {
-                        return Text(
-                          '${_formatDuration(value.position)} / ${_formatDuration(value.duration)}',
-                          style: const TextStyle(fontSize: 12),
-                        );
-                      },
+                    Text(
+                      Platform.isWindows
+                          ? '${_formatDuration(_mediaKitPlayer!.state.position)} / ${_formatDuration(_mediaKitPlayer!.state.duration)}'
+                          : '${_formatDuration(_videoController!.value.position)} / ${_formatDuration(_videoController!.value.duration)}',
+                      style: const TextStyle(fontSize: 12),
                     ),
                     const Spacer(),
                     ValueListenableBuilder<bool>(
@@ -201,7 +236,11 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           onPressed: () {
                             final next = !muted;
                             _isMuted.value = next;
-                            _videoController!.setVolume(next ? 0 : 1);
+                            if (Platform.isWindows) {
+                              _mediaKitPlayer!.setVolume(next ? 0 : 100);
+                            } else {
+                              _videoController!.setVolume(next ? 0 : 1);
+                            }
                           },
                         );
                       },
@@ -225,8 +264,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Post')),
       body: StreamBuilder<DocumentSnapshot>(
-        stream:
-            FirebaseFirestore.instance.collection('posts').doc(widget.postId).snapshots(),
+        stream: FirebaseFirestore.instance
+            .collection('posts')
+            .doc(widget.postId)
+            .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -250,8 +291,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
             });
           }
 
-          final isLiked =
-              user != null && post.likes.contains(user.uid);
+          final isLiked = user != null && post.likes.contains(user.uid);
 
           return Column(
             children: [
@@ -372,7 +412,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           children: [
                             IconButton(
                               icon: Icon(
-                                isLiked ? Icons.favorite : Icons.favorite_border,
+                                isLiked
+                                    ? Icons.favorite
+                                    : Icons.favorite_border,
                                 color: isLiked ? Colors.pinkAccent : null,
                               ),
                               onPressed: () => _repo.toggleLike(post.id),
@@ -403,7 +445,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               ),
                             IconButton(
                               icon: Icon(
-                                isSaved ? Icons.bookmark : Icons.bookmark_border,
+                                isSaved
+                                    ? Icons.bookmark
+                                    : Icons.bookmark_border,
                                 color: isSaved ? AppColors.primary : null,
                               ),
                               onPressed: () => _toggleFavorite(post.id),
@@ -418,8 +462,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
-                    if (post.comments.isEmpty)
-                      const Text('No comments yet'),
+                    if (post.comments.isEmpty) const Text('No comments yet'),
                     ...post.comments.reversed.map(
                       (c) => Padding(
                         padding: const EdgeInsets.symmetric(vertical: 6),
@@ -428,7 +471,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           children: [
                             Text(
                               '${c.userName}: ',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
                             ),
                             Expanded(child: Text(c.content)),
                           ],

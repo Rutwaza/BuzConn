@@ -1,5 +1,7 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
@@ -165,82 +167,416 @@ class AnalyticsPage extends StatelessWidget {
                             ]);
                           }
 
+                          final totalEngagement = totalLikes + totalComments;
+                          final weeklyPosts = dailyCounts.fold<int>(
+                            0,
+                            (sum, count) => sum + count,
+                          );
+                          final bestDayPosts = dailyCounts.isEmpty
+                              ? 0
+                              : dailyCounts.reduce(
+                                  (a, b) => a > b ? a : b,
+                                );
+                          final avgLikesPerPost = postDocs.isEmpty
+                              ? 0.0
+                              : totalLikes / postDocs.length;
+                          final avgCommentsPerPost = postDocs.isEmpty
+                              ? 0.0
+                              : totalComments / postDocs.length;
+
                           return DefaultTabController(
                             length: 2,
-                            child: SingleChildScrollView(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Overview',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleLarge
-                                        ?.copyWith(
-                                            fontWeight: FontWeight.bold),
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final isDesktop = constraints.maxWidth >= 1100;
+                                final cardCount = cards.length < 4 ? cards.length : 4;
+
+                                final overviewPanel = _InsightSectionCard(
+                                  title: 'Activity trend',
+                                  subtitle: 'Posts published across the last 7 days',
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _WeeklyBarsChart(values: dailyCounts, isDesktop: isDesktop),
+                                      const SizedBox(height: 10),
+                                      Wrap(
+                                        spacing: 10,
+                                        runSpacing: 10,
+                                        children: [
+                                          _InsightBadge(
+                                            icon: Icons.local_fire_department_rounded,
+                                            label: 'Peak day: $bestDayPosts posts',
+                                          ),
+                                          _InsightBadge(
+                                            icon: Icons.calendar_view_week_rounded,
+                                            label: '$weeklyPosts posts this week',
+                                          ),
+                                        ],
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 12),
-                                  GridView.count(
-                                    crossAxisCount: 2,
-                                    mainAxisSpacing: 12,
-                                    crossAxisSpacing: 12,
-                                    childAspectRatio: 1.4,
-                                    shrinkWrap: true,
-                                    physics:
-                                        const NeverScrollableScrollPhysics(),
-                                    children: cards,
+                                );
+
+                                final engagementPanel = _InsightSectionCard(
+                                  title: 'Engagement mix',
+                                  subtitle: 'How likes and comments are split right now',
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Center(
+                                        child: SizedBox(
+                                          width: isDesktop ? 200 : 160,
+                                          height: isDesktop ? 200 : 160,
+                                          child: Stack(
+                                            alignment: Alignment.center,
+                                            children: [
+                                              PieChart(
+                                                PieChartData(
+                                                  sections: [
+                                                    PieChartSectionData(
+                                                      value: totalLikes.toDouble(),
+                                                      color: Colors.amber,
+                                                      title: totalLikes > 0 ? '${((totalLikes / (totalLikes + totalComments)) * 100).toStringAsFixed(0)}%' : '0%',
+                                                      radius: isDesktop ? 60 : 50,
+                                                      titleStyle: TextStyle(
+                                                        fontSize: isDesktop ? 14 : 12,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: Colors.white,
+                                                      ),
+                                                    ),
+                                                    PieChartSectionData(
+                                                      value: totalComments.toDouble(),
+                                                      color: Colors.lightBlueAccent,
+                                                      title: totalComments > 0 ? '${((totalComments / (totalLikes + totalComments)) * 100).toStringAsFixed(0)}%' : '0%',
+                                                      radius: isDesktop ? 60 : 50,
+                                                      titleStyle: TextStyle(
+                                                        fontSize: isDesktop ? 14 : 12,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: Colors.white,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                  sectionsSpace: 2,
+                                                  centerSpaceRadius: 30,
+                                                ),
+                                              ),
+                                              Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(
+                                                    totalEngagement.toString(),
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .headlineSmall
+                                                        ?.copyWith(
+                                                          fontWeight: FontWeight.w800,
+                                                        ),
+                                                  ),
+                                                  const Text(
+                                                    'total actions',
+                                                    style: TextStyle(
+                                                      color: AppColors.grey,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Row(
+                                        children: [
+                                          Container(
+                                            width: 12,
+                                            height: 12,
+                                            decoration: const BoxDecoration(
+                                              color: Colors.amber,
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          const Text(
+                                            'Likes',
+                                            style: TextStyle(fontSize: 12),
+                                          ),
+                                          const SizedBox(width: 16),
+                                          Container(
+                                            width: 12,
+                                            height: 12,
+                                            decoration: const BoxDecoration(
+                                              color: Colors.lightBlueAccent,
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          const Text(
+                                            'Comments',
+                                            style: TextStyle(fontSize: 12),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 16),
+                                      _MetricRow(
+                                        label: 'Likes per post',
+                                        value: avgLikesPerPost.toStringAsFixed(1),
+                                        color: Colors.amber,
+                                      ),
+                                      const SizedBox(height: 10),
+                                      _MetricRow(
+                                        label: 'Comments per post',
+                                        value: avgCommentsPerPost.toStringAsFixed(1),
+                                        color: Colors.lightBlueAccent,
+                                      ),
+                                      const SizedBox(height: 10),
+                                      _MetricRow(
+                                        label: 'Unread chats',
+                                        value: unread.toString(),
+                                        color: Colors.green,
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 24),
-                                  Text(
-                                    'Your Posts',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleLarge
-                                        ?.copyWith(
-                                            fontWeight: FontWeight.bold),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .surface,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: Theme.of(context)
-                                                .brightness ==
-                                            Brightness.dark
-                                            ? Colors.white10
-                                            : Colors.black12,
+                                );
+
+                                return SingleChildScrollView(
+                                  padding: EdgeInsets.all(isDesktop ? 20 : 16),
+                                  child: Center(
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: isDesktop ? constraints.maxWidth : 760,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Container(
+                                            padding: EdgeInsets.all(isDesktop ? 20 : 16),
+                                            decoration: BoxDecoration(
+                                              color: Theme.of(context).brightness ==
+                                                      Brightness.dark
+                                                  ? const Color(0xFF171B24)
+                                                  : Colors.white,
+                                              borderRadius: BorderRadius.circular(20),
+                                              border: Border.all(
+                                                color: Theme.of(context).brightness ==
+                                                        Brightness.dark
+                                                    ? Colors.white10
+                                                    : Colors.black12,
+                                              ),
+                                            ),
+                                            child: isDesktop
+                                                ? Row(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment.start,
+                                                    children: [
+                                                      Expanded(
+                                                        child: Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment.start,
+                                                          children: [
+                                                            Text(
+                                                              userType == 'business'
+                                                                  ? 'Business insights dashboard'
+                                                                  : 'Your insights dashboard',
+                                                              style: Theme.of(context)
+                                                                  .textTheme
+                                                                  .headlineSmall
+                                                                  ?.copyWith(
+                                                                    fontWeight:
+                                                                        FontWeight.w800,
+                                                                  ),
+                                                            ),
+                                                            const SizedBox(height: 8),
+                                                            Text(
+                                                              userType == 'business'
+                                                                  ? 'Desktop view now gives you a cleaner snapshot of engagement, posting rhythm, and community activity.'
+                                                                  : 'Track your saved items, inbox activity, and notifications with a wider desktop overview.',
+                                                              style: TextStyle(
+                                                                color: Theme.of(context)
+                                                                            .brightness ==
+                                                                        Brightness.dark
+                                                                    ? Colors.white70
+                                                                    : AppColors.grey,
+                                                              ),
+                                                            ),
+                                                            const SizedBox(height: 14),
+                                                            Wrap(
+                                                              spacing: 10,
+                                                              runSpacing: 10,
+                                                              children: [
+                                                                _InsightBadge(
+                                                                  icon: Icons.bar_chart_rounded,
+                                                                  label:
+                                                                      '$weeklyPosts posts this week',
+                                                                ),
+                                                                _InsightBadge(
+                                                                  icon: Icons.favorite_border_rounded,
+                                                                  label:
+                                                                      '$totalEngagement total engagement',
+                                                                ),
+                                                                _InsightBadge(
+                                                                  icon:
+                                                                      Icons.bookmark_border_rounded,
+                                                                  label:
+                                                                      '$favoritesCount saved items',
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 16),
+                                                      Expanded(
+                                                        flex: 4,
+                                                        child: _InsightSectionCard(
+                                                          title: 'Quick pulse',
+                                                          subtitle:
+                                                              'A fast desktop summary',
+                                                          child: Column(
+                                                            children: [
+                                                              _MetricRow(
+                                                                label: 'Unread notifications',
+                                                                value: unreadNotifs.toString(),
+                                                                color: AppColors.primary,
+                                                              ),
+                                                              const SizedBox(height: 10),
+                                                              _MetricRow(
+                                                                label: 'Open chats',
+                                                                value: chatDocs.length.toString(),
+                                                                color: Colors.deepPurple,
+                                                              ),
+                                                              const SizedBox(height: 10),
+                                                              _MetricRow(
+                                                                label: 'Published posts',
+                                                                value: postDocs.length.toString(),
+                                                                color: Colors.orange,
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  )
+                                                : Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        'Insights overview',
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .titleLarge
+                                                            ?.copyWith(
+                                                              fontWeight: FontWeight.bold,
+                                                            ),
+                                                      ),
+                                                      const SizedBox(height: 8),
+                                                      const Text(
+                                                        'Your stats, posts, and activity in one place.',
+                                                        style: TextStyle(
+                                                          color: AppColors.grey,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 12),
+                                                      Wrap(
+                                                        spacing: 8,
+                                                        runSpacing: 8,
+                                                        children: [
+                                                          _InsightBadge(
+                                                            icon: Icons.bar_chart_rounded,
+                                                            label:
+                                                                '$weeklyPosts this week',
+                                                          ),
+                                                          _InsightBadge(
+                                                            icon: Icons.favorite_border_rounded,
+                                                            label:
+                                                                '$totalEngagement engagement',
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ],
+                                                  ),
+                                          ),
+                                          const SizedBox(height: 16),
+                                          GridView.count(
+                                            crossAxisCount: isDesktop ? cardCount : 2,
+                                            mainAxisSpacing: 12,
+                                            crossAxisSpacing: 12,
+                                            childAspectRatio: isDesktop ? 1.5 : 1.25,
+                                            shrinkWrap: true,
+                                            physics: const NeverScrollableScrollPhysics(),
+                                            children: cards,
+                                          ),
+                                          const SizedBox(height: 16),
+                                          if (isDesktop)
+                                            Row(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Expanded(flex: 8, child: overviewPanel),
+                                                const SizedBox(width: 12),
+                                                Expanded(flex: 6, child: engagementPanel),
+                                              ],
+                                            )
+                                          else ...[
+                                            overviewPanel,
+                                            const SizedBox(height: 12),
+                                            engagementPanel,
+                                          ],
+                                          const SizedBox(height: 16),
+                                          _InsightSectionCard(
+                                            title: 'Your posts',
+                                            subtitle:
+                                                'Browse your recent content and saved items',
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Container(
+                                                  decoration: BoxDecoration(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .surface,
+                                                    borderRadius: BorderRadius.circular(12),
+                                                    border: Border.all(
+                                                      color: Theme.of(context)
+                                                                  .brightness ==
+                                                              Brightness.dark
+                                                          ? Colors.white10
+                                                          : Colors.black12,
+                                                    ),
+                                                  ),
+                                                  child: const TabBar(
+                                                    indicatorSize:
+                                                        TabBarIndicatorSize.tab,
+                                                    tabs: [
+                                                      Tab(text: 'Recent Posts'),
+                                                      Tab(text: 'Saved'),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 12),
+                                                SizedBox(
+                                                  height: isDesktop ? 480 : 420,
+                                                  child: TabBarView(
+                                                    children: [
+                                                      _RecentPostsList(
+                                                        postDocs: postDocs,
+                                                      ),
+                                                      _SavedPostsList(
+                                                        favoriteDocs:
+                                                            favSnap.data?.docs ?? [],
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                    child: const TabBar(
-                                      indicatorSize:
-                                          TabBarIndicatorSize.tab,
-                                      tabs: [
-                                        Tab(text: 'Recent Posts'),
-                                        Tab(text: 'Saved'),
-                                      ],
-                                    ),
                                   ),
-                                  const SizedBox(height: 12),
-                                  SizedBox(
-                                    height: 420,
-                                    child: TabBarView(
-                                      children: [
-                                        _RecentPostsList(
-                                          postDocs: postDocs,
-                                        ),
-                                        _SavedPostsList(
-                                          favoriteDocs:
-                                              favSnap.data?.docs ?? [],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                );
+                              },
                             ),
                           );
                         },
@@ -331,6 +667,216 @@ class _StatCard extends StatelessWidget {
             footer!,
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _InsightSectionCard extends StatelessWidget {
+  const _InsightSectionCard({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF171B24) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isDark ? Colors.white10 : Colors.black12,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: TextStyle(
+              color: isDark ? Colors.white70 : AppColors.grey,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 14),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _InsightBadge extends StatelessWidget {
+  const _InsightBadge({
+    required this.icon,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white10 : AppColors.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: AppColors.primary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetricRow extends StatelessWidget {
+  const _MetricRow({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isDark ? Colors.white70 : AppColors.grey,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WeeklyBarsChart extends StatelessWidget {
+  const _WeeklyBarsChart({required this.values, this.isDesktop = false});
+
+  final List<int> values;
+  final bool isDesktop;
+
+  @override
+  Widget build(BuildContext context) {
+    const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    final safeValues = values.isEmpty ? List<int>.filled(7, 0) : values;
+    final maxValue = safeValues.reduce((a, b) => a > b ? a : b);
+
+    return SizedBox(
+      height: isDesktop ? 250 : 200,
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          maxY: maxValue.toDouble() + 1,
+          barTouchData: BarTouchData(enabled: false),
+          titlesData: FlTitlesData(
+            show: true,
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final index = value.toInt();
+                  if (index >= 0 && index < labels.length) {
+                    return Text(
+                      labels[index],
+                      style: TextStyle(
+                        fontSize: isDesktop ? 14 : 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.grey,
+                      ),
+                    );
+                  }
+                  return const SizedBox();
+                },
+                reservedSize: 30,
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  return Text(
+                    value.toInt().toString(),
+                    style: TextStyle(
+                      fontSize: isDesktop ? 12 : 10,
+                      color: AppColors.grey,
+                    ),
+                  );
+                },
+                reservedSize: 40,
+              ),
+            ),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          gridData: const FlGridData(show: false),
+          borderData: FlBorderData(show: false),
+          barGroups: List.generate(safeValues.length, (index) {
+            return BarChartGroupData(
+              x: index,
+              barRods: [
+                BarChartRodData(
+                  toY: safeValues[index].toDouble(),
+                  color: AppColors.primary,
+                  width: isDesktop ? 24 : 20,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ],
+            );
+          }),
+        ),
       ),
     );
   }
@@ -651,12 +1197,14 @@ class _VideoThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Uint8List?>(
-      future: VideoThumbnail.thumbnailData(
-        video: url,
-        imageFormat: ImageFormat.JPEG,
-        maxWidth: 240,
-        quality: 75,
-      ),
+      future: Platform.isWindows
+          ? Future.value(null)
+          : VideoThumbnail.thumbnailData(
+              video: url,
+              imageFormat: ImageFormat.JPEG,
+              maxWidth: 240,
+              quality: 75,
+            ),
       builder: (context, snap) {
         final bytes = snap.data;
         if (bytes == null) {

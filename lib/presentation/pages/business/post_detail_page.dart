@@ -9,6 +9,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:io';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
@@ -43,7 +46,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
   Timer? _highlightTimer;
   int _mediaIndex = 0;
   VideoPlayerController? _videoController;
+  Player? _mediaKitPlayer;
+  VideoController? _mediaKitController;
   String? _currentVideoUrl;
+  bool _isVideoReady = false;
   final ValueNotifier<bool> _isMuted = ValueNotifier<bool>(false);
   bool _isSubmittingComment = false;
 
@@ -62,7 +68,11 @@ class _PostDetailPageState extends State<PostDetailPage> {
     _controller.dispose();
     _commentController.dispose();
     _commentsScrollController.dispose();
-    _videoController?.dispose();
+    if (Platform.isWindows) {
+      _mediaKitPlayer?.dispose();
+    } else {
+      _videoController?.dispose();
+    }
     _isMuted.dispose();
     _highlightTimer?.cancel();
     super.dispose();
@@ -100,19 +110,59 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
   }
 
-  void _initVideo(String url) {
-    _videoController?.dispose();
-    final controller = VideoPlayerController.networkUrl(Uri.parse(url));
-    _videoController = controller;
-    _currentVideoUrl = url;
-    controller.initialize().then((_) {
-      if (mounted) {
-        setState(() {});
-        controller.setLooping(true);
-        controller.setVolume(_isMuted.value ? 0 : 1);
-        controller.play();
+  void _initVideo(String url) async {
+    if (mounted) {
+      setState(() {
+        _isVideoReady = false;
+      });
+    }
+
+    if (Platform.isWindows) {
+      _mediaKitPlayer?.dispose();
+      _mediaKitPlayer = Player();
+      _mediaKitController = VideoController(_mediaKitPlayer!);
+      try {
+        await _mediaKitPlayer!.open(Media(url));
+        _mediaKitPlayer!.setPlaylistMode(PlaylistMode.loop);
+        _currentVideoUrl = url;
+        if (mounted) {
+          setState(() {
+            _isVideoReady = true;
+          });
+          _mediaKitPlayer!.setVolume(_isMuted.value ? 0 : 100);
+          _mediaKitPlayer!.play();
+        }
+      } catch (e) {
+        debugPrint('Post detail Windows video failed: $e');
+        if (mounted) {
+          setState(() {
+            _isVideoReady = false;
+          });
+        }
       }
-    });
+    } else {
+      _videoController?.dispose();
+      final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      _videoController = controller;
+      _currentVideoUrl = url;
+      controller.initialize().then((_) {
+        if (mounted) {
+          setState(() {
+            _isVideoReady = true;
+          });
+          controller.setLooping(true);
+          controller.setVolume(_isMuted.value ? 0 : 1);
+          controller.play();
+        }
+      }).catchError((error) {
+        debugPrint('Post detail mobile video failed: $error');
+        if (mounted) {
+          setState(() {
+            _isVideoReady = false;
+          });
+        }
+      });
+    }
   }
 
   void _handleMediaIndexChange(List<PostMedia> media, int index) {
@@ -123,8 +173,13 @@ class _PostDetailPageState extends State<PostDetailPage> {
         _initVideo(current.url);
       }
     } else {
-      _videoController?.pause();
+      if (Platform.isWindows) {
+        _mediaKitPlayer?.pause();
+      } else {
+        _videoController?.pause();
+      }
       _currentVideoUrl = null;
+      _isVideoReady = false;
     }
   }
 
@@ -172,14 +227,16 @@ class _PostDetailPageState extends State<PostDetailPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (text.isEmpty || user == null || _isSubmittingComment) return;
     HapticFeedback.selectionClick();
-    final userDoc =
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-    final userName = (userDoc.data()?['name'] as String?)?.trim().isNotEmpty ==
-            true
-        ? (userDoc.data()?['name'] as String).trim()
-        : (user.displayName?.trim().isNotEmpty == true
-            ? user.displayName!.trim()
-            : 'You');
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
+    final userName =
+        (userDoc.data()?['name'] as String?)?.trim().isNotEmpty == true
+            ? (userDoc.data()?['name'] as String).trim()
+            : (user.displayName?.trim().isNotEmpty == true
+                ? user.displayName!.trim()
+                : 'You');
     final optimistic = Comment(
       id: 'pending_${DateTime.now().microsecondsSinceEpoch}',
       userId: user.uid,
@@ -322,13 +379,13 @@ class _PostDetailPageState extends State<PostDetailPage> {
               ),
               if (currentUser != null && currentUser.uid == comment.userId)
                 ListTile(
-                leading: const Icon(Icons.edit),
-                title: const Text('Edit comment'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showEditCommentDialog(comment);
-                },
-              ),
+                  leading: const Icon(Icons.edit),
+                  title: const Text('Edit comment'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showEditCommentDialog(comment);
+                  },
+                ),
               if (currentUser != null && currentUser.uid == comment.userId)
                 ListTile(
                   leading: const Icon(Icons.delete_outline),
@@ -493,7 +550,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         HapticFeedback.selectionClick();
                         Navigator.pop(sheetContext);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Open chat from feed to send this post')),
+                          const SnackBar(
+                              content: Text(
+                                  'Open chat from feed to send this post')),
                         );
                       },
                     ),
@@ -523,9 +582,11 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         HapticFeedback.selectionClick();
                         Navigator.pop(sheetContext);
                         if (post.businessId.isNotEmpty) {
-                          context.push(AppRoutes.businessProfilePath(post.businessId));
+                          context.push(
+                              AppRoutes.businessProfilePath(post.businessId));
                         } else {
-                          context.push(AppRoutes.clientProfilePath(post.ownerId));
+                          context
+                              .push(AppRoutes.clientProfilePath(post.ownerId));
                         }
                       },
                     ),
@@ -553,13 +614,17 @@ class _PostDetailPageState extends State<PostDetailPage> {
   }
 
   List<Widget> _buildCommentThreads(List<Comment> comments) {
-    final byId = <String, Comment>{for (final comment in comments) comment.id: comment};
+    final byId = <String, Comment>{
+      for (final comment in comments) comment.id: comment
+    };
     final repliesByParent = <String, List<Comment>>{};
     final parents = <Comment>[];
 
     for (final comment in comments) {
       final parentId = comment.replyToCommentId;
-      if (parentId != null && parentId.isNotEmpty && byId.containsKey(parentId)) {
+      if (parentId != null &&
+          parentId.isNotEmpty &&
+          byId.containsKey(parentId)) {
         repliesByParent.putIfAbsent(parentId, () => []).add(comment);
       } else {
         parents.add(comment);
@@ -612,264 +677,156 @@ class _PostDetailPageState extends State<PostDetailPage> {
     final isReply = depth > 0;
     _commentKeys.putIfAbsent(comment.id, () => GlobalKey());
     return KeyedSubtree(
-      key: _commentKeys[comment.id],
-      child: GestureDetector(
-      onLongPress: () => _showCommentActions(comment),
-      child: Padding(
-        padding: EdgeInsets.only(
-          top: 6,
-          bottom: 6,
-          left: depth * 18,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (isReply)
-              Container(
-                width: 12,
-                margin: const EdgeInsets.only(top: 14, right: 8),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Container(
-                    width: 10,
-                    height: 26,
-                    decoration: BoxDecoration(
-                      border: Border(
-                        left: BorderSide(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.12),
-                          width: 2,
+        key: _commentKeys[comment.id],
+        child: GestureDetector(
+          onLongPress: () => _showCommentActions(comment),
+          child: Padding(
+            padding: EdgeInsets.only(
+              top: 6,
+              bottom: 6,
+              left: depth * 18,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (isReply)
+                  Container(
+                    width: 12,
+                    margin: const EdgeInsets.only(top: 14, right: 8),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Container(
+                        width: 10,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          border: Border(
+                            left: BorderSide(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.12),
+                              width: 2,
+                            ),
+                            bottom: BorderSide(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.12),
+                              width: 2,
+                            ),
+                          ),
+                          borderRadius: const BorderRadius.only(
+                            bottomLeft: Radius.circular(10),
+                          ),
                         ),
-                        bottom: BorderSide(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.12),
-                          width: 2,
-                        ),
-                      ),
-                      borderRadius: const BorderRadius.only(
-                        bottomLeft: Radius.circular(10),
                       ),
                     ),
                   ),
-                ),
-              ),
-            InkWell(
-              onTap: () => context.push(
-                AppRoutes.clientProfilePath(comment.userId),
-              ),
-              borderRadius: BorderRadius.circular(14),
-              child: FutureBuilder<String?>(
-                future: _getUserImageUrl(comment.userId),
-                builder: (context, snap) {
-                  final imageUrl = snap.data;
-                  return CircleAvatar(
-                    radius: 12,
-                    backgroundColor: AppColors.primary.withValues(alpha: 0.2),
-                    backgroundImage:
-                        imageUrl != null && imageUrl.isNotEmpty
+                InkWell(
+                  onTap: () => context.push(
+                    AppRoutes.clientProfilePath(comment.userId),
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  child: FutureBuilder<String?>(
+                    future: _getUserImageUrl(comment.userId),
+                    builder: (context, snap) {
+                      final imageUrl = snap.data;
+                      return CircleAvatar(
+                        radius: 12,
+                        backgroundColor:
+                            AppColors.primary.withValues(alpha: 0.2),
+                        backgroundImage: imageUrl != null && imageUrl.isNotEmpty
                             ? CachedNetworkImageProvider(imageUrl)
                             : null,
-                    child: imageUrl == null || imageUrl.isEmpty
-                        ? Text(
-                            initial,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          )
-                        : null,
-                  );
-                },
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                decoration: BoxDecoration(
-                  color: _highlightedCommentId == comment.id
-                      ? AppColors.primary.withValues(alpha: 0.13)
-                      : Theme.of(context).colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: _highlightedCommentId == comment.id
-                        ? AppColors.primary.withValues(alpha: 0.28)
-                        : Colors.transparent,
+                        child: imageUrl == null || imageUrl.isEmpty
+                            ? Text(
+                                initial,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              )
+                            : null,
+                      );
+                    },
                   ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+                const SizedBox(width: 10),
+                Expanded(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                    decoration: BoxDecoration(
+                      color: _highlightedCommentId == comment.id
+                          ? AppColors.primary.withValues(alpha: 0.13)
+                          : Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest
+                              .withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: _highlightedCommentId == comment.id
+                            ? AppColors.primary.withValues(alpha: 0.28)
+                            : Colors.transparent,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => context.push(
-                              AppRoutes.clientProfilePath(comment.userId),
-                            ),
-                            child: Text(
-                              comment.userName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.primary,
-                                fontSize: 13,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () => context.push(
+                                  AppRoutes.clientProfilePath(comment.userId),
+                                ),
+                                child: Text(
+                                  comment.userName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.primary,
+                                    fontSize: 13,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                        Text(
-                          timeLabel,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.5),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    if (comment.replyToUserName != null &&
-                        comment.replyToUserName!.trim().isNotEmpty) ...[
-                      InkWell(
-                        onTap: () {
-                          final parentId = comment.replyToCommentId;
-                          if (parentId != null && parentId.isNotEmpty) {
-                            HapticFeedback.selectionClick();
-                            _focusParentComment(parentId);
-                          }
-                        },
-                        borderRadius: BorderRadius.circular(999),
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 6),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            'Replying to @${comment.replyToUserName}',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                    Text(
-                      comment.content,
-                      style: const TextStyle(fontSize: 13, height: 1.35),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        InkWell(
-                          onTap: () async {
-                            HapticFeedback.selectionClick();
-                            await _repo.toggleCommentLike(
-                              postId: widget.post.id,
-                              commentId: comment.id,
-                            );
-                          },
-                          borderRadius: BorderRadius.circular(999),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 2,
-                              vertical: 2,
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  isLikedByMe
-                                      ? Icons.favorite_rounded
-                                      : Icons.favorite_border_rounded,
-                                  size: 14,
-                                  color: isLikedByMe
-                                      ? Colors.pinkAccent
-                                      : Theme.of(context)
-                                          .colorScheme
-                                          .onSurface
-                                          .withValues(alpha: 0.65),
-                                ),
-                                if (comment.likes.isNotEmpty) ...[
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${comment.likes.length}',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w700,
-                                      color: isLikedByMe
-                                          ? Colors.pinkAccent
-                                          : Theme.of(context)
-                                              .colorScheme
-                                              .onSurface
-                                              .withValues(alpha: 0.65),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        InkWell(
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            setState(() {
-                              _replyingToComment = comment;
-                            });
-                          },
-                          borderRadius: BorderRadius.circular(999),
-                          child: const Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: 2,
-                              vertical: 2,
-                            ),
-                            child: Text(
-                              'Reply',
+                            Text(
+                              timeLabel,
                               style: TextStyle(
                                 fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.grey,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withValues(alpha: 0.5),
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                        if (replyCount > 0) ...[
-                          const SizedBox(width: 14),
+                        const SizedBox(height: 4),
+                        if (comment.replyToUserName != null &&
+                            comment.replyToUserName!.trim().isNotEmpty) ...[
                           InkWell(
                             onTap: () {
-                              HapticFeedback.selectionClick();
-                              setState(() {
-                                if (repliesCollapsed) {
-                                  _collapsedReplyParents.remove(comment.id);
-                                } else {
-                                  _collapsedReplyParents.add(comment.id);
-                                }
-                              });
+                              final parentId = comment.replyToCommentId;
+                              if (parentId != null && parentId.isNotEmpty) {
+                                HapticFeedback.selectionClick();
+                                _focusParentComment(parentId);
+                              }
                             },
                             borderRadius: BorderRadius.circular(999),
-                            child: Padding(
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 6),
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 2,
-                                vertical: 2,
+                                horizontal: 8,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color:
+                                    AppColors.primary.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(
-                                repliesCollapsed
-                                    ? 'View repl${replyCount == 1 ? 'y' : 'ies'} ($replyCount)'
-                                    : 'Hide repl${replyCount == 1 ? 'y' : 'ies'}',
+                                'Replying to @${comment.replyToUserName}',
                                 style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
@@ -879,16 +836,127 @@ class _PostDetailPageState extends State<PostDetailPage> {
                             ),
                           ),
                         ],
+                        Text(
+                          comment.content,
+                          style: const TextStyle(fontSize: 13, height: 1.35),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            InkWell(
+                              onTap: () async {
+                                HapticFeedback.selectionClick();
+                                await _repo.toggleCommentLike(
+                                  postId: widget.post.id,
+                                  commentId: comment.id,
+                                );
+                              },
+                              borderRadius: BorderRadius.circular(999),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 2,
+                                  vertical: 2,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      isLikedByMe
+                                          ? Icons.favorite_rounded
+                                          : Icons.favorite_border_rounded,
+                                      size: 14,
+                                      color: isLikedByMe
+                                          ? Colors.pinkAccent
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withValues(alpha: 0.65),
+                                    ),
+                                    if (comment.likes.isNotEmpty) ...[
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '${comment.likes.length}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: isLikedByMe
+                                              ? Colors.pinkAccent
+                                              : Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface
+                                                  .withValues(alpha: 0.65),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            InkWell(
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                setState(() {
+                                  _replyingToComment = comment;
+                                });
+                              },
+                              borderRadius: BorderRadius.circular(999),
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 2,
+                                  vertical: 2,
+                                ),
+                                child: Text(
+                                  'Reply',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.grey,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (replyCount > 0) ...[
+                              const SizedBox(width: 14),
+                              InkWell(
+                                onTap: () {
+                                  HapticFeedback.selectionClick();
+                                  setState(() {
+                                    if (repliesCollapsed) {
+                                      _collapsedReplyParents.remove(comment.id);
+                                    } else {
+                                      _collapsedReplyParents.add(comment.id);
+                                    }
+                                  });
+                                },
+                                borderRadius: BorderRadius.circular(999),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 2,
+                                    vertical: 2,
+                                  ),
+                                  child: Text(
+                                    repliesCollapsed
+                                        ? 'View repl${replyCount == 1 ? 'y' : 'ies'} ($replyCount)'
+                                        : 'Hide repl${replyCount == 1 ? 'y' : 'ies'}',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
-      ),
-    ));
+          ),
+        ));
   }
 
   Widget _buildVideoPage(PostMedia item, int index) {
@@ -901,94 +969,111 @@ class _PostDetailPageState extends State<PostDetailPage> {
         ),
       );
     }
-    return _videoController != null && _videoController!.value.isInitialized
-        ? Stack(
-            children: [
-              Positioned.fill(
-                child: FittedBox(
-                  fit: BoxFit.cover,
-                  child: SizedBox(
-                    width: _videoController!.value.size.width,
-                    height: _videoController!.value.size.height,
-                    child: VideoPlayer(_videoController!),
+    final isInitialized = Platform.isWindows
+        ? _isVideoReady && _mediaKitController != null
+        : _videoController != null && _videoController!.value.isInitialized;
+    return isInitialized
+        ? Container(
+            color: Colors.black,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Center(
+                    child: IgnorePointer(
+                      ignoring: true,
+                      child: Platform.isWindows
+                          ? Video(
+                              controller: _mediaKitController!,
+                              fit: BoxFit.contain,
+                            )
+                          : FittedBox(
+                              fit: BoxFit.contain,
+                              child: SizedBox(
+                                width: _videoController!.value.size.width,
+                                height: _videoController!.value.size.height,
+                                child: VideoPlayer(_videoController!),
+                              ),
+                            ),
+                    ),
                   ),
                 ),
-              ),
-              Positioned(
-                left: 10,
-                right: 10,
-                bottom: 10,
-                child: Column(
-                  children: [
-                    VideoProgressIndicator(
-                      _videoController!,
-                      allowScrubbing: true,
-                      colors: VideoProgressColors(
-                        playedColor: Theme.of(context).colorScheme.primary,
-                        bufferedColor: Colors.white24,
-                        backgroundColor: Colors.white10,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
+                if (!Platform.isWindows)
+                  Positioned(
+                    left: 10,
+                    right: 10,
+                    bottom: 10,
+                    child: Column(
                       children: [
-                        ValueListenableBuilder(
-                          valueListenable: _videoController!,
-                          builder: (context, value, _) {
-                            final isPlaying = value.isPlaying;
-                            return IconButton(
-                              icon: Icon(
-                                isPlaying ? Icons.pause : Icons.play_arrow,
-                                color: Colors.white,
-                              ),
-                              onPressed: () {
-                                HapticFeedback.selectionClick();
-                                isPlaying
-                                    ? _videoController!.pause()
-                                    : _videoController!.play();
-                              },
-                            );
-                          },
+                        VideoProgressIndicator(
+                          _videoController!,
+                          allowScrubbing: true,
+                          colors: VideoProgressColors(
+                            playedColor: Theme.of(context).colorScheme.primary,
+                            bufferedColor: Colors.white24,
+                            backgroundColor: Colors.white10,
+                          ),
                         ),
-                        ValueListenableBuilder(
-                          valueListenable: _videoController!,
-                          builder: (context, value, _) {
-                            return Text(
-                              '${_formatDuration(value.position)} / ${_formatDuration(value.duration)}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.white70,
-                              ),
-                            );
-                          },
-                        ),
-                        const Spacer(),
-                        ValueListenableBuilder<bool>(
-                          valueListenable: _isMuted,
-                          builder: (context, muted, _) {
-                            return IconButton(
-                              icon: Icon(
-                                muted ? Icons.volume_off : Icons.volume_up,
-                                color: Colors.white,
-                              ),
-                              onPressed: () {
-                                HapticFeedback.selectionClick();
-                                final next = !muted;
-                                _isMuted.value = next;
-                                _videoController!.setVolume(next ? 0 : 1);
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            ValueListenableBuilder(
+                              valueListenable: _videoController!,
+                              builder: (context, value, _) {
+                                final isPlaying = value.isPlaying;
+                                return IconButton(
+                                  icon: Icon(
+                                    isPlaying ? Icons.pause : Icons.play_arrow,
+                                    color: Colors.white,
+                                  ),
+                                  onPressed: () {
+                                    HapticFeedback.selectionClick();
+                                    isPlaying
+                                        ? _videoController!.pause()
+                                        : _videoController!.play();
+                                  },
+                                );
                               },
-                            );
-                          },
+                            ),
+                            ValueListenableBuilder(
+                              valueListenable: _videoController!,
+                              builder: (context, value, _) {
+                                return Text(
+                                  '${_formatDuration(value.position)} / ${_formatDuration(value.duration)}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white70,
+                                  ),
+                                );
+                              },
+                            ),
+                            const Spacer(),
+                            ValueListenableBuilder<bool>(
+                              valueListenable: _isMuted,
+                              builder: (context, muted, _) {
+                                return IconButton(
+                                  icon: Icon(
+                                    muted ? Icons.volume_off : Icons.volume_up,
+                                    color: Colors.white,
+                                  ),
+                                  onPressed: () {
+                                    HapticFeedback.selectionClick();
+                                    final next = !muted;
+                                    _isMuted.value = next;
+                                    _videoController!.setVolume(next ? 0 : 1);
+                                  },
+                                );
+                              },
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-            ],
+                  ),
+              ],
+            ),
           )
         : Container(
-            color: AppColors.lightGrey,
+            color: Colors.black,
             child: const Center(
               child: CircularProgressIndicator(),
             ),
@@ -1025,439 +1110,537 @@ class _PostDetailPageState extends State<PostDetailPage> {
                 (pending) =>
                     pending.userId == serverComment.userId &&
                     pending.content == serverComment.content &&
-                    pending.createdAt.difference(serverComment.createdAt).inSeconds
-                        .abs() <
-                    10,
+                    pending.createdAt
+                            .difference(serverComment.createdAt)
+                            .inSeconds
+                            .abs() <
+                        10,
               ),
             ),
           ];
           final threadedComments = _buildCommentThreads(mergedComments);
           final hasVideo = media.any((item) => item.isVideo);
-          return Column(
-            children: [
-              Expanded(
-                child: ListView(
-                  controller: _commentsScrollController,
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    Row(
-                      children: [
-                        InkWell(
-                          onTap: () {
-                            if (post.businessId.isNotEmpty) {
-                              context.push(
-                                AppRoutes.businessProfilePath(post.businessId),
-                              );
-                            } else {
-                              context.push(
-                                AppRoutes.clientProfilePath(post.ownerId),
-                              );
-                            }
-                          },
-                          borderRadius: BorderRadius.circular(999),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                backgroundColor: AppColors.primary,
-                                backgroundImage: post.businessImageUrl != null &&
-                                        post.businessImageUrl!.isNotEmpty
-                                    ? CachedNetworkImageProvider(
-                                        post.businessImageUrl!,
-                                      )
-                                    : null,
-                                child: (post.businessImageUrl == null ||
-                                        post.businessImageUrl!.isEmpty)
-                                    ? Text(
-                                        (post.businessName.isNotEmpty
-                                                ? post.businessName[0]
-                                                : '?')
-                                            .toUpperCase(),
-                                        style: const TextStyle(color: Colors.white),
-                                      )
-                                    : null,
-                              ),
-                              const SizedBox(width: 12),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    post.businessName.isNotEmpty
-                                        ? post.businessName
-                                        : 'Creator',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          _formatRelativeTime(post.createdAt),
-                          style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.55),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (media.isEmpty) ...[
-                      const SizedBox(height: 12),
-                      Text(post.content),
-                    ],
-                    if (media.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: SizedBox(
-                          height: 430,
-                          child: PageView.builder(
-                            controller: _controller,
-                            itemCount: media.length,
-                            onPageChanged: (index) {
-                              setState(() => _mediaIndex = index);
-                              _handleMediaIndexChange(media, index);
-                            },
-                            itemBuilder: (context, index) {
-                              final item = media[index];
-                              if (!item.isVideo) {
-                                return CachedNetworkImage(
-                                  imageUrl: item.url,
-                                  fit: BoxFit.cover,
-                                );
-                              }
-                              return _buildVideoPage(item, index);
-                            },
-                          ),
-                        ),
-                      ),
-                      if (post.content.trim().isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Text(post.content),
-                      ],
-                      if (media.length > 1) ...[
-                        const SizedBox(height: 8),
-                        Center(
-                          child: SmoothPageIndicator(
-                            controller: _controller,
-                            count: media.length,
-                            effect: const WormEffect(
-                              dotHeight: 6,
-                              dotWidth: 6,
-                              activeDotColor: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                    const SizedBox(height: 12),
-                    StreamBuilder<DocumentSnapshot>(
-                      stream: currentUser == null
-                          ? const Stream.empty()
-                          : FirebaseFirestore.instance
-                              .collection('users')
-                              .doc(currentUser.uid)
-                              .collection('favorites')
-                              .doc(post.id)
-                              .snapshots(),
-                      builder: (context, favSnap) {
-                        final isSaved = favSnap.data?.exists == true;
-                        return Row(
-                          children: [
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  IconButton(
-                                    icon: Icon(
-                                      isLiked
-                                          ? Icons.favorite
-                                          : Icons.favorite_border,
-                                      color:
-                                          isLiked ? Colors.pinkAccent : null,
-                                    ),
-                                    onPressed: () {
-                                      HapticFeedback.lightImpact();
-                                      _repo.toggleLike(post.id);
-                                    },
-                                  ),
-                                  Text('${post.likes.length}'),
-                                  const SizedBox(width: 16),
-                                  const Icon(Icons.chat_bubble_outline),
-                                  const SizedBox(width: 6),
-                                  Text('${post.comments.length}'),
-                                  const SizedBox(width: 16),
-                                  IconButton(
-                                    icon: const Icon(Icons.forward),
-                                    onPressed: () => _showShareSheet(post),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Row(
-                              children: [
-                                if (post.googleMapsLink != null &&
-                                    post.googleMapsLink!.isNotEmpty)
-                                  IconButton(
-                                    icon: const Icon(Icons.location_on),
-                                    onPressed: () =>
-                                        _openLocation(post.googleMapsLink),
-                                  ),
-                                if (hasVideo)
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 6),
-                                    child: _DetailMetaChip(
-                                      icon: Icons.play_arrow_rounded,
-                                      label: _formatMetric(post.playCount),
-                                      accent: Colors.pinkAccent,
-                                    ),
-                                  ),
-                                IconButton(
-                                  icon: Icon(
-                                    isSaved
-                                        ? Icons.bookmark
-                                        : Icons.bookmark_border,
-                                    color:
-                                        isSaved ? AppColors.primary : null,
-                                  ),
-                                  onPressed: () {
-                                    HapticFeedback.lightImpact();
-                                    _toggleFavorite(post.id);
-                                  },
-                                ),
-                              ],
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                    const Divider(),
-                    Row(
-                      children: [
-                        const Text(
-                          'Comments',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            '${mergedComments.length}',
-                            style: const TextStyle(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          'Newest first',
-                          style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.55),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    if (mergedComments.isEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest
-                              .withValues(alpha: 0.35),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.mode_comment_outlined, color: AppColors.grey),
-                            SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'No comments yet. Start the conversation.',
-                                style: TextStyle(color: AppColors.grey),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ...threadedComments,
-                  ],
+          final isDesktopWide = MediaQuery.of(context).size.width >= 1180;
+          final onSurfaceMuted =
+              Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55);
+
+          Widget commentsHeader() {
+            return Row(
+              children: [
+                const Text(
+                  'Comments',
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  border: Border(
-                    top: BorderSide(
-                      color: Theme.of(context).dividerColor,
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${mergedComments.length}',
+                    style: const TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
-                child: Row(
-                  children: [
-                    FutureBuilder<String?>(
-                      future: currentUser == null
-                          ? Future.value(null)
-                          : _getUserImageUrl(currentUser.uid),
-                      builder: (context, snap) {
-                        final imageUrl = snap.data;
-                        final name = currentUser?.displayName?.trim();
-                        return CircleAvatar(
-                          radius: 18,
-                          backgroundColor: AppColors.primary.withValues(alpha: 0.2),
-                          backgroundImage: imageUrl != null && imageUrl.isNotEmpty
-                              ? CachedNetworkImageProvider(imageUrl)
-                              : null,
-                          child: imageUrl == null || imageUrl.isEmpty
-                              ? Text(
-                                  (name != null && name.isNotEmpty ? name[0] : 'Y')
-                                      .toUpperCase(),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                )
-                              : null,
-                        );
-                      },
+                const Spacer(),
+                Text(
+                  'Newest first',
+                  style: TextStyle(
+                    color: onSurfaceMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            );
+          }
+
+          Widget emptyCommentsState() {
+            return Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHighest
+                    .withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.mode_comment_outlined, color: AppColors.grey),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'No comments yet. Start the conversation.',
+                      style: TextStyle(color: AppColors.grey),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
+                  ),
+                ],
+              ),
+            );
+          }
+
+          Widget commentComposer() {
+            return Container(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(
+                  top: BorderSide(color: Theme.of(context).dividerColor),
+                ),
+              ),
+              child: Row(
+                children: [
+                  FutureBuilder<String?>(
+                    future: currentUser == null
+                        ? Future.value(null)
+                        : _getUserImageUrl(currentUser.uid),
+                    builder: (context, snap) {
+                      final imageUrl = snap.data;
+                      final name = currentUser?.displayName?.trim();
+                      return CircleAvatar(
+                        radius: 18,
+                        backgroundColor:
+                            AppColors.primary.withValues(alpha: 0.2),
+                        backgroundImage: imageUrl != null && imageUrl.isNotEmpty
+                            ? CachedNetworkImageProvider(imageUrl)
+                            : null,
+                        child: imageUrl == null || imageUrl.isEmpty
+                            ? Text(
+                                (name != null && name.isNotEmpty
+                                        ? name[0]
+                                        : 'Y')
+                                    .toUpperCase(),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              )
+                            : null,
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_replyingToComment != null)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Replying to @${_replyingToComment!.userName}',
+                                    style: const TextStyle(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      _replyingToComment = null;
+                                    });
+                                  },
+                                  child: const Icon(
+                                    Icons.close_rounded,
+                                    size: 16,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        TextField(
+                          controller: _commentController,
+                          minLines: 1,
+                          maxLines: 3,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => _addComment(post.id),
+                          decoration: InputDecoration(
+                            hintText: _replyingToComment == null
+                                ? 'Share your thoughts...'
+                                : 'Write your reply...',
+                            filled: true,
+                            fillColor: Theme.of(context)
+                                .colorScheme
+                                .surface
+                                .withValues(alpha: 0.6),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                              borderSide: BorderSide.none,
+                            ),
+                            prefixIcon: const Icon(Icons.mode_comment_outlined),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () => _addComment(post.id),
+                    borderRadius: BorderRadius.circular(24),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (_replyingToComment != null)
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      'Replying to @${_replyingToComment!.userName}',
-                                      style: const TextStyle(
-                                        color: AppColors.primary,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                  InkWell(
-                                    onTap: () {
-                                      setState(() {
-                                        _replyingToComment = null;
-                                      });
-                                    },
-                                    child: const Icon(
-                                      Icons.close_rounded,
-                                      size: 16,
-                                      color: AppColors.primary,
-                                    ),
-                                  ),
-                                ],
+                          if (_isSubmittingComment) ...[
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
                               ),
                             ),
-                          TextField(
-                            controller: _commentController,
-                            minLines: 1,
-                            maxLines: 3,
-                            decoration: InputDecoration(
-                              hintText: _replyingToComment == null
-                                  ? 'Share your thoughts...'
-                                  : 'Write your reply...',
-                              filled: true,
-                              fillColor: Theme.of(context)
-                                  .colorScheme
-                                  .surface
-                                  .withValues(alpha: 0.6),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(24),
-                                borderSide: BorderSide.none,
-                              ),
-                              prefixIcon: const Icon(Icons.mode_comment_outlined),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
+                            const SizedBox(width: 8),
+                          ] else
+                            const Icon(
+                              Icons.send_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          const Text(
+                            'Post',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          Widget postContentSection() {
+            return ListView(
+              controller: isDesktopWide ? null : _commentsScrollController,
+              padding: const EdgeInsets.all(16),
+              children: [
+                Row(
+                  children: [
                     InkWell(
-                      onTap: () => _addComment(post.id),
-                      borderRadius: BorderRadius.circular(24),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (_isSubmittingComment) ...[
-                              const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
+                      onTap: () {
+                        if (post.businessId.isNotEmpty) {
+                          context.push(
+                            AppRoutes.businessProfilePath(post.businessId),
+                          );
+                        } else {
+                          context.push(
+                            AppRoutes.clientProfilePath(post.ownerId),
+                          );
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(999),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: AppColors.primary,
+                            backgroundImage: post.businessImageUrl != null &&
+                                    post.businessImageUrl!.isNotEmpty
+                                ? CachedNetworkImageProvider(
+                                    post.businessImageUrl!,
+                                  )
+                                : null,
+                            child: (post.businessImageUrl == null ||
+                                    post.businessImageUrl!.isEmpty)
+                                ? Text(
+                                    (post.businessName.isNotEmpty
+                                            ? post.businessName[0]
+                                            : '?')
+                                        .toUpperCase(),
+                                    style: const TextStyle(color: Colors.white),
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(width: 12),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                post.businessName.isNotEmpty
+                                    ? post.businessName
+                                    : 'Creator',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                            ] else
-                              const Icon(
-                                Icons.send_rounded,
-                                color: Colors.white,
-                                size: 18,
-                              ),
-                            const Text(
-                              'Post',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      _formatRelativeTime(post.createdAt),
+                      style: TextStyle(
+                        color: onSurfaceMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
+                if (media.isEmpty) ...[
+                  const SizedBox(height: 12),
+                  if (post.content.trim().isNotEmpty) Text(post.content),
+                ],
+                if (media.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      height: isDesktopWide ? 500 : 430,
+                      child: PageView.builder(
+                        controller: _controller,
+                        itemCount: media.length,
+                        onPageChanged: (index) {
+                          setState(() => _mediaIndex = index);
+                          _handleMediaIndexChange(media, index);
+                        },
+                        itemBuilder: (context, index) {
+                          final item = media[index];
+                          if (!item.isVideo) {
+                            return CachedNetworkImage(
+                              imageUrl: item.url,
+                              fit: BoxFit.cover,
+                            );
+                          }
+                          return _buildVideoPage(item, index);
+                        },
+                      ),
+                    ),
+                  ),
+                  if (post.content.trim().isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(post.content),
+                  ],
+                  if (media.length > 1) ...[
+                    const SizedBox(height: 8),
+                    Center(
+                      child: SmoothPageIndicator(
+                        controller: _controller,
+                        count: media.length,
+                        effect: const WormEffect(
+                          dotHeight: 6,
+                          dotWidth: 6,
+                          activeDotColor: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+                const SizedBox(height: 12),
+                StreamBuilder<DocumentSnapshot>(
+                  stream: currentUser == null
+                      ? const Stream.empty()
+                      : FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(currentUser.uid)
+                          .collection('favorites')
+                          .doc(post.id)
+                          .snapshots(),
+                  builder: (context, favSnap) {
+                    final isSaved = favSnap.data?.exists == true;
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  isLiked
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: isLiked ? Colors.pinkAccent : null,
+                                ),
+                                onPressed: () {
+                                  HapticFeedback.lightImpact();
+                                  _repo.toggleLike(post.id);
+                                },
+                              ),
+                              Text('${post.likes.length}'),
+                              const Icon(Icons.chat_bubble_outline),
+                              Text('${post.comments.length}'),
+                              IconButton(
+                                icon: const Icon(Icons.forward),
+                                onPressed: () => _showShareSheet(post),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Row(
+                          children: [
+                            if (post.googleMapsLink != null &&
+                                post.googleMapsLink!.isNotEmpty)
+                              IconButton(
+                                icon: const Icon(Icons.location_on),
+                                onPressed: () =>
+                                    _openLocation(post.googleMapsLink),
+                              ),
+                            if (hasVideo)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: _DetailMetaChip(
+                                  icon: Icons.play_arrow_rounded,
+                                  label: _formatMetric(post.playCount),
+                                  accent: Colors.pinkAccent,
+                                ),
+                              ),
+                            IconButton(
+                              icon: Icon(
+                                isSaved
+                                    ? Icons.bookmark
+                                    : Icons.bookmark_border,
+                                color: isSaved ? AppColors.primary : null,
+                              ),
+                              onPressed: () {
+                                HapticFeedback.lightImpact();
+                                _toggleFavorite(post.id);
+                              },
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                if (!isDesktopWide) ...[
+                  const Divider(),
+                  commentsHeader(),
+                  const SizedBox(height: 8),
+                  if (mergedComments.isEmpty) emptyCommentsState(),
+                  ...threadedComments,
+                ],
+              ],
+            );
+          }
+
+          if (isDesktopWide) {
+            final cardColor = Theme.of(context).colorScheme.surface;
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 6,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .dividerColor
+                              .withValues(alpha: 0.5),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 18,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: postContentSection(),
+                    ),
+                  ),
+                  const SizedBox(width: 18),
+                  SizedBox(
+                    width: 420,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .dividerColor
+                              .withValues(alpha: 0.5),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 18,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                            child: commentsHeader(),
+                          ),
+                          Divider(
+                            height: 1,
+                            color: Theme.of(context).dividerColor,
+                          ),
+                          Expanded(
+                            child: ListView(
+                              controller: _commentsScrollController,
+                              padding: const EdgeInsets.all(16),
+                              children: [
+                                if (mergedComments.isEmpty)
+                                  emptyCommentsState(),
+                                ...threadedComments,
+                              ],
+                            ),
+                          ),
+                          commentComposer(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
+            );
+          }
+
+          return Column(
+            children: [
+              Expanded(child: postContentSection()),
+              commentComposer(),
             ],
           );
         },

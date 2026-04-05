@@ -1,0 +1,182 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(ownerId) {
+      return isSignedIn() && request.auth.uid == ownerId;
+    }
+
+    function isPostOwner() {
+      return isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    function isPostLikeCommentUpdate() {
+      return isSignedIn()
+        && request.resource.data.diff(resource.data).changedKeys()
+          .hasOnly(['likes', 'comments', 'updatedAt']);
+    }
+
+    function isChatParticipant(chatId) {
+      return isSignedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn()
+        && request.auth.token.email == "nelsonjembe99@gmail.com";
+    }
+
+    function hasAgencyMembership() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/agency_members/$(request.auth.uid));
+    }
+
+    function isAgencyTeamMember() {
+      // Team gate for agency domain: any active agency member.
+      // Roles (admin/staff/reader) are handled by app/functions flow.
+      return hasAgencyMembership();
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
+    }
+
+    match /businesses/{businessId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /notifications/{id} {
+      allow read: if isSignedIn() && request.auth.uid == resource.data.toUserId;
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.fromUserId;
+      allow update, delete: if isSignedIn() && request.auth.uid == resource.data.toUserId;
+    }
+
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isPostOwner() || isPostLikeCommentUpdate();
+      allow delete: if isPostOwner();
+    }
+
+    match /users/{userId}/favorites/{postId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /chats/{chatId} {
+      allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow create: if isSignedIn()
+        && request.resource.data.participants is list
+        && request.auth.uid in request.resource.data.participants
+        && (
+          request.resource.data.chatType == 'direct'
+          || (request.resource.data.chatType == 'business'
+            && request.resource.data.clientId is string
+            && request.resource.data.businessOwnerId is string
+            && request.resource.data.businessId is string)
+        );
+      allow update: if isSignedIn() && request.auth.uid in resource.data.participants;
+
+      match /messages/{messageId} {
+        allow read: if isChatParticipant(chatId);
+        allow create: if isChatParticipant(chatId);
+        allow update: if isChatParticipant(chatId) && request.resource.data.senderId == request.auth.uid;
+        allow delete: if isChatParticipant(chatId);
+      }
+
+      match /calls/{callId} {
+        allow read, create, update, delete: if isChatParticipant(chatId);
+
+        match /{subCollection}/{docId} {
+          allow read, create, update, delete: if isChatParticipant(chatId);
+        }
+      }
+    }
+
+    match /user_follows/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.followerId;
+      allow delete: if isSignedIn() && request.auth.uid == resource.data.followerId;
+      allow update: if false;
+    }
+
+    match /page_follows/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.followerId;
+      allow delete: if isSignedIn() && request.auth.uid == resource.data.followerId;
+      allow update: if false;
+    }
+
+    // -------- Agency Admin Domain --------
+
+    match /agencies/{agencyId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+    }
+
+    match /agency_members/{uid} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+    }
+
+    match /agency_applications/{id} {
+      allow read: if isSuperAdmin()
+        || (isSignedIn() && resource.data.ownerUid == request.auth.uid);
+      // Created/updated by Cloud Functions only.
+      allow create, update, delete: if false;
+    }
+
+    match /agency_secrets/{agencyId} {
+      // Password hashes are function-managed only.
+      allow read, write: if false;
+    }
+
+    match /agency_password_reset_requests/{id} {
+      allow read: if isSuperAdmin()
+        || (isSignedIn() && resource.data.requesterUid == request.auth.uid);
+      // Managed by Cloud Functions only.
+      allow create, update, delete: if false;
+    }
+
+    match /routes/{routeId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+    }
+
+    match /buses/{busId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+    }
+
+    match /cards/{cardId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+    }
+
+    match /card_transactions/{txId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+    }
+
+    match /booking_events/{eventId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+    }
+
+    match /admin_events/{eventId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+    }
+  }
+}

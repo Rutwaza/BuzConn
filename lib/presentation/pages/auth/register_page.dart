@@ -43,25 +43,19 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       });
 
       try {
-        UserCredential userCredential = await FirebaseAuth.instance
-            .createUserWithEmailAndPassword(
+        UserCredential userCredential =
+            await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
 
-        try {
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(userCredential.user!.uid)
-              .set({
-            'name': _nameController.text.trim(),
-            'email': _emailController.text.trim(),
-            'createdAt': FieldValue.serverTimestamp(),
-            'userType': 'client',
-            'fcmTokens': [],
-            'themeMode': 'dark',
-          }, SetOptions(merge: true));
-        } catch (_) {}
+        if (userCredential.user != null) {
+          await _ensureUserDocument(
+            userCredential.user!,
+            name: _nameController.text.trim(),
+            email: _emailController.text.trim(),
+          );
+        }
 
         try {
           await userCredential.user?.sendEmailVerification();
@@ -71,7 +65,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           setState(() {
             _isLoading = false;
           });
-          context.go(AppRoutes.dashboard);
+          context.go(AppRoutes.profile);
         }
       } on FirebaseAuthException catch (e) {
         if (mounted) {
@@ -92,12 +86,14 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(errorMessage)),
         );
-      } catch (_) {
+      } catch (e) {
         if (mounted) {
           setState(() {
             _isLoading = false;
           });
-          context.go(AppRoutes.dashboard);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Registration failed: ${e.toString()}')),
+          );
         }
       }
     }
@@ -108,6 +104,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     String? name,
     String? email,
     String? phone,
+    bool isNewAccount = false,
   }) async {
     final doc = FirebaseFirestore.instance.collection('users').doc(user.uid);
     final snapshot = await doc.get();
@@ -118,6 +115,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       'phone': phone ?? user.phoneNumber,
       'createdAt': FieldValue.serverTimestamp(),
       'userType': 'client',
+      'profileCompleted': !isNewAccount, // If new, they need to complete profile
       'fcmTokens': [],
       'themeMode': 'dark',
     });
@@ -144,14 +142,16 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           await FirebaseAuth.instance.signInWithCredential(credential);
       final user = userCredential.user;
       if (user != null) {
+        final isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
         await _ensureUserDocument(
           user,
           name: user.displayName ?? googleUser.displayName,
           email: user.email ?? googleUser.email,
+          isNewAccount: isNewUser,
         );
-      }
-      if (mounted) {
-        context.go(AppRoutes.dashboard);
+        if (mounted) {
+          context.go(isNewUser ? AppRoutes.profile : AppRoutes.dashboard);
+        }
       }
     } on FirebaseAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -209,7 +209,9 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     children: [
                       Expanded(
                         child: Text(
-                          codeSent ? 'Verify your number' : 'Continue with phone',
+                          codeSent
+                              ? 'Verify your number'
+                              : 'Continue with phone',
                           style: Theme.of(context)
                               .textTheme
                               .titleLarge
@@ -313,14 +315,17 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                                         .signInWithCredential(credential);
                                     final user = userCredential.user;
                                     if (user != null) {
+                                      final isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
                                       await _ensureUserDocument(
                                         user,
                                         phone: user.phoneNumber ?? fullPhone,
+                                        isNewAccount: isNewUser,
                                       );
-                                    }
-                                    if (mounted) {
-                                      Navigator.pop(context);
-                                      context.go(AppRoutes.dashboard);
+                                      if (mounted) {
+                                        if (!context.mounted) return;
+                                        Navigator.pop(context);
+                                        context.go(isNewUser ? AppRoutes.profile : AppRoutes.dashboard);
+                                      }
                                     }
                                   },
                                   verificationFailed:
@@ -333,9 +338,11 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                                         ),
                                       ),
                                     );
-                                    setState(() {
+                                    if (context.mounted) {
+                                      setState(() {
                                       isSending = false;
                                     });
+                                    }
                                   },
                                   codeSent: (String id, int? resendToken) {
                                     verificationId = id;
@@ -362,19 +369,21 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                                     verificationId: verificationId!,
                                     smsCode: code,
                                   );
-                                  final userCredential =
-                                      await FirebaseAuth.instance
-                                          .signInWithCredential(credential);
+                                  final userCredential = await FirebaseAuth
+                                      .instance
+                                      .signInWithCredential(credential);
                                   final user = userCredential.user;
                                   if (user != null) {
+                                    final isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
                                     await _ensureUserDocument(
                                       user,
                                       phone: user.phoneNumber ?? fullPhone,
+                                      isNewAccount: isNewUser,
                                     );
-                                  }
-                                  if (mounted) {
-                                    Navigator.pop(context);
-                                    context.go(AppRoutes.dashboard);
+                                    if (mounted) {
+                                      Navigator.pop(context);
+                                      context.go(isNewUser ? AppRoutes.profile : AppRoutes.dashboard);
+                                    }
                                   }
                                 } on FirebaseAuthException catch (e) {
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -433,237 +442,241 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         extendBodyBehindAppBar: true,
         body: Stack(
           children: [
-          Positioned.fill(
-            child: Opacity(
-              opacity: isDark ? 0.5 : 0.42,
-              child: Image.asset(
-                'assets/images/chat_bg.gif',
-                fit: BoxFit.cover,
-                alignment: Alignment.center,
-                filterQuality: FilterQuality.low,
-                gaplessPlayback: true,
+            Positioned.fill(
+              child: Opacity(
+                opacity: isDark ? 0.5 : 0.42,
+                child: Image.asset(
+                  'assets/images/chat_bg.gif',
+                  fit: BoxFit.cover,
+                  alignment: Alignment.center,
+                  filterQuality: FilterQuality.low,
+                  gaplessPlayback: true,
+                ),
               ),
             ),
-          ),
-          Positioned.fill(
-            child: Container(
-              color: isDark
-                  ? Colors.black.withOpacity(0.34)
-                  : Colors.black.withOpacity(0.18),
+            Positioned.fill(
+              child: Container(
+                color: isDark
+                    ? Colors.black.withOpacity(0.34)
+                    : Colors.black.withOpacity(0.18),
+              ),
             ),
-          ),
-          SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 80),
-                  Center(
-                    child: Text(
-                      'Create Your Spotlight',
-                      textAlign: TextAlign.center,
-                      style:
-                          Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                                shadows: const [
-                                  Shadow(
-                                    color: Colors.black45,
-                                    blurRadius: 10,
-                                    offset: Offset(0, 2),
-                                  ),
-                                ],
-                              ),
+            SingleChildScrollView(
+              padding: const EdgeInsets.all(24.0),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 80),
+                    Center(
+                      child: Text(
+                        'Create Your Spotlight',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineMedium
+                            ?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          shadows: const [
+                            Shadow(
+                              color: Colors.black45,
+                              blurRadius: 10,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: Text(
-                      'Join Spotlight and share your story',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Colors.white70,
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Text(
+                        'Join Spotlight and share your story',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              color: Colors.white70,
+                            ),
+                      ),
+                    ),
+                    const SizedBox(height: 48),
+                    AppTextField(
+                      controller: _nameController,
+                      label: 'Full Name',
+                      hintText: 'Enter your full name',
+                      fillColor: fieldFillColor,
+                      textColor: Colors.white,
+                      hintColor: Colors.white60,
+                      borderColor: fieldBorderColor,
+                      errorStyle: const TextStyle(
+                        color: Colors.redAccent,
+                        backgroundColor: Colors.transparent,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.person_outline_rounded,
+                        color: Colors.white70,
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your name';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    AppTextField(
+                      controller: _emailController,
+                      label: 'Email',
+                      hintText: 'Enter your email',
+                      keyboardType: TextInputType.emailAddress,
+                      fillColor: fieldFillColor,
+                      textColor: Colors.white,
+                      hintColor: Colors.white60,
+                      borderColor: fieldBorderColor,
+                      errorStyle: const TextStyle(
+                        color: Colors.redAccent,
+                        backgroundColor: Colors.transparent,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.alternate_email_rounded,
+                        color: Colors.white70,
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your email';
+                        }
+                        if (!value.contains('@')) {
+                          return 'Please enter a valid email';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    AppTextField(
+                      controller: _passwordController,
+                      label: 'Password',
+                      hintText: 'Enter your password',
+                      obscureText: true,
+                      fillColor: fieldFillColor,
+                      textColor: Colors.white,
+                      hintColor: Colors.white60,
+                      borderColor: fieldBorderColor,
+                      errorStyle: const TextStyle(
+                        color: Colors.redAccent,
+                        backgroundColor: Colors.transparent,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.lock_outline_rounded,
+                        color: Colors.white70,
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your password';
+                        }
+                        if (value.length < 6) {
+                          return 'Password must be at least 6 characters';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    AppTextField(
+                      controller: _confirmPasswordController,
+                      label: 'Confirm Password',
+                      hintText: 'Confirm your password',
+                      obscureText: true,
+                      fillColor: fieldFillColor,
+                      textColor: Colors.white,
+                      hintColor: Colors.white60,
+                      borderColor: fieldBorderColor,
+                      errorStyle: const TextStyle(
+                        color: Colors.redAccent,
+                        backgroundColor: Colors.transparent,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.verified_user_outlined,
+                        color: Colors.white70,
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please confirm your password';
+                        }
+                        if (value != _passwordController.text) {
+                          return 'Passwords do not match';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 32),
+                    AppButton(
+                      text: 'Create Account',
+                      onPressed: _handleRegister,
+                      isLoading: _isLoading,
+                    ),
+                    const SizedBox(height: 24),
+                    const Row(
+                      children: [
+                        Expanded(
+                          child: Divider(color: AppColors.lightGrey),
+                        ),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            'Or continue with',
+                            style: TextStyle(color: AppColors.grey),
                           ),
-                    ),
-                  ),
-                  const SizedBox(height: 48),
-                  AppTextField(
-                    controller: _nameController,
-                    label: 'Full Name',
-                    hintText: 'Enter your full name',
-                    fillColor: fieldFillColor,
-                    textColor: Colors.white,
-                    hintColor: Colors.white60,
-                    borderColor: fieldBorderColor,
-                    errorStyle: const TextStyle(
-                      color: Colors.redAccent,
-                      backgroundColor: Colors.transparent,
-                    ),
-                    prefixIcon: const Icon(
-                      Icons.person_outline_rounded,
-                      color: Colors.white70,
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your name';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  AppTextField(
-                    controller: _emailController,
-                    label: 'Email',
-                    hintText: 'Enter your email',
-                    keyboardType: TextInputType.emailAddress,
-                    fillColor: fieldFillColor,
-                    textColor: Colors.white,
-                    hintColor: Colors.white60,
-                    borderColor: fieldBorderColor,
-                    errorStyle: const TextStyle(
-                      color: Colors.redAccent,
-                      backgroundColor: Colors.transparent,
-                    ),
-                    prefixIcon: const Icon(
-                      Icons.alternate_email_rounded,
-                      color: Colors.white70,
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your email';
-                      }
-                      if (!value.contains('@')) {
-                        return 'Please enter a valid email';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  AppTextField(
-                    controller: _passwordController,
-                    label: 'Password',
-                    hintText: 'Enter your password',
-                    obscureText: true,
-                    fillColor: fieldFillColor,
-                    textColor: Colors.white,
-                    hintColor: Colors.white60,
-                    borderColor: fieldBorderColor,
-                    errorStyle: const TextStyle(
-                      color: Colors.redAccent,
-                      backgroundColor: Colors.transparent,
-                    ),
-                    prefixIcon: const Icon(
-                      Icons.lock_outline_rounded,
-                      color: Colors.white70,
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your password';
-                      }
-                      if (value.length < 6) {
-                        return 'Password must be at least 6 characters';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  AppTextField(
-                    controller: _confirmPasswordController,
-                    label: 'Confirm Password',
-                    hintText: 'Confirm your password',
-                    obscureText: true,
-                    fillColor: fieldFillColor,
-                    textColor: Colors.white,
-                    hintColor: Colors.white60,
-                    borderColor: fieldBorderColor,
-                    errorStyle: const TextStyle(
-                      color: Colors.redAccent,
-                      backgroundColor: Colors.transparent,
-                    ),
-                    prefixIcon: const Icon(
-                      Icons.verified_user_outlined,
-                      color: Colors.white70,
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please confirm your password';
-                      }
-                      if (value != _passwordController.text) {
-                        return 'Passwords do not match';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 32),
-                  AppButton(
-                    text: 'Create Account',
-                    onPressed: _handleRegister,
-                    isLoading: _isLoading,
-                  ),
-                  const SizedBox(height: 24),
-                  const Row(
-                    children: [
-                      Expanded(
-                        child: Divider(color: AppColors.lightGrey),
-                      ),
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          'Or continue with',
-                          style: TextStyle(color: AppColors.grey),
                         ),
-                      ),
-                      Expanded(
-                        child: Divider(color: AppColors.lightGrey),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _socialButton(
-                        onPressed: _handleGoogleSignIn,
-                        assetPath: 'assets/images/google.png',
-                        semanticLabel: 'Continue with Google',
-                      ),
-                      const SizedBox(width: 18),
-                      _socialButton(
-                        onPressed: _handlePhoneSignIn,
-                        assetPath: 'assets/images/phone.png',
-                        semanticLabel: 'Continue with phone',
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Already have an account? ',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          context.go(AppRoutes.login);
-                        },
-                        child: Text(
-                          'Sign In',
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                        Expanded(
+                          child: Divider(color: AppColors.lightGrey),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _socialButton(
+                          onPressed: _handleGoogleSignIn,
+                          assetPath: 'assets/images/google.png',
+                          semanticLabel: 'Continue with Google',
+                        ),
+                        const SizedBox(width: 18),
+                        _socialButton(
+                          onPressed: _handlePhoneSignIn,
+                          assetPath: 'assets/images/phone.png',
+                          semanticLabel: 'Continue with phone',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Already have an account? ',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            context.go(AppRoutes.login);
+                          },
+                          child: Text(
+                            'Sign In',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
           ],
         ),
       ),

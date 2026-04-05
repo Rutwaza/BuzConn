@@ -13,6 +13,10 @@ class AppConstants {
   static const int receiveTimeout = 15000;
   static const int connectTimeout = 15000;
   static const int sendTimeout = 15000;
+
+  // Billing guard: pause Google Maps widget rendering temporarily.
+  // Set to false to restore native Google Maps.
+  static const bool pauseGoogleMaps = true;
   
   // Pagination
   static const int defaultPageSize = 10;
@@ -42,6 +46,7 @@ class AppRoutes {
   static const String createPost = '/create-post';
   static const String businesses = '/businesses';
   static const String trafficManagement = '/traffic-management';
+  static const String adminDashboard = '/admin-dashboard';
   static const String businessProfile = '/business/:id';
   static const String clientProfile = '/user/:id';
   static const String notifications = '/notifications';

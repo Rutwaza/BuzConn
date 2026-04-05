@@ -21,21 +21,28 @@ class _SplashPageState extends ConsumerState<SplashPage> {
   }
 
   Future<void> _initializeApp() async {
+    print('Splash: Starting initialization');
     // Simulate loading time
     await Future.delayed(const Duration(seconds: 2));
+    print('Splash: Delay done');
 
     // Check authentication status
     final isLoggedIn = await FirebaseService.instance.isUserLoggedIn();
+    print('Splash: isLoggedIn = $isLoggedIn');
 
     // Navigate based on auth status
     if (mounted) {
       if (isLoggedIn) {
         // Navigate to feed if already logged in
+        print('Splash: Navigating to feed');
         context.go(AppRoutes.feed);
       } else {
         // Navigate to onboarding if not logged in
+        print('Splash: Navigating to onboarding');
         context.go(AppRoutes.onboarding);
       }
+    } else {
+      print('Splash: Not mounted');
     }
   }
 

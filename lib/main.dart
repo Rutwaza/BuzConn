@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:media_kit/media_kit.dart';
 
 import 'core/theme/app_theme.dart';
 import 'core/services/firebase_service.dart';
@@ -29,6 +31,11 @@ void main() async {
     debugPrint('Uncaught error: $error\n$stack');
     return true;
   };
+  
+  // Initialize MediaKit for cross-platform video playback (only on Windows)
+  if (Platform.isWindows) {
+    MediaKit.ensureInitialized();
+  }
   
   // Initialize Firebase
   await FirebaseService.instance.initialize();
@@ -96,6 +103,9 @@ class MyApp extends ConsumerWidget {
                           gaplessPlayback: true,
                           cacheWidth: cacheWidth,
                           cacheHeight: cacheHeight,
+                          errorBuilder: (context, error, stackTrace) => Container(
+                            color: Theme.of(context).scaffoldBackgroundColor,
+                          ),
                         ),
                       ),
                     ),

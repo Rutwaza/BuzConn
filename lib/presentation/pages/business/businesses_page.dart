@@ -180,98 +180,6 @@ class _BusinessesPageState extends State<BusinessesPage> {
     }
   }
 
-  void _showEditDialog(String businessId, Map<String, dynamic> data) {
-    final nameController = TextEditingController(text: data['name'] ?? '');
-    final descController = TextEditingController(text: data['description'] ?? '');
-    final phoneController = TextEditingController(text: data['phone'] ?? '');
-    final emailController = TextEditingController(text: data['email'] ?? '');
-    final mapsController = TextEditingController(text: data['googleMapsLink'] ?? '');
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Page'),
-        content: SingleChildScrollView(
-          child: Column(
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(labelText: 'Page Name'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: descController,
-                decoration: const InputDecoration(labelText: 'Description'),
-                maxLines: 3,
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: phoneController,
-                decoration: const InputDecoration(labelText: 'Phone'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: emailController,
-                decoration: const InputDecoration(labelText: 'Email'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: mapsController,
-                decoration: const InputDecoration(labelText: 'Google Maps Link'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final newName = nameController.text.trim();
-              final newDesc = descController.text.trim();
-              final newPhone = phoneController.text.trim();
-              final newEmail = emailController.text.trim();
-              final newMaps = mapsController.text.trim();
-
-              await FirebaseFirestore.instance
-                  .collection('businesses')
-                  .doc(businessId)
-                  .update({
-                'name': newName,
-                'description': newDesc,
-                'phone': newPhone,
-                'email': newEmail,
-                'googleMapsLink': newMaps,
-                'updatedAt': FieldValue.serverTimestamp(),
-              });
-
-              // Propagate changes to existing posts for this business
-              final postsSnapshot = await FirebaseFirestore.instance
-                  .collection('posts')
-                  .where('businessId', isEqualTo: businessId)
-                  .get();
-
-              final batch = FirebaseFirestore.instance.batch();
-              for (final doc in postsSnapshot.docs) {
-                batch.update(doc.reference, {
-                  'businessName': newName,
-                });
-              }
-              await batch.commit();
-
-              if (mounted) {
-                Navigator.of(context).pop();
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _pickLogo(String businessId) async {
     try {
       final picker = ImagePicker();
@@ -504,7 +412,9 @@ class _BusinessesPageState extends State<BusinessesPage> {
                         trailing: PopupMenuButton<String>(
                           onSelected: (value) {
                             if (value == 'edit') {
-                              _showEditDialog(doc.id, data);
+                              context.push(
+                                '${AppRoutes.businessSetup}?businessId=${doc.id}',
+                              );
                             } else if (value == 'logo') {
                               _pickLogo(doc.id);
                             } else if (value == 'delete') {

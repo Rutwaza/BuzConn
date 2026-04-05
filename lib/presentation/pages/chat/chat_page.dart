@@ -1,4 +1,4 @@
-﻿import 'dart:typed_data';
+import 'dart:typed_data';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -18,6 +18,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:media_store_plus/media_store_plus.dart';
 import 'package:video_player/video_player.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import 'video_call_page.dart';
 
 import '../../../core/theme/colors.dart';
@@ -27,8 +29,13 @@ import '../../../core/constants/app_constants.dart';
 
 class ChatPage extends StatefulWidget {
   final String chatId;
+  final bool embedded;
 
-  const ChatPage({super.key, required this.chatId});
+  const ChatPage({
+    super.key,
+    required this.chatId,
+    this.embedded = false,
+  });
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -53,6 +60,7 @@ class _ChatPageState extends State<ChatPage> {
   bool _isVoicePlaying = false;
   String? _recordedPath;
   bool _showScrollToBottom = false;
+  bool _isSendingText = false;
   List<_ChatMediaItem> _latestMediaItems = const [];
   StreamSubscription<DocumentSnapshot>? _callSub;
   bool _hasIncomingCall = false;
@@ -118,20 +126,50 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _sendText() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null || _isSendingText || _sendingMedia || _isRecording) {
+      return;
+    }
+
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-    await _setTyping(false);
-    await _repo.sendMessage(
-      chatId: widget.chatId,
-      senderId: user.uid,
-      text: text,
-      replyTo: _replyingTo,
-    );
-    _controller.clear();
+
+    final replyTo = _replyingTo;
+    _typingTimer?.cancel();
+    _isTyping = false;
+
     setState(() {
+      _isSendingText = true;
       _replyingTo = null;
     });
+    _controller.clear();
+    unawaited(_setTyping(false));
+
+    try {
+      await _repo.sendMessage(
+        chatId: widget.chatId,
+        senderId: user.uid,
+        text: text,
+        replyTo: replyTo,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _controller.text = text;
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+      setState(() {
+        _replyingTo = replyTo;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Message failed to send: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSendingText = false;
+        });
+      }
+    }
   }
 
   Future<void> _sendMedia(ImageSource source, {required bool isVideo}) async {
@@ -170,13 +208,12 @@ class _ChatPageState extends State<ChatPage> {
       for (final file in files) {
         final bytes = await file.readAsBytes();
         final ext = mediaType == 'video' ? 'mp4' : 'jpg';
-        final path =
-            '$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+        final path = '$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
         final url = mediaType == 'video'
-            ? await SupabaseStorageService.instance.uploadVideo(
-                bucket: 'chat-media', path: path, bytes: bytes)
-            : await SupabaseStorageService.instance.uploadImage(
-                bucket: 'chat-media', path: path, bytes: bytes);
+            ? await SupabaseStorageService.instance
+                .uploadVideo(bucket: 'chat-media', path: path, bytes: bytes)
+            : await SupabaseStorageService.instance
+                .uploadImage(bucket: 'chat-media', path: path, bytes: bytes);
 
         if (url == null) {
           if (mounted) {
@@ -216,12 +253,18 @@ class _ChatPageState extends State<ChatPage> {
   Future<Uint8List?> _getVideoThumbnail(String url) {
     return _thumbCache.putIfAbsent(
       url,
-      () => VideoThumbnail.thumbnailData(
-        video: url,
-        imageFormat: ImageFormat.JPEG,
-        maxWidth: 420,
-        quality: 70,
-      ),
+      () async {
+        if (Platform.isWindows) {
+          // VideoThumbnail doesn't work on Windows
+          return null;
+        }
+        return VideoThumbnail.thumbnailData(
+          video: url,
+          imageFormat: ImageFormat.JPEG,
+          maxWidth: 420,
+          quality: 70,
+        );
+      },
     );
   }
 
@@ -266,8 +309,8 @@ class _ChatPageState extends State<ChatPage> {
               ? chatData['clientId']
               : chatData['businessOwnerId'];
         }
-        final otherLastRead = (chatData['lastReadAt'] as Map<String, dynamic>?)
-            ?[otherUserId] as Timestamp?;
+        final otherLastRead = (chatData['lastReadAt']
+            as Map<String, dynamic>?)?[otherUserId] as Timestamp?;
         final typingMap =
             (chatData['typing'] as Map<String, dynamic>?) ?? const {};
         final isOtherTyping =
@@ -277,11 +320,11 @@ class _ChatPageState extends State<ChatPage> {
         final backgroundColor =
             isDark ? const Color(0xFF0F1115) : const Color(0xFFF4F6FA);
         final surfaceColor = isDark ? const Color(0xFF151922) : Colors.white;
-        final bubbleMeColor =
-            const Color(0xFF0A86C2).withOpacity(0.7);
+        final bubbleMeColor = const Color(0xFF0A86C2).withOpacity(0.7);
         final bubbleOtherColor = surfaceColor;
         final separatorColor = isDark ? Colors.white10 : Colors.black12;
-        final replyBarColor = isDark ? const Color(0xFF1C212B) : AppColors.lightGrey;
+        final replyBarColor =
+            isDark ? const Color(0xFF1C212B) : AppColors.lightGrey;
         final inputBarColor = surfaceColor;
         final typingColor = isDark ? Colors.white70 : AppColors.grey;
 
@@ -302,489 +345,549 @@ class _ChatPageState extends State<ChatPage> {
             );
           });
         }
-        return Scaffold(
-          backgroundColor: backgroundColor,
-          appBar: AppBar(
-            scrolledUnderElevation: 0,
-            titleSpacing: 10,
-            title: Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.withValues(alpha: 0.22),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.grey.withValues(alpha: 0.35),
-                    ),
-                  ),
-                  child: CircleAvatar(
-                    radius: 18,
-                    backgroundColor: AppColors.primary,
-                    backgroundImage:
-                        avatarUrl != null ? NetworkImage(avatarUrl) : null,
-                    child: avatarUrl == null
-                        ? Text(
-                            title.toString().isNotEmpty
-                                ? title[0].toUpperCase()
-                                : '?',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          )
-                        : null,
+        final useDesktopSplitLayout =
+            MediaQuery.of(context).size.width >= (widget.embedded ? 860 : 1180);
+        final appBar = AppBar(
+          scrolledUnderElevation: 0,
+          titleSpacing: 10,
+          title: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.22),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.grey.withValues(alpha: 0.35),
                   ),
                 ),
-                const SizedBox(width: 10),
+                child: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: AppColors.primary,
+                  backgroundImage:
+                      avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                  child: avatarUrl == null
+                      ? Text(
+                          title.toString().isNotEmpty
+                              ? title[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        )
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    _ChatStatusLabel(
+                      otherUserId: otherUserId,
+                      isTyping: isOtherTyping,
+                      chatType: chatType,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            _ChatActionButton(
+              icon: Icons.call_rounded,
+              onPressed: () => _showComingSoon('Audio calls'),
+              tooltip: 'Audio call',
+            ),
+            const SizedBox(width: 6),
+            _ChatActionButton(
+              icon: Icons.videocam_rounded,
+              onPressed: _startVideoCall,
+              tooltip: 'Video call',
+            ),
+            PopupMenuButton<String>(
+              icon: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white10
+                      : Colors.black.withValues(alpha: 0.05),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.more_horiz_rounded,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+              onSelected: (value) async {
+                if (value == 'profile') {
+                  final businessId = chatData['businessId'] as String?;
+                  if (businessId != null && context.mounted) {
+                    context.push(AppRoutes.businessProfilePath(businessId));
+                  }
+                } else if (value == 'media') {
+                  if (_latestMediaItems.isNotEmpty) {
+                    _openMediaViewer(
+                      items: _latestMediaItems,
+                      initialIndex: 0,
+                    );
+                  } else if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('No media yet'),
+                      ),
+                    );
+                  }
+                } else if (value == 'join') {
+                  _joinVideoCall();
+                } else if (value == 'clear') {
+                  final confirmed = await _confirmClearChat();
+                  if (confirmed) {
+                    try {
+                      await _repo.clearChatMessages(widget.chatId);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Chat cleared'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Clear failed: $e')),
+                        );
+                      }
+                    }
+                  }
+                }
+              },
+              itemBuilder: (context) {
+                final items = <PopupMenuEntry<String>>[];
+                if (chatType != 'direct' &&
+                    !isBusinessOwner &&
+                    chatData['businessId'] != null) {
+                  items.add(
+                    const PopupMenuItem(
+                      value: 'profile',
+                      child: Text('View profile'),
+                    ),
+                  );
+                }
+                if (_hasIncomingCall || _hasActiveCall) {
+                  items.add(
+                    const PopupMenuItem(
+                      value: 'join',
+                      child: Text('Join call'),
+                    ),
+                  );
+                }
+                items.add(
+                  const PopupMenuItem(
+                    value: 'media',
+                    child: Text('Media'),
+                  ),
+                );
+                items.add(
+                  const PopupMenuItem(
+                    value: 'clear',
+                    child: Text('Clear chat'),
+                  ),
+                );
+                return items;
+              },
+            ),
+          ],
+        );
+        final conversationPane = Stack(
+          children: [
+            if (showChatBg)
+              Positioned.fill(
+                child: RepaintBoundary(
+                  child: Opacity(
+                    opacity: 0.65,
+                    child: Image.asset(
+                      'assets/images/chat_bg.gif',
+                      fit: BoxFit.cover,
+                      alignment: Alignment.center,
+                      filterQuality: FilterQuality.low,
+                      gaplessPlayback: true,
+                      cacheWidth: bgCacheWidth,
+                      cacheHeight: bgCacheHeight,
+                      errorBuilder: (context, error, stackTrace) {
+                        // Fallback to a clean dark style if asset is not available
+                        return Container(color: const Color(0xFF0F1115));
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            Column(
+              children: [
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        title,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
+                  child: _buildMessagesList(
+                    user: user,
+                    otherLastRead: otherLastRead,
+                    isDark: isDark,
+                    bubbleMeColor: bubbleMeColor,
+                    bubbleOtherColor: bubbleOtherColor,
+                    separatorColor: separatorColor,
+                    replyBarColor: replyBarColor,
+                    fallbackAvatarUrl: avatarUrl,
+                  ),
+                ),
+                if (isOtherTyping)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.08)
+                              : Colors.black.withValues(alpha: 0.04),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.08)
+                                : Colors.black.withValues(alpha: 0.05),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _TypingDots(color: typingColor),
+                            const SizedBox(width: 8),
+                            Text(
+                              'typing...',
+                              style: TextStyle(
+                                color: typingColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      _ChatStatusLabel(
-                        otherUserId: otherUserId,
-                        isTyping: isOtherTyping,
-                        chatType: chatType,
+                    ),
+                  ),
+                if (_replyingTo != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
                       ),
-                    ],
+                      decoration: BoxDecoration(
+                        color: replyBarColor.withValues(alpha: 0.95),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.18),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 4,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Replying to ${_replyingTo?['senderName'] ?? 'message'}: ${_replyingTo?['text'] ?? ''}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 18),
+                            onPressed: () {
+                              setState(() {
+                                _replyingTo = null;
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: inputBarColor.withValues(alpha: 0.98),
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.10)
+                              : Colors.black.withValues(alpha: 0.05),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black
+                                .withValues(alpha: isDark ? 0.18 : 0.07),
+                            blurRadius: 18,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          _ComposerIconButton(
+                            icon: Icons.add_rounded,
+                            onPressed:
+                                _sendingMedia ? null : _showAttachmentSheet,
+                          ),
+                          _ComposerIconButton(
+                            icon: _isRecording
+                                ? Icons.stop_rounded
+                                : Icons.mic_none_rounded,
+                            color: _isRecording ? Colors.redAccent : null,
+                            onPressed: _sendingMedia
+                                ? null
+                                : () {
+                                    if (_isRecording) {
+                                      _stopRecording();
+                                    } else {
+                                      _startRecording();
+                                    }
+                                  },
+                          ),
+                          if (_isRecording || _recordedPath != null)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_isRecording)
+                                  _ComposerIconButton(
+                                    icon: _isRecordingPaused
+                                        ? Icons.play_arrow_rounded
+                                        : Icons.pause_rounded,
+                                    onPressed: _togglePauseRecording,
+                                  ),
+                                if (_recordedPath != null && !_isRecording)
+                                  _ComposerIconButton(
+                                    icon: _isVoicePlaying
+                                        ? Icons.pause_rounded
+                                        : Icons.play_arrow_rounded,
+                                    onPressed: _togglePlayRecording,
+                                  ),
+                                if (_recordedPath != null && !_isRecording)
+                                  _ComposerIconButton(
+                                    icon: Icons.delete_outline_rounded,
+                                    onPressed: _discardRecording,
+                                  ),
+                              ],
+                            ),
+                          Expanded(
+                            child: (_isRecording || _recordedPath != null)
+                                ? Row(
+                                    children: [
+                                      const SizedBox(width: 6),
+                                      Icon(
+                                        Icons.fiber_manual_record,
+                                        size: 14,
+                                        color: _isRecording
+                                            ? Colors.redAccent
+                                            : Colors.orangeAccent,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _isRecording
+                                            ? (_isRecordingPaused
+                                                ? 'Recording paused...'
+                                                : 'Recording...')
+                                            : 'Voice note ready',
+                                        style: TextStyle(
+                                          color: isDark
+                                              ? Colors.white70
+                                              : Colors.black54,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : TextField(
+                                    controller: _controller,
+                                    style: TextStyle(
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
+                                    decoration: InputDecoration(
+                                      hintText: 'Message your people...',
+                                      hintStyle: TextStyle(
+                                        color: isDark
+                                            ? Colors.white54
+                                            : AppColors.grey,
+                                      ),
+                                      border: InputBorder.none,
+                                    ),
+                                    textInputAction: TextInputAction.send,
+                                    onSubmitted: (_) => _sendText(),
+                                    onChanged: (value) {
+                                      _handleTyping(value);
+                                      if (mounted) {
+                                        setState(() {});
+                                      }
+                                    },
+                                  ),
+                          ),
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  AppColors.primary,
+                                  AppColors.primary.withValues(alpha: 0.78),
+                                ],
+                              ),
+                              shape: BoxShape.circle,
+                            ),
+                            child: IconButton(
+                              icon: const Icon(
+                                Icons.send_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                              onPressed: (_sendingMedia || _isSendingText)
+                                  ? null
+                                  : _isRecording
+                                      ? null
+                                      : (_recordedPath != null
+                                          ? _sendRecordedAudio
+                                          : _sendText),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ],
             ),
-            actions: [
-              _ChatActionButton(
-                icon: Icons.call_rounded,
-                onPressed: () => _showComingSoon('Audio calls'),
-                tooltip: 'Audio call',
-              ),
-              const SizedBox(width: 6),
-              _ChatActionButton(
-                icon: Icons.videocam_rounded,
-                onPressed: _startVideoCall,
-                tooltip: 'Video call',
-              ),
-              PopupMenuButton<String>(
-                icon: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.more_horiz_rounded,
-                    color: isDark ? Colors.white : Colors.black87,
-                  ),
-                ),
-                onSelected: (value) async {
-                  if (value == 'profile') {
-                    final businessId = chatData['businessId'] as String?;
-                    if (businessId != null && context.mounted) {
-                      context.push(AppRoutes.businessProfilePath(businessId));
-                    }
-                  } else if (value == 'media') {
-                    if (_latestMediaItems.isNotEmpty) {
-                      _openMediaViewer(
-                        items: _latestMediaItems,
-                        initialIndex: 0,
-                      );
-                    } else if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('No media yet'),
-                        ),
-                      );
-                    }
-                  } else if (value == 'join') {
-                    _joinVideoCall();
-                  } else if (value == 'clear') {
-                    final confirmed = await _confirmClearChat();
-                    if (confirmed) {
-                      try {
-                        await _repo.clearChatMessages(widget.chatId);
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Chat cleared'),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Clear failed: $e')),
-                          );
-                        }
+            if (_showScrollToBottom)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 78,
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      if (_scrollController.hasClients) {
+                        _scrollController.animateTo(
+                          0,
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOut,
+                        );
                       }
-                    }
-                  }
-                },
-                itemBuilder: (context) {
-                  final items = <PopupMenuEntry<String>>[];
-                  if (chatType != 'direct' &&
-                      !isBusinessOwner &&
-                      chatData['businessId'] != null) {
-                    items.add(
-                      const PopupMenuItem(
-                        value: 'profile',
-                        child: Text('View profile'),
+                    },
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.white10
+                            : Colors.black.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: isDark ? Colors.white24 : Colors.black12,
+                        ),
                       ),
-                    );
-                  }
-                  if (_hasIncomingCall || _hasActiveCall) {
-                    items.add(
-                      const PopupMenuItem(
-                        value: 'join',
-                        child: Text('Join call'),
-                      ),
-                    );
-                  }
-                  items.add(
-                    const PopupMenuItem(
-                      value: 'media',
-                      child: Text('Media'),
-                    ),
-                  );
-                  items.add(
-                    const PopupMenuItem(
-                      value: 'clear',
-                      child: Text('Clear chat'),
-                    ),
-                  );
-                  return items;
-                },
-              ),
-            ],
-          ),
-          body: Stack(
-            children: [
-              if (showChatBg)
-                Positioned.fill(
-                  child: RepaintBoundary(
-                    child: Opacity(
-                      opacity: 0.65,
-                      child: Image.asset(
-                        'assets/images/chat_bg.gif',
-                        fit: BoxFit.cover,
-                        alignment: Alignment.center,
-                        filterQuality: FilterQuality.low,
-                        gaplessPlayback: true,
-                        cacheWidth: bgCacheWidth,
-                        cacheHeight: bgCacheHeight,
+                      child: Icon(
+                        Icons.keyboard_arrow_down,
+                        color: isDark ? Colors.white70 : Colors.black54,
                       ),
                     ),
                   ),
                 ),
-              Column(
-                children: [
-                  Expanded(
-                    child: _buildMessagesList(
-                      user: user,
-                      otherLastRead: otherLastRead,
-                      isDark: isDark,
-                      bubbleMeColor: bubbleMeColor,
-                      bubbleOtherColor: bubbleOtherColor,
-                      separatorColor: separatorColor,
-                      replyBarColor: replyBarColor,
-                      fallbackAvatarUrl: avatarUrl,
-                    ),
-                  ),
-                  if (isOtherTyping)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? Colors.white.withValues(alpha: 0.08)
-                                : Colors.black.withValues(alpha: 0.04),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: isDark
-                                  ? Colors.white.withValues(alpha: 0.08)
-                                  : Colors.black.withValues(alpha: 0.05),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _TypingDots(color: typingColor),
-                              const SizedBox(width: 8),
-                              Text(
-                                'typing...',
-                                style: TextStyle(
-                                  color: typingColor,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  if (_replyingTo != null)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: replyBarColor.withValues(alpha: 0.95),
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: AppColors.primary.withValues(alpha: 0.18),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 4,
-                              height: 28,
-                              decoration: BoxDecoration(
-                                color: AppColors.primary,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'Replying to ${_replyingTo?['senderName'] ?? 'message'}: ${_replyingTo?['text'] ?? ''}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close_rounded, size: 18),
-                              onPressed: () {
-                                setState(() {
-                                  _replyingTo = null;
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  SafeArea(
-                    top: false,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: inputBarColor.withValues(alpha: 0.98),
-                          borderRadius: BorderRadius.circular(28),
-                          border: Border.all(
-                            color: isDark
-                                ? Colors.white.withValues(alpha: 0.10)
-                                : Colors.black.withValues(alpha: 0.05),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.07),
-                              blurRadius: 18,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            _ComposerIconButton(
-                              icon: Icons.add_rounded,
-                              onPressed:
-                                  _sendingMedia ? null : _showAttachmentSheet,
-                            ),
-                            _ComposerIconButton(
-                              icon:
-                                  _isRecording ? Icons.stop_rounded : Icons.mic_none_rounded,
-                              color: _isRecording ? Colors.redAccent : null,
-                              onPressed: _sendingMedia
-                                  ? null
-                                  : () {
-                                      if (_isRecording) {
-                                        _stopRecording();
-                                      } else {
-                                        _startRecording();
-                                      }
-                                    },
-                            ),
-                            if (_isRecording || _recordedPath != null)
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (_isRecording)
-                                    _ComposerIconButton(
-                                      icon: _isRecordingPaused
-                                          ? Icons.play_arrow_rounded
-                                          : Icons.pause_rounded,
-                                      onPressed: _togglePauseRecording,
-                                    ),
-                                  if (_recordedPath != null && !_isRecording)
-                                    _ComposerIconButton(
-                                      icon: _isVoicePlaying
-                                          ? Icons.pause_rounded
-                                          : Icons.play_arrow_rounded,
-                                      onPressed: _togglePlayRecording,
-                                    ),
-                                  if (_recordedPath != null && !_isRecording)
-                                    _ComposerIconButton(
-                                      icon: Icons.delete_outline_rounded,
-                                      onPressed: _discardRecording,
-                                    ),
-                                ],
-                              ),
-                            Expanded(
-                              child: (_isRecording || _recordedPath != null)
-                                  ? Row(
-                                      children: [
-                                        const SizedBox(width: 6),
-                                        Icon(
-                                          Icons.fiber_manual_record,
-                                          size: 14,
-                                          color: _isRecording
-                                              ? Colors.redAccent
-                                              : Colors.orangeAccent,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          _isRecording
-                                              ? (_isRecordingPaused
-                                                  ? 'Recording paused...'
-                                                  : 'Recording...')
-                                              : 'Voice note ready',
-                                          style: TextStyle(
-                                            color: isDark
-                                                ? Colors.white70
-                                                : Colors.black54,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  : TextField(
-                                      controller: _controller,
-                                      style: TextStyle(
-                                        color: isDark
-                                            ? Colors.white
-                                            : Colors.black87,
-                                      ),
-                                      decoration: InputDecoration(
-                                        hintText: 'Message your people...',
-                                        hintStyle: TextStyle(
-                                          color: isDark
-                                              ? Colors.white54
-                                              : AppColors.grey,
-                                        ),
-                                        border: InputBorder.none,
-                                      ),
-                                      onChanged: _handleTyping,
-                                    ),
-                            ),
-                            Container(
-                              width: 42,
-                              height: 42,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    AppColors.primary,
-                                    AppColors.primary.withValues(alpha: 0.78),
-                                  ],
-                                ),
-                                shape: BoxShape.circle,
-                              ),
-                              child: IconButton(
-                                icon: const Icon(
-                                  Icons.send_rounded,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                                onPressed: _sendingMedia
-                                    ? null
-                                    : _isRecording
-                                        ? null
-                                        : (_recordedPath != null
-                                            ? _sendRecordedAudio
-                                            : _sendText),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
               ),
-              if (_showScrollToBottom)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 78,
-                  child: Center(
-                    child: GestureDetector(
-                      onTap: () {
-                        if (_scrollController.hasClients) {
-                          _scrollController.animateTo(
-                            0,
-                            duration: const Duration(milliseconds: 250),
-                            curve: Curves.easeOut,
-                          );
-                        }
-                      },
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? Colors.white10
-                              : Colors.black.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: isDark ? Colors.white24 : Colors.black12,
-                          ),
-                        ),
-                        child: Icon(
-                          Icons.keyboard_arrow_down,
-                          color: isDark ? Colors.white70 : Colors.black54,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
+          ],
         );
 
+        final body = useDesktopSplitLayout
+            ? Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 7,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(28),
+                        child: conversationPane,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    SizedBox(
+                      width: 320,
+                      child: _buildDesktopDetailsPanel(
+                        title: title,
+                        avatarUrl: avatarUrl,
+                        chatType: chatType,
+                        isBusinessOwner: isBusinessOwner,
+                        otherUserId: otherUserId,
+                        chatData: chatData,
+                        activityLabel: _ChatStatusLabel.statusText(
+                          otherUserId: otherUserId,
+                          isTyping: isOtherTyping,
+                          chatType: chatType,
+                        ),
+                        isDark: isDark,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : conversationPane;
+
+        if (widget.embedded) {
+          return ColoredBox(
+            color: backgroundColor,
+            child: body,
+          );
+        }
+
+        return Scaffold(
+          backgroundColor: backgroundColor,
+          appBar: appBar,
+          body: body,
+        );
       },
     );
   }
-
 
   Widget _buildMessagesList({
     required User user,
@@ -987,8 +1090,8 @@ class _ChatPageState extends State<ChatPage> {
                                   children: [
                                     Image.memory(bytes, fit: BoxFit.cover),
                                     const Center(
-                                      child:
-                                          Icon(Icons.play_circle_fill, size: 36),
+                                      child: Icon(Icons.play_circle_fill,
+                                          size: 36),
                                     ),
                                   ],
                                 ),
@@ -1036,7 +1139,9 @@ class _ChatPageState extends State<ChatPage> {
             final maxBubbleWidth = MediaQuery.of(context).size.width * 0.7;
 
             final bubbleTextStyle = TextStyle(
-              color: isMe ? Colors.white : (isDark ? Colors.white : Colors.black87),
+              color: isMe
+                  ? Colors.white
+                  : (isDark ? Colors.white : Colors.black87),
             );
 
             final isSeen = isMe &&
@@ -1050,7 +1155,8 @@ class _ChatPageState extends State<ChatPage> {
                     as Timestamp?
                 : null;
             final showSeparator = currentDate != null &&
-                (nextDate == null || !_isSameDay(currentDate, nextDate.toDate()));
+                (nextDate == null ||
+                    !_isSameDay(currentDate, nextDate.toDate()));
             final separatorLabel =
                 currentDate != null ? _formatDay(currentDate) : '';
 
@@ -1099,9 +1205,7 @@ class _ChatPageState extends State<ChatPage> {
                                     (fallbackAvatarUrl != null &&
                                         fallbackAvatarUrl.isNotEmpty))
                                 ? NetworkImage(
-                                    senderAvatar ??
-                                        fallbackAvatarUrl ??
-                                        '',
+                                    senderAvatar ?? fallbackAvatarUrl ?? '',
                                   )
                                 : null,
                             child: (senderAvatar == null &&
@@ -1131,56 +1235,60 @@ class _ChatPageState extends State<ChatPage> {
                                 senderName: senderName,
                                 replyTo: replyTo,
                               ),
-                            child: Container(
-                              margin:
-                                  const EdgeInsets.symmetric(vertical: 6),
-                              padding: (isLinkOnly || isAudio || isEmojiOnly)
-                                  ? EdgeInsets.zero
-                                  : const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: (isLinkOnly || isAudio || isEmojiOnly)
-                                    ? Colors.transparent
-                                    : (isMe
-                                        ? bubbleMeColor
-                                        : bubbleOtherColor),
-                                borderRadius: BorderRadius.only(
-                                  topLeft: const Radius.circular(22),
-                                  topRight: const Radius.circular(22),
-                                  bottomLeft: Radius.circular(isMe ? 22 : 8),
-                                  bottomRight: Radius.circular(isMe ? 8 : 22),
-                                ),
-                                border: (isLinkOnly || isAudio || isEmojiOnly)
-                                    ? null
-                                    : Border.all(
-                                        color: isMe
-                                            ? Colors.white.withValues(alpha: 0.08)
-                                            : (isDark
-                                                ? Colors.white.withValues(alpha: 0.08)
-                                                : Colors.black.withValues(alpha: 0.05)),
-                                      ),
-                                boxShadow: (isLinkOnly || isAudio || isEmojiOnly)
-                                    ? const []
-                                    : [
-                                          BoxShadow(
-                                            color: Colors.black.withValues(alpha: 0.08),
-                                            blurRadius: 12,
-                                            offset: const Offset(0, 6),
-                                          ),
-                                        ],
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(vertical: 6),
+                                padding: (isLinkOnly || isAudio || isEmojiOnly)
+                                    ? EdgeInsets.zero
+                                    : const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: (isLinkOnly || isAudio || isEmojiOnly)
+                                      ? Colors.transparent
+                                      : (isMe
+                                          ? bubbleMeColor
+                                          : bubbleOtherColor),
+                                  borderRadius: BorderRadius.only(
+                                    topLeft: const Radius.circular(22),
+                                    topRight: const Radius.circular(22),
+                                    bottomLeft: Radius.circular(isMe ? 22 : 8),
+                                    bottomRight: Radius.circular(isMe ? 8 : 22),
+                                  ),
+                                  border: (isLinkOnly || isAudio || isEmojiOnly)
+                                      ? null
+                                      : Border.all(
+                                          color: isMe
+                                              ? Colors.white
+                                                  .withValues(alpha: 0.08)
+                                              : (isDark
+                                                  ? Colors.white
+                                                      .withValues(alpha: 0.08)
+                                                  : Colors.black
+                                                      .withValues(alpha: 0.05)),
+                                        ),
+                                  boxShadow:
+                                      (isLinkOnly || isAudio || isEmojiOnly)
+                                          ? const []
+                                          : [
+                                              BoxShadow(
+                                                color: Colors.black
+                                                    .withValues(alpha: 0.08),
+                                                blurRadius: 12,
+                                                offset: const Offset(0, 6),
+                                              ),
+                                            ],
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                      if (!isMe)
-                                        Text(
-                                          senderName,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 12,
-                                            color: Color(0xFF61D1ED),
-                                          ),
+                                    if (!isMe)
+                                      Text(
+                                        senderName,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                          color: Color(0xFF61D1ED),
                                         ),
+                                      ),
                                     if (replyTo != null) ...[
                                       const SizedBox(height: 6),
                                       InkWell(
@@ -1265,9 +1373,6 @@ class _ChatPageState extends State<ChatPage> {
       },
     );
   }
-
-
-
 
   Future<void> _startRecording() async {
     if (_sendingMedia) return;
@@ -1382,7 +1487,8 @@ class _ChatPageState extends State<ChatPage> {
     try {
       await _setTyping(false);
       final bytes = await File(path).readAsBytes();
-      final fileName = '${user.uid}/${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final fileName =
+          '${user.uid}/${DateTime.now().millisecondsSinceEpoch}.m4a';
       final url = await SupabaseStorageService.instance.uploadAudio(
         bucket: 'chat-media',
         path: fileName,
@@ -1426,7 +1532,6 @@ class _ChatPageState extends State<ChatPage> {
       }
     }
   }
-
 
   Future<void> _sendDocument() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -1502,6 +1607,601 @@ class _ChatPageState extends State<ChatPage> {
         });
       }
     }
+  }
+
+  Future<Map<String, String>> _loadRecipientProfileSummary({
+    required String chatType,
+    required bool isBusinessOwner,
+    required String? otherUserId,
+    required Map<String, dynamic> chatData,
+  }) async {
+    try {
+      if (chatType == 'direct' || isBusinessOwner) {
+        if (otherUserId == null || otherUserId.isEmpty) return const {};
+        final snap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(otherUserId)
+            .get();
+        final data = snap.data() ?? const <String, dynamic>{};
+        return {
+          'subtitle': (data['userType'] ?? 'Member').toString(),
+          'about': (data['bio'] ?? '').toString(),
+          'phone': (data['phone'] ?? '').toString(),
+          'email': (data['email'] ?? '').toString(),
+          'location': (data['location'] ?? data['address'] ?? '').toString(),
+        };
+      }
+
+      final businessId = (chatData['businessId'] ?? '').toString();
+      if (businessId.isEmpty) return const {};
+      final snap = await FirebaseFirestore.instance
+          .collection('businesses')
+          .doc(businessId)
+          .get();
+      final data = snap.data() ?? const <String, dynamic>{};
+      return {
+        'subtitle': (data['category'] ?? 'Business').toString(),
+        'about': (data['description'] ?? data['bio'] ?? '').toString(),
+        'phone': (data['phone'] ?? '').toString(),
+        'email': (data['email'] ?? '').toString(),
+        'location': (data['location'] ?? data['address'] ?? '').toString(),
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  List<String> _extractLinks(String text) {
+    final regex = RegExp(r'(https?:\/\/[^\s]+)', caseSensitive: false);
+    return regex
+        .allMatches(text)
+        .map((match) => match.group(0) ?? '')
+        .where((url) => url.isNotEmpty)
+        .toList();
+  }
+
+  Widget _buildDesktopDetailsPanel({
+    required String title,
+    required String? avatarUrl,
+    required String chatType,
+    required bool isBusinessOwner,
+    required String? otherUserId,
+    required Map<String, dynamic> chatData,
+    required String activityLabel,
+    required bool isDark,
+  }) {
+    final cardColor = isDark ? const Color(0xFF121720) : Colors.white;
+    final borderColor =
+        isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.06);
+
+    return DefaultTabController(
+      length: 3,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: borderColor),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            FutureBuilder<Map<String, String>>(
+              future: _loadRecipientProfileSummary(
+                chatType: chatType,
+                isBusinessOwner: isBusinessOwner,
+                otherUserId: otherUserId,
+                chatData: chatData,
+              ),
+              builder: (context, snapshot) {
+                final details = snapshot.data ?? const <String, String>{};
+                final about = (details['about'] ?? '').trim();
+                final profileRoute = chatType == 'direct' || isBusinessOwner
+                    ? (otherUserId != null && otherUserId.isNotEmpty
+                        ? AppRoutes.clientProfilePath(otherUserId)
+                        : null)
+                    : ((chatData['businessId'] as String?)?.isNotEmpty == true
+                        ? AppRoutes.businessProfilePath(
+                            (chatData['businessId'] as String?)!,
+                          )
+                        : null);
+
+                return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: otherUserId != null && otherUserId.isNotEmpty
+                      ? FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(otherUserId)
+                          .snapshots()
+                      : const Stream.empty(),
+                  builder: (context, userSnap) {
+                    final lastSeen =
+                        userSnap.data?.data()?['lastSeen'] as Timestamp?;
+                    final isOnline = lastSeen != null &&
+                        DateTime.now().difference(lastSeen.toDate()).inMinutes <
+                            3;
+                    final liveStatus = isOnline
+                        ? 'Active now'
+                        : lastSeen == null
+                            ? 'Offline'
+                            : _ChatStatusLabel._formatActivity(
+                                lastSeen.toDate());
+
+                    return Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: isDark
+                              ? const [Color(0xFF1A2232), Color(0xFF121720)]
+                              : const [Color(0xFFEAF7FF), Color(0xFFFFFFFF)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.14),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Stack(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 28,
+                                    backgroundColor: AppColors.primary,
+                                    backgroundImage: avatarUrl != null &&
+                                            avatarUrl.isNotEmpty
+                                        ? NetworkImage(avatarUrl)
+                                        : null,
+                                    child:
+                                        avatarUrl == null || avatarUrl.isEmpty
+                                            ? Text(
+                                                title.isNotEmpty
+                                                    ? title[0].toUpperCase()
+                                                    : '?',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 18,
+                                                ),
+                                              )
+                                            : null,
+                                  ),
+                                  Positioned(
+                                    right: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      width: 14,
+                                      height: 14,
+                                      decoration: BoxDecoration(
+                                        color: isOnline
+                                            ? const Color(0xFF37C58A)
+                                            : Colors.grey,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: isDark
+                                              ? const Color(0xFF121720)
+                                              : Colors.white,
+                                          width: 2,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      liveStatus,
+                                      style: TextStyle(
+                                        color: isOnline
+                                            ? const Color(0xFF37C58A)
+                                            : (isDark
+                                                ? Colors.white70
+                                                : AppColors.grey),
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            about.isNotEmpty
+                                ? about
+                                : 'Keep the conversation flowing and shared moments close.',
+                            maxLines: 4,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: isDark ? Colors.white70 : Colors.black87,
+                              height: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: profileRoute == null
+                                  ? null
+                                  : () => context.push(profileRoute),
+                              icon: const Icon(Icons.person_outline_rounded),
+                              label: const Text('View profile'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            Container(
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.04)
+                    : Colors.black.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: TabBar(
+                dividerColor: Colors.transparent,
+                indicator: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                labelColor: AppColors.primary,
+                unselectedLabelColor: isDark ? Colors.white60 : AppColors.grey,
+                tabs: const [
+                  Tab(text: 'Media'),
+                  Tab(text: 'Links'),
+                  Tab(text: 'Docs'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _repo.messagesStream(widget.chatId),
+                builder: (context, snapshot) {
+                  final docs = snapshot.data?.docs ?? const [];
+                  final mediaEntries = <Map<String, dynamic>>[];
+                  final linkEntries = <Map<String, dynamic>>[];
+                  final documentEntries = <Map<String, dynamic>>[];
+
+                  for (final doc in docs) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    if (data['deleted'] == true) continue;
+
+                    final messageId = (data['id'] ?? doc.id).toString();
+                    final text = (data['text'] ?? '').toString().trim();
+                    final mediaUrl = data['mediaUrl'] as String?;
+                    final mediaType = data['mediaType'] as String?;
+
+                    if (mediaUrl != null &&
+                        (mediaType == 'image' || mediaType == 'video')) {
+                      mediaEntries.add({
+                        'messageId': messageId,
+                        'url': mediaUrl,
+                        'type': mediaType,
+                      });
+                    }
+
+                    if (mediaUrl != null && mediaType == 'document') {
+                      documentEntries.add({
+                        'messageId': messageId,
+                        'url': mediaUrl,
+                        'name': (data['mediaName'] ?? 'Document').toString(),
+                        'size': data['mediaSize'] as int?,
+                      });
+                    }
+
+                    for (final link in _extractLinks(text)) {
+                      final uri = Uri.tryParse(link);
+                      linkEntries.add({
+                        'messageId': messageId,
+                        'url': link,
+                        'host': (uri?.host ?? 'Shared link')
+                            .replaceFirst('www.', ''),
+                        'preview': text,
+                      });
+                    }
+                  }
+
+                  return TabBarView(
+                    children: [
+                      _buildSharedMediaGrid(mediaEntries, isDark),
+                      _buildSharedLinksList(linkEntries, isDark),
+                      _buildSharedDocumentsList(documentEntries, isDark),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSharedMediaGrid(
+    List<Map<String, dynamic>> items,
+    bool isDark,
+  ) {
+    if (items.isEmpty) {
+      return _buildSharedTabEmptyState(
+        icon: Icons.photo_library_outlined,
+        label: 'No media shared yet',
+      );
+    }
+
+    return GridView.builder(
+      padding: EdgeInsets.zero,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 1,
+      ),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        final url = item['url'] as String;
+        final isVideo = item['type'] == 'video';
+        return InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _scrollToMessage(item['messageId'] as String),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (!isVideo)
+                  Image.network(url, fit: BoxFit.cover)
+                else
+                  FutureBuilder<Uint8List?>(
+                    future: _getVideoThumbnail(url),
+                    builder: (context, snapshot) {
+                      final bytes = snapshot.data;
+                      if (bytes == null) {
+                        return Container(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.06)
+                              : Colors.black.withValues(alpha: 0.05),
+                          child: const Icon(Icons.videocam_rounded),
+                        );
+                      }
+                      return Image.memory(bytes, fit: BoxFit.cover);
+                    },
+                  ),
+                if (isVideo)
+                  Container(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    child: const Center(
+                      child: Icon(
+                        Icons.play_circle_fill_rounded,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSharedLinksList(
+    List<Map<String, dynamic>> items,
+    bool isDark,
+  ) {
+    if (items.isEmpty) {
+      return _buildSharedTabEmptyState(
+        icon: Icons.link_off_rounded,
+        label: 'No shared links yet',
+      );
+    }
+
+    return ListView.separated(
+      padding: EdgeInsets.zero,
+      itemCount: items.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final item = items[index];
+        final url = item['url'] as String;
+        return InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _scrollToMessage(item['messageId'] as String),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.04)
+                  : Colors.black.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child:
+                      const Icon(Icons.link_rounded, color: AppColors.primary),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        (item['host'] ?? 'Shared link').toString(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        url,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.white70 : AppColors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Open link',
+                  onPressed: () => _openLink(url),
+                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSharedDocumentsList(
+    List<Map<String, dynamic>> items,
+    bool isDark,
+  ) {
+    if (items.isEmpty) {
+      return _buildSharedTabEmptyState(
+        icon: Icons.folder_open_rounded,
+        label: 'No shared documents yet',
+      );
+    }
+
+    return ListView.separated(
+      padding: EdgeInsets.zero,
+      itemCount: items.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final item = items[index];
+        final url = item['url'] as String;
+        final size = item['size'] as int?;
+        return InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _scrollToMessage(item['messageId'] as String),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.04)
+                  : Colors.black.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.insert_drive_file_rounded,
+                    color: Colors.orange,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        (item['name'] ?? 'Document').toString(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      if (size != null)
+                        Text(
+                          _formatBytes(size),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white70 : AppColors.grey,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Open document',
+                  onPressed: () => _openDocument(url),
+                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSharedTabEmptyState({
+    required IconData icon,
+    required String label,
+  }) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: AppColors.grey, size: 28),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.grey,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openDocument(String url) async {
@@ -1583,8 +2283,8 @@ class _ChatPageState extends State<ChatPage> {
 
     final index = _messageIndex[messageId];
     if (index == null || !_scrollController.hasClients) return;
-    final approxOffset = (index * 84.0)
-        .clamp(0.0, _scrollController.position.maxScrollExtent);
+    final approxOffset =
+        (index * 84.0).clamp(0.0, _scrollController.position.maxScrollExtent);
     await _scrollController.animateTo(
       approxOffset,
       duration: const Duration(milliseconds: 300),
@@ -1629,8 +2329,7 @@ class _ChatPageState extends State<ChatPage> {
       spans.add(TextSpan(
         text: url,
         style: linkStyle,
-        recognizer: TapGestureRecognizer()
-          ..onTap = () => _openLink(url),
+        recognizer: TapGestureRecognizer()..onTap = () => _openLink(url),
       ));
       start = match.end;
     }
@@ -1836,11 +2535,9 @@ class _ChatPageState extends State<ChatPage> {
     required String mediaType,
   }) async {
     try {
-      final fallbackName =
-          'file_${DateTime.now().millisecondsSinceEpoch}';
+      final fallbackName = 'file_${DateTime.now().millisecondsSinceEpoch}';
       final segments = Uri.parse(url).pathSegments;
-      final derivedName =
-          segments.isNotEmpty ? segments.last : fallbackName;
+      final derivedName = segments.isNotEmpty ? segments.last : fallbackName;
       final safeName = (fileName == null || fileName.trim().isEmpty)
           ? derivedName
           : fileName;
@@ -2138,6 +2835,8 @@ class _ChatMediaViewerPageState extends State<_ChatMediaViewerPage> {
   late final PageController _controller;
   int _index = 0;
   VideoPlayerController? _videoController;
+  Player? _mediaKitPlayer;
+  VideoController? _mediaKitController;
   String? _currentVideoUrl;
 
   @override
@@ -2151,31 +2850,57 @@ class _ChatMediaViewerPageState extends State<_ChatMediaViewerPage> {
   @override
   void dispose() {
     _controller.dispose();
-    _videoController?.dispose();
+    if (Platform.isWindows) {
+      _mediaKitPlayer?.dispose();
+    } else {
+      _videoController?.dispose();
+    }
     super.dispose();
   }
 
-  void _initForIndex(int index) {
+  void _initForIndex(int index) async {
     final item = widget.items[index];
     if (item.type != 'video') {
-      _videoController?.pause();
-      _videoController?.dispose();
-      _videoController = null;
+      if (Platform.isWindows) {
+        _mediaKitPlayer?.pause();
+        _mediaKitPlayer?.dispose();
+        _mediaKitPlayer = null;
+        _mediaKitController = null;
+      } else {
+        _videoController?.pause();
+        _videoController?.dispose();
+        _videoController = null;
+      }
       _currentVideoUrl = null;
       return;
     }
     if (_currentVideoUrl == item.url) return;
-    _videoController?.dispose();
-    final controller =
-        VideoPlayerController.networkUrl(Uri.parse(item.url));
-    _videoController = controller;
-    _currentVideoUrl = item.url;
-    controller.initialize().then((_) {
-      if (mounted) {
-        setState(() {});
-        controller.play();
+    if (Platform.isWindows) {
+      _mediaKitPlayer?.dispose();
+      _mediaKitPlayer = Player();
+      _mediaKitController = VideoController(_mediaKitPlayer!);
+      try {
+        await _mediaKitPlayer!.open(Media(item.url));
+        _currentVideoUrl = item.url;
+        if (mounted) {
+          setState(() {});
+          _mediaKitPlayer!.play();
+        }
+      } catch (e) {
+        // Handle error silently
       }
-    });
+    } else {
+      _videoController?.dispose();
+      final controller = VideoPlayerController.networkUrl(Uri.parse(item.url));
+      _videoController = controller;
+      _currentVideoUrl = item.url;
+      controller.initialize().then((_) {
+        if (mounted) {
+          setState(() {});
+          controller.play();
+        }
+      });
+    }
   }
 
   @override
@@ -2207,8 +2932,11 @@ class _ChatMediaViewerPageState extends State<_ChatMediaViewerPage> {
                     ),
                   );
                 }
-                final controller = _videoController;
-                if (controller == null || !controller.value.isInitialized) {
+                final isInitialized = Platform.isWindows
+                    ? _mediaKitPlayer != null
+                    : _videoController != null &&
+                        _videoController!.value.isInitialized;
+                if (!isInitialized) {
                   return const Center(
                     child: CircularProgressIndicator(color: Colors.white),
                   );
@@ -2217,46 +2945,51 @@ class _ChatMediaViewerPageState extends State<_ChatMediaViewerPage> {
                   children: [
                     Expanded(
                       child: Center(
-                        child: AspectRatio(
-                          aspectRatio: controller.value.aspectRatio,
-                          child: VideoPlayer(controller),
+                        child: Platform.isWindows
+                            ? Video(controller: _mediaKitController!)
+                            : AspectRatio(
+                                aspectRatio:
+                                    _videoController!.value.aspectRatio,
+                                child: VideoPlayer(_videoController!),
+                              ),
+                      ),
+                    ),
+                    if (!Platform.isWindows)
+                      VideoProgressIndicator(
+                        _videoController!,
+                        allowScrubbing: true,
+                        colors: const VideoProgressColors(
+                          playedColor: Colors.white,
+                          bufferedColor: Colors.white24,
+                          backgroundColor: Colors.white10,
                         ),
                       ),
-                    ),
-                    VideoProgressIndicator(
-                      controller,
-                      allowScrubbing: true,
-                      colors: const VideoProgressColors(
-                        playedColor: Colors.white,
-                        bufferedColor: Colors.white24,
-                        backgroundColor: Colors.white10,
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            icon: Icon(
-                              controller.value.isPlaying
-                                  ? Icons.pause
-                                  : Icons.play_arrow,
-                              color: Colors.white,
+                    if (!Platform.isWindows)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                _videoController!.value.isPlaying
+                                    ? Icons.pause
+                                    : Icons.play_arrow,
+                                color: Colors.white,
+                              ),
+                              onPressed: () {
+                                _videoController!.value.isPlaying
+                                    ? _videoController!.pause()
+                                    : _videoController!.play();
+                                setState(() {});
+                              },
                             ),
-                            onPressed: () {
-                              controller.value.isPlaying
-                                  ? controller.pause()
-                                  : controller.play();
-                              setState(() {});
-                            },
-                          ),
-                          const Spacer(),
-                        ],
+                            const Spacer(),
+                          ],
+                        ),
                       ),
-                    ),
                   ],
                 );
               },
@@ -2345,7 +3078,6 @@ class _ChatMediaViewerPageState extends State<_ChatMediaViewerPage> {
   }
 }
 
-
 class _ChatActionButton extends StatelessWidget {
   const _ChatActionButton({
     required this.icon,
@@ -2417,6 +3149,20 @@ class _ChatStatusLabel extends StatelessWidget {
   final String? otherUserId;
   final bool isTyping;
   final String chatType;
+
+  static String statusText({
+    required String? otherUserId,
+    required bool isTyping,
+    required String chatType,
+  }) {
+    if (isTyping) return 'typing...';
+    if (otherUserId == null || otherUserId.isEmpty) {
+      return chatType == 'direct' ? 'Conversation' : 'Creator chat';
+    }
+    return chatType == 'direct'
+        ? 'Shared conversation'
+        : 'Business conversation';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2502,7 +3248,22 @@ class _AudioMessageTileState extends State<_AudioMessageTile> {
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
   final List<double> _waveHeights = const [
-    6, 10, 14, 8, 16, 12, 6, 18, 9, 14, 8, 12, 6, 10, 7, 15
+    6,
+    10,
+    14,
+    8,
+    16,
+    12,
+    6,
+    18,
+    9,
+    14,
+    8,
+    12,
+    6,
+    10,
+    7,
+    15
   ];
 
   @override
@@ -2556,9 +3317,8 @@ class _AudioMessageTileState extends State<_AudioMessageTile> {
 
   @override
   Widget build(BuildContext context) {
-    final total = _duration.inMilliseconds > 0
-        ? _duration
-        : const Duration(seconds: 1);
+    final total =
+        _duration.inMilliseconds > 0 ? _duration : const Duration(seconds: 1);
     final progress = _position.inMilliseconds / total.inMilliseconds;
     final activeColor = widget.isMe
         ? Colors.white.withOpacity(0.95)
@@ -2666,5 +3426,3 @@ class _TypingDotsState extends State<_TypingDots>
     );
   }
 }
-
-

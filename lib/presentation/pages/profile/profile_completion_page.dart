@@ -16,7 +16,8 @@ class ProfileCompletionPage extends ConsumerStatefulWidget {
   const ProfileCompletionPage({super.key});
 
   @override
-  ConsumerState<ProfileCompletionPage> createState() => _ProfileCompletionPageState();
+  ConsumerState<ProfileCompletionPage> createState() =>
+      _ProfileCompletionPageState();
 }
 
 class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
@@ -52,8 +53,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
               (data['name'] ?? user.displayName ?? '').toString();
           _emailController.text =
               (data['email'] ?? user.email ?? '').toString();
-          final rawPhone =
-              (data['phone'] ?? user.phoneNumber ?? '').toString();
+          final rawPhone = (data['phone'] ?? user.phoneNumber ?? '').toString();
           if (rawPhone.startsWith('+')) {
             final match = RegExp(r'^\+\d{1,4}').firstMatch(rawPhone);
             if (match != null) {
@@ -117,13 +117,10 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
         bytes: bytes,
       );
       if (url == null) throw Exception('Upload failed');
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .update({
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'imageUrl': url,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      }, SetOptions(merge: true));
       if (mounted) {
         setState(() {
           _profileImageUrl = url;
@@ -152,34 +149,37 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
 
       try {
         final user = FirebaseAuth.instance.currentUser;
-        if (user != null) {
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .update({
-            'userType': 'client',
-            'name': _nameController.text.trim(),
-            'email': _emailController.text.trim(),
-            'phone': _normalizedPhone(),
-            'bio': _bioController.text.trim(),
-            'profileCompleted': true,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-
-          setState(() {
-            _isLoading = false;
-          });
-
-          // Navigate to dashboard after save
-          context.go(AppRoutes.dashboard);
+        if (user == null) {
+          throw FirebaseAuthException(code: 'no-current-user');
         }
+
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'userType': 'client',
+          'name': _nameController.text.trim(),
+          'email': _emailController.text.trim(),
+          'phone': _normalizedPhone(),
+          'bio': _bioController.text.trim(),
+          'profileCompleted': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+        });
+
+        context.go(AppRoutes.dashboard);
       } catch (e) {
+        debugPrint('Profile save failed: $e');
+        if (!mounted) return;
         setState(() {
           _isLoading = false;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to save profile. Please try again.')),
+          const SnackBar(
+            content: Text('Failed to save profile. Please try again.'),
+          ),
         );
       }
     }
@@ -240,8 +240,8 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text(
-                          'Failed to update password. Please re-login.'),
+                      content:
+                          Text('Failed to update password. Please re-login.'),
                     ),
                   );
                 }

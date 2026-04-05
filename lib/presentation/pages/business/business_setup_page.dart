@@ -1,9 +1,15 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geocoding/geocoding.dart' as geo;
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
+import 'package:latlong2/latlong.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
 
@@ -14,7 +20,9 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../../core/services/supabase_storage_service.dart';
 
 class BusinessSetupPage extends ConsumerStatefulWidget {
-  const BusinessSetupPage({super.key});
+  const BusinessSetupPage({super.key, this.editBusinessId});
+
+  final String? editBusinessId;
 
   @override
   ConsumerState<BusinessSetupPage> createState() => _BusinessSetupPageState();
@@ -33,6 +41,19 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
   bool _isLoading = false;
   File? _selectedImage;
   Uint8List? _selectedImageBytes;
+  static const LatLng _defaultMapCenter = LatLng(-1.9441, 30.0619);
+  LatLng? _selectedLocation;
+  bool _isResolvingLocation = false;
+  String? _existingImageUrl;
+
+  bool get _isEditMode =>
+      widget.editBusinessId != null && widget.editBusinessId!.isNotEmpty;
+
+  bool get _supportsNativeGoogleMap =>
+      !AppConstants.pauseGoogleMaps &&
+      (kIsWeb ||
+          defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
 
   final List<String> _categories = [
     'Restaurant',
@@ -52,6 +73,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
   void initState() {
     super.initState();
     _loadCurrentUser();
+    _loadBusinessForEdit();
   }
 
   Future<void> _loadCurrentUser() async {
@@ -72,7 +94,40 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
     }
   }
 
-  Future<void> _createBusiness() async {
+  Future<void> _loadBusinessForEdit() async {
+    if (!_isEditMode) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('businesses')
+          .doc(widget.editBusinessId)
+          .get();
+      final data = snap.data();
+      if (!mounted || data == null) return;
+      setState(() {
+        _businessNameController.text = (data['name'] ?? '').toString();
+        _descriptionController.text = (data['description'] ?? '').toString();
+        final address = (data['address'] ?? data['location'] ?? '').toString();
+        _addressController.text = address;
+        _googleMapsLinkController.text =
+            (data['googleMapsLink'] ?? '').toString();
+        _phoneController.text = (data['phone'] ?? '').toString();
+        _emailController.text = (data['email'] ?? '').toString();
+        final category = (data['category'] ?? 'Other').toString();
+        _selectedCategory =
+            _categories.contains(category) ? category : 'Other';
+        _existingImageUrl = (data['imageUrl'] ?? '').toString();
+        final lat = (data['lat'] ?? data['latitude']) as num?;
+        final lng = (data['lng'] ?? data['longitude']) as num?;
+        if (lat != null && lng != null) {
+          _selectedLocation = LatLng(lat.toDouble(), lng.toDouble());
+        }
+      });
+    } catch (_) {
+      // Keep setup usable even if edit prefill fails.
+    }
+  }
+
+  Future<void> _saveBusiness() async {
     if (_formKey.currentState!.validate()) {
       setState(() {
         _isLoading = true;
@@ -81,11 +136,12 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
       try {
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
-          final existingBusinesses = await FirebaseFirestore.instance
-              .collection('businesses')
-              .where('ownerId', isEqualTo: user.uid)
-              .get();
-          if (existingBusinesses.docs.length >= 2) {
+          if (!_isEditMode) {
+            final existingBusinesses = await FirebaseFirestore.instance
+                .collection('businesses')
+                .where('ownerId', isEqualTo: user.uid)
+                .get();
+            if (existingBusinesses.docs.length >= 2) {
             setState(() {
               _isLoading = false;
             });
@@ -120,8 +176,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                               shape: BoxShape.circle,
                               gradient: LinearGradient(
                                 colors: [
-                                  AppColors.primary.withOpacity(0.95),
-                                  AppColors.primary.withOpacity(0.55),
+                                  AppColors.primary.withValues(alpha: 0.95),
+                                  AppColors.primary.withValues(alpha: 0.55),
                                 ],
                               ),
                             ),
@@ -154,8 +210,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: isDark
-                                  ? Colors.white.withOpacity(0.06)
-                                  : Colors.black.withOpacity(0.04),
+                                  ? Colors.white.withValues(alpha: 0.06)
+                                  : Colors.black.withValues(alpha: 0.04),
                               borderRadius: BorderRadius.circular(16),
                             ),
                             child: const Row(
@@ -217,27 +273,59 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                 },
               );
             }
-            return;
+              return;
+            }
           }
 
-          // Create business document
-          final businessRef = await FirebaseFirestore.instance
-              .collection('businesses')
-              .add({
-            'ownerId': user.uid,
+          if (_selectedLocation == null &&
+              _addressController.text.trim().isNotEmpty) {
+            await _pinLocationFromAddress(showFeedback: false);
+          }
+
+          final address = _addressController.text.trim();
+          final mapsLink = _googleMapsLinkController.text.trim().isNotEmpty
+              ? _googleMapsLinkController.text.trim()
+              : _selectedLocation != null
+                  ? _buildMapsLinkFromCoordinates(_selectedLocation!)
+                  : address.isNotEmpty
+                      ? _buildMapsLinkFromAddress(address)
+                      : '';
+
+          final businessData = <String, dynamic>{
             'name': _businessNameController.text.trim(),
             'description': _descriptionController.text.trim(),
             'category': _selectedCategory,
-            'address': _addressController.text.trim(),
+            'address': address,
+            'location': address,
             'phone': _phoneController.text.trim(),
             'email': _emailController.text.trim(),
-            'isVerified': false,
-            'isActive': true,
-            'rating': 0.0,
-            'reviewCount': 0,
-            'createdAt': FieldValue.serverTimestamp(),
+            if (_selectedLocation != null) ...{
+              'latitude': _selectedLocation!.latitude,
+              'longitude': _selectedLocation!.longitude,
+              'lat': _selectedLocation!.latitude,
+              'lng': _selectedLocation!.longitude,
+            },
             'updatedAt': FieldValue.serverTimestamp(),
-          });
+          };
+          late final DocumentReference<Map<String, dynamic>> businessRef;
+          if (_isEditMode) {
+            businessRef = FirebaseFirestore.instance
+                .collection('businesses')
+                .doc(widget.editBusinessId);
+            await businessRef.update(businessData);
+          } else {
+            businessRef = await FirebaseFirestore.instance
+                .collection('businesses')
+                .add({
+              'ownerId': user.uid,
+              ...businessData,
+              'isVerified': false,
+              'isActive': true,
+              'rating': 0.0,
+              'reviewCount': 0,
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+          }
 
           // Upload image if selected
           String? imageUrl;
@@ -247,19 +335,20 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
 
           // Update business document with image URL
           await businessRef.update({
-            'googleMapsLink': _googleMapsLinkController.text.trim(),
+            'googleMapsLink': mapsLink,
             if (imageUrl != null) 'imageUrl': imageUrl,
           });
 
-          // Update user document to mark as business owner
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .update({
-            'businessId': businessRef.id,
-            'userType': 'business',
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
+          if (!_isEditMode) {
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .update({
+              'businessId': businessRef.id,
+              'userType': 'business',
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          }
 
           setState(() {
             _isLoading = false;
@@ -268,7 +357,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Page created successfully!'),
+                content: Text('Page saved successfully!'),
                 backgroundColor: Colors.green,
               ),
             );
@@ -343,22 +432,185 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
     return 'https://www.google.com/maps/search/?api=1&query=$encoded';
   }
 
-  void _generateMapsLinkFromAddress() {
+  String _buildMapsLinkFromCoordinates(LatLng point) {
+    final lat = point.latitude.toStringAsFixed(6);
+    final lng = point.longitude.toStringAsFixed(6);
+    return 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+  }
+
+  LatLng? _extractPointFromMapsLink(String link) {
+    final trimmed = link.trim();
+    if (trimmed.isEmpty) return null;
+
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null) {
+      final q = uri.queryParameters['q'] ?? uri.queryParameters['query'];
+      if (q != null) {
+        final parts = q.split(',');
+        if (parts.length >= 2) {
+          final lat = double.tryParse(parts[0].trim());
+          final lng = double.tryParse(parts[1].trim());
+          if (lat != null && lng != null) {
+            return LatLng(lat, lng);
+          }
+        }
+      }
+    }
+
+    final atMatch = RegExp(r'@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)')
+        .firstMatch(trimmed);
+    if (atMatch != null) {
+      final lat = double.tryParse(atMatch.group(1) ?? '');
+      final lng = double.tryParse(atMatch.group(2) ?? '');
+      if (lat != null && lng != null) {
+        return LatLng(lat, lng);
+      }
+    }
+
+    return null;
+  }
+
+  String _formatPlacemark(geo.Placemark placemark) {
+    return [
+      placemark.street,
+      placemark.subLocality,
+      placemark.locality,
+      placemark.country,
+    ]
+        .where((part) => part != null && part.trim().isNotEmpty)
+        .map((part) => part!.trim())
+        .join(', ');
+  }
+
+  void _setPinnedLocation(
+    LatLng point, {
+    String? prefillAddress,
+    String? successMessage,
+  }) {
+    setState(() {
+      _selectedLocation = point;
+    });
+    if (prefillAddress != null && prefillAddress.trim().isNotEmpty) {
+      _addressController.text = prefillAddress.trim();
+    }
+    _googleMapsLinkController.text = _buildMapsLinkFromCoordinates(point);
+    if (successMessage != null && mounted) {
+      HapticFeedback.lightImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(successMessage)),
+      );
+    }
+  }
+
+  Future<void> _pinLocationFromAddress({bool showFeedback = true}) async {
     final address = _addressController.text.trim();
     if (address.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add your address first')),
-      );
+      if (showFeedback && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Add your address first')),
+        );
+      }
       return;
     }
-    _googleMapsLinkController.text = _buildMapsLinkFromAddress(address);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Google Maps link generated')),
-    );
+
+    setState(() {
+      _isResolvingLocation = true;
+    });
+
+    try {
+      final results = await geo.locationFromAddress(address);
+      if (results.isEmpty) {
+        throw Exception('Could not find that address yet.');
+      }
+      final first = results.first;
+      _setPinnedLocation(
+        LatLng(first.latitude, first.longitude),
+        successMessage: showFeedback ? 'Location pinned from address' : null,
+      );
+    } catch (_) {
+      if (mounted && showFeedback) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not find that address yet. Try a fuller address or use current location.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResolvingLocation = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _useCurrentLocation() async {
+    setState(() {
+      _isResolvingLocation = true;
+    });
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        throw Exception('Location services are turned off.');
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        throw Exception('Location permission was not granted.');
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      String? resolvedAddress;
+      try {
+        final placemarks = await geo.placemarkFromCoordinates(
+          position.latitude,
+          position.longitude,
+        );
+        if (placemarks.isNotEmpty) {
+          resolvedAddress = _formatPlacemark(placemarks.first);
+        }
+      } catch (_) {
+        // Keep the coordinates even if reverse geocoding fails.
+      }
+
+      _setPinnedLocation(
+        LatLng(position.latitude, position.longitude),
+        prefillAddress: resolvedAddress,
+        successMessage: 'Current location added',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e.toString().replaceFirst('Exception: ', ''),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResolvingLocation = false;
+        });
+      }
+    }
   }
 
   Future<void> _pasteMapsLink() async {
     final data = await Clipboard.getData('text/plain');
+    if (!mounted) return;
+
     final text = data?.text?.trim() ?? '';
     if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -366,7 +618,97 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
       );
       return;
     }
+
     _googleMapsLinkController.text = text;
+    final point = _extractPointFromMapsLink(text);
+    if (point != null) {
+      setState(() {
+        _selectedLocation = point;
+      });
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            point != null ? 'Map link pasted and pin detected' : 'Map link pasted',
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildLocationPreviewMap() {
+    final point = _selectedLocation;
+
+    if (_supportsNativeGoogleMap) {
+      return gmaps.GoogleMap(
+        initialCameraPosition: gmaps.CameraPosition(
+          target: gmaps.LatLng(
+            point?.latitude ?? _defaultMapCenter.latitude,
+            point?.longitude ?? _defaultMapCenter.longitude,
+          ),
+          zoom: point == null ? 10.5 : 15,
+        ),
+        onTap: (tappedPoint) {
+          _setPinnedLocation(
+            LatLng(tappedPoint.latitude, tappedPoint.longitude),
+          );
+        },
+        markers: point == null
+            ? const <gmaps.Marker>{}
+            : {
+                gmaps.Marker(
+                  markerId: const gmaps.MarkerId('business-pin'),
+                  position: gmaps.LatLng(point.latitude, point.longitude),
+                  draggable: true,
+                  onDragEnd: (draggedPoint) {
+                    _setPinnedLocation(
+                      LatLng(draggedPoint.latitude, draggedPoint.longitude),
+                    );
+                  },
+                ),
+              },
+        mapType: gmaps.MapType.normal,
+        zoomControlsEnabled: false,
+        myLocationButtonEnabled: false,
+        mapToolbarEnabled: false,
+        compassEnabled: true,
+        trafficEnabled: false,
+        indoorViewEnabled: false,
+      );
+    }
+
+    return FlutterMap(
+      options: MapOptions(
+        initialCenter: point ?? _defaultMapCenter,
+        initialZoom: point == null ? 10.5 : 15,
+        onTap: (_, tappedPoint) {
+          _setPinnedLocation(tappedPoint);
+        },
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'businessfinder',
+        ),
+        if (point != null)
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: point,
+                width: 70,
+                height: 70,
+                child: const Icon(
+                  Icons.location_on_rounded,
+                  color: AppColors.primary,
+                  size: 42,
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
   }
 
   Widget _sectionCard({required Widget child}) {
@@ -384,7 +726,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Set Up Your Page'),
+        title: Text(_isEditMode ? 'Edit Page' : 'Set Up Your Page'),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -402,11 +744,19 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                       children: [
                         CircleAvatar(
                           radius: 38,
-                          backgroundColor: AppColors.primary.withOpacity(0.2),
+                          backgroundColor: AppColors.primary.withValues(alpha: 0.2),
                           backgroundImage: _selectedImageBytes != null
                               ? MemoryImage(_selectedImageBytes!)
-                              : null,
-                          child: _selectedImageBytes == null
+                                  as ImageProvider<Object>?
+                              : (_existingImageUrl != null &&
+                                      _existingImageUrl!.isNotEmpty)
+                                  ? NetworkImage(_existingImageUrl!)
+                                      as ImageProvider<Object>?
+                                  : null,
+                          foregroundImage: null,
+                          child: (_selectedImageBytes == null &&
+                                  (_existingImageUrl == null ||
+                                      _existingImageUrl!.isEmpty))
                               ? const Icon(
                                   Icons.person,
                                   size: 36,
@@ -544,55 +894,130 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                     AppTextField(
                       controller: _addressController,
                       label: 'Address',
-                      hintText: 'City, street, or venue',
+                      hintText: 'City, street, building, or venue',
                       maxLines: 2,
+                      textCapitalization: TextCapitalization.words,
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed:
+                              _isResolvingLocation ? null : _pinLocationFromAddress,
+                          icon: const Icon(Icons.search_rounded),
+                          label: const Text('Pin from address'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed:
+                              _isResolvingLocation ? null : _useCurrentLocation,
+                          icon: const Icon(Icons.my_location_rounded),
+                          label: const Text('Use current location'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _pasteMapsLink,
+                          icon: const Icon(Icons.paste_rounded),
+                          label: const Text('Paste map link'),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 12),
                     AppTextField(
                       controller: _googleMapsLinkController,
-                      label: 'Google Maps Link',
-                      hintText: 'Paste link or generate from address',
+                      label: 'Google Maps Link (optional)',
+                      hintText: 'Auto-filled after pinning, or paste your link',
                       keyboardType: TextInputType.url,
+                      onChanged: (value) {
+                        final point = _extractPointFromMapsLink(value);
+                        if (point != null) {
+                          setState(() {
+                            _selectedLocation = point;
+                          });
+                        }
+                      },
                       validator: (value) {
                         final link = value?.trim() ?? '';
                         final address = _addressController.text.trim();
-                        if (link.isEmpty && address.isEmpty) {
-                          return 'Add an address or a Google Maps link';
+                        if (address.isEmpty &&
+                            link.isEmpty &&
+                            _selectedLocation == null) {
+                          return 'Add an address or pin a location';
                         }
                         if (link.isNotEmpty) {
-                          final v = link.toLowerCase();
-                          if (!v.contains('maps.google.com') &&
-                              !v.contains('goo.gl/maps') &&
-                              !v.contains('maps.app.goo.gl')) {
-                            return 'Please enter a valid Google Maps link';
+                          final uri = Uri.tryParse(link);
+                          if (uri == null || !uri.hasScheme) {
+                            return 'Please enter a valid map link';
                           }
                         }
                         return null;
                       },
                     ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _generateMapsLinkFromAddress,
-                            icon: const Icon(Icons.auto_fix_high),
-                            label: const Text('Generate link'),
-                          ),
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.white.withValues(alpha: 0.04)
+                            : Colors.black.withValues(alpha: 0.03),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Colors.white10
+                              : Colors.black12,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _pasteMapsLink,
-                            icon: const Icon(Icons.paste),
-                            label: const Text('Paste link'),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.place_rounded,
+                                color: AppColors.primary,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _selectedLocation == null
+                                      ? 'No exact point pinned yet'
+                                      : 'Pinned at ${_selectedLocation!.latitude.toStringAsFixed(5)}, ${_selectedLocation!.longitude.toStringAsFixed(5)}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
+                          if (_isResolvingLocation) ...[
+                            const SizedBox(height: 10),
+                            const LinearProgressIndicator(minHeight: 3),
+                          ],
+                          const SizedBox(height: 12),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: SizedBox(
+                              height: 180,
+                              child: _buildLocationPreviewMap(),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            _selectedLocation == null
+                                ? 'Use your current location, search by address, or tap the map to place the page pin exactly where the business is.'
+                                : 'This exact pin will be shown on the public business profile. You can tap or drag it to fine-tune the spot.',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: AppColors.grey),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Tip: You can just type your address and tap “Generate link”.',
+                      'Tip: exact coordinates work better than just pasting an external link.',
                       style: Theme.of(context)
                           .textTheme
                           .bodySmall
@@ -635,7 +1060,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                         if (value == null || value.isEmpty) {
                           return 'Please enter your email';
                         }
-                        if (!RegExp(r'^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$')
+                        if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
                             .hasMatch(value)) {
                           return 'Please enter a valid email address';
                         }
@@ -666,8 +1091,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
 
               // Create Page Button
               AppButton(
-                text: 'Create Page',
-                onPressed: _createBusiness,
+                text: _isEditMode ? 'Save Changes' : 'Create Page',
+                onPressed: _saveBusiness,
                 isLoading: _isLoading,
               ),
 
@@ -686,7 +1111,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                       color: Theme.of(context)
                           .colorScheme
                           .onSurface
-                          .withOpacity(0.25),
+                          .withValues(alpha: 0.25),
                     ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(24),

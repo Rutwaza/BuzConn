@@ -1,8 +1,13 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:go_router/go_router.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/services/social_notification_service.dart';
@@ -42,6 +47,9 @@ class _SearchPageState extends State<SearchPage> {
   bool _businessOrderByName = true;
   String _lastResultQuery = '';
   SearchFilter _lastResultFilter = SearchFilter.all;
+  static const LatLng _defaultDiscoverCenter = LatLng(-1.9441, 30.0619);
+  final Map<String, LatLng> _resolvedPageLocations = {};
+  final Set<String> _resolvingPageLocations = {};
 
   @override
   void dispose() {
@@ -210,6 +218,7 @@ class _SearchPageState extends State<SearchPage> {
       }
     }
   }
+
   Future<void> _loadMorePosts() async {
     if (_isLoadingPosts || !_hasMorePosts) return;
     setState(() {
@@ -243,10 +252,188 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
+  LatLng? _extractPagePoint(Map<String, dynamic> page) {
+    final lat = page['lat'] ?? page['latitude'];
+    final lng = page['lng'] ?? page['longitude'];
+    if (lat is num && lng is num) {
+      return LatLng(lat.toDouble(), lng.toDouble());
+    }
+
+    final mapLink = Uri.decodeFull((page['googleMapsLink'] ?? '').toString());
+    final atMatch =
+        RegExp(r'@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)').firstMatch(mapLink);
+    if (atMatch != null) {
+      final parsedLat = double.tryParse(atMatch.group(1)!);
+      final parsedLng = double.tryParse(atMatch.group(2)!);
+      if (parsedLat != null && parsedLng != null) {
+        return LatLng(parsedLat, parsedLng);
+      }
+    }
+
+    final queryMatch = RegExp(
+      r'(?:q|query)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)',
+    ).firstMatch(mapLink);
+    if (queryMatch != null) {
+      final parsedLat = double.tryParse(queryMatch.group(1)!);
+      final parsedLng = double.tryParse(queryMatch.group(2)!);
+      if (parsedLat != null && parsedLng != null) {
+        return LatLng(parsedLat, parsedLng);
+      }
+    }
+
+    final id = (page['id'] ?? page['businessId'] ?? '').toString();
+    return _resolvedPageLocations[id];
+  }
+
+  Future<void> _resolvePageLocation(Map<String, dynamic> page) async {
+    final pageId = (page['id'] ?? page['businessId'] ?? '').toString();
+    if (pageId.isEmpty ||
+        _resolvedPageLocations.containsKey(pageId) ||
+        _resolvingPageLocations.contains(pageId)) {
+      return;
+    }
+
+    final searchText = (page['address'] ?? page['location'] ?? page['name'] ?? '')
+        .toString()
+        .trim();
+    if (searchText.isEmpty) return;
+
+    _resolvingPageLocations.add(pageId);
+    final client = HttpClient();
+    try {
+      final uri = Uri.https(
+        'nominatim.openstreetmap.org',
+        '/search',
+        {
+          'q': searchText,
+          'format': 'jsonv2',
+          'limit': '1',
+        },
+      );
+      final request = await client.getUrl(uri);
+      request.headers.set(
+        'User-Agent',
+        'businessfinder/1.0 (desktop-discover-map)',
+      );
+      final response = await request.close();
+      if (response.statusCode != 200) return;
+
+      final body = await response.transform(utf8.decoder).join();
+      final decoded = jsonDecode(body);
+      if (decoded is List && decoded.isNotEmpty) {
+        final first = decoded.first as Map<String, dynamic>;
+        final parsedLat = double.tryParse('${first['lat']}');
+        final parsedLng = double.tryParse('${first['lon']}');
+        if (parsedLat != null && parsedLng != null && mounted) {
+          setState(() {
+            _resolvedPageLocations[pageId] = LatLng(parsedLat, parsedLng);
+          });
+        }
+      }
+    } catch (_) {
+      // Ignore map lookup failures and keep the rest of Discover responsive.
+    } finally {
+      client.close(force: true);
+      _resolvingPageLocations.remove(pageId);
+    }
+  }
+
+  List<Marker> _buildPageMarkers(
+    List<Map<String, dynamic>> pages,
+    bool isDark,
+  ) {
+    final markers = <Marker>[];
+    for (final page in pages.take(12)) {
+      final point = _extractPagePoint(page);
+      final pageId = (page['id'] ?? page['businessId'] ?? '').toString();
+      final title = (page['name'] ?? 'Page').toString();
+
+      if (point != null) {
+        markers.add(
+          Marker(
+            point: point,
+            width: 110,
+            height: 52,
+            child: Tooltip(
+              message: title,
+              child: InkWell(
+                onTap: pageId.isEmpty
+                    ? null
+                    : () => context.push(AppRoutes.businessProfilePath(pageId)),
+                borderRadius: BorderRadius.circular(999),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF111722).withValues(alpha: 0.92)
+                            : Colors.white.withValues(alpha: 0.94),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.28),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.08),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.location_on_rounded,
+                            size: 14,
+                            color: AppColors.primary,
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Icon(
+                      Icons.place_rounded,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      } else {
+        _resolvePageLocation(page);
+      }
+    }
+    return markers;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isDesktop = screenWidth >= 1200;
     final query = _controller.text.trim().toLowerCase();
     _ensurePostsLoaded(query);
     _ensureResultsLoaded(query);
@@ -255,254 +442,580 @@ class _SearchPageState extends State<SearchPage> {
       appBar: AppBar(
         title: const Text('Discover'),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: _controller,
-              style: TextStyle(
-                color: isDark ? Colors.white : Colors.black87,
-              ),
-              decoration: InputDecoration(
-                hintText: 'Search pages, users, or posts',
-                hintStyle: TextStyle(
-                  color: isDark ? Colors.white54 : AppColors.grey,
-                ),
-                prefixIcon: Icon(
-                  Icons.search,
-                  color: isDark ? Colors.white70 : AppColors.grey,
-                ),
-                filled: true,
-                fillColor: theme.cardColor,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-          ),
-          if (query.isEmpty) ...[
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: _DiscoverSpotlightCard(
-                pageCount: _businessResults.length,
-                userCount: _userResults.length,
-                postCount: _postResults.length,
-              ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
+      body: isDesktop
+          ? _buildDiscoverDesktopBody(query, isDark)
+          : Column(
               children: [
-                _quickExplorePill(
-                  icon: Icons.trending_up_rounded,
-                  label: 'Trending posts',
-                  selected: _filter == SearchFilter.posts,
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    setState(() {
-                      _filter = _filter == SearchFilter.posts
-                          ? SearchFilter.all
-                          : SearchFilter.posts;
-                    });
-                  },
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: TextField(
+                    controller: _controller,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Search pages, users, or posts',
+                      hintStyle: TextStyle(
+                        color: isDark ? Colors.white54 : AppColors.grey,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: isDark ? Colors.white70 : AppColors.grey,
+                      ),
+                      filled: true,
+                      fillColor: theme.cardColor,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
                 ),
-                _quickExplorePill(
-                  icon: Icons.storefront_rounded,
-                  label: 'Fresh pages',
-                  selected: _filter == SearchFilter.businesses,
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    setState(() {
-                      _filter = _filter == SearchFilter.businesses
-                          ? SearchFilter.all
-                          : SearchFilter.businesses;
-                    });
-                  },
+                if (query.isEmpty) ...[
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: _DiscoverSpotlightCard(
+                      pageCount: _businessResults.length,
+                      userCount: _userResults.length,
+                      postCount: _postResults.length,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      _quickExplorePill(
+                        icon: Icons.trending_up_rounded,
+                        label: 'Trending posts',
+                        selected: _filter == SearchFilter.posts,
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() {
+                            _filter = _filter == SearchFilter.posts
+                                ? SearchFilter.all
+                                : SearchFilter.posts;
+                          });
+                        },
+                      ),
+                      _quickExplorePill(
+                        icon: Icons.storefront_rounded,
+                        label: 'Fresh pages',
+                        selected: _filter == SearchFilter.businesses,
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() {
+                            _filter = _filter == SearchFilter.businesses
+                                ? SearchFilter.all
+                                : SearchFilter.businesses;
+                          });
+                        },
+                      ),
+                      _quickExplorePill(
+                        icon: Icons.people_alt_rounded,
+                        label: 'Meet users',
+                        selected: _filter == SearchFilter.users,
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() {
+                            _filter = _filter == SearchFilter.users
+                                ? SearchFilter.all
+                                : SearchFilter.users;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-                _quickExplorePill(
-                  icon: Icons.people_alt_rounded,
-                  label: 'Meet users',
-                  selected: _filter == SearchFilter.users,
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    setState(() {
-                      _filter = _filter == SearchFilter.users
-                          ? SearchFilter.all
-                          : SearchFilter.users;
-                    });
-                  },
+                const SizedBox(height: 8),
+                Expanded(
+                  child: Builder(
+                    builder: (context) {
+                      final results = _buildResults(
+                        query: query,
+                        businesses: _businessResults,
+                        users: _userResults,
+                      );
+
+                      final filteredPosts = query.isEmpty
+                          ? _postResults
+                          : _postResults.where((post) {
+                              final name = post.businessName.toLowerCase();
+                              final content = post.content.toLowerCase();
+                              return name.contains(query) ||
+                                  content.contains(query);
+                            }).toList();
+
+                      if (_filter == SearchFilter.posts) {
+                        if (filteredPosts.isEmpty && !_isLoadingPosts) {
+                          return const Center(child: Text('No results'));
+                        }
+                        return ListView.builder(
+                          controller: _postScrollController,
+                          itemCount:
+                              filteredPosts.length + (_isLoadingPosts ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (index >= filteredPosts.length) {
+                              return const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 16),
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              );
+                            }
+                            final post = filteredPosts[index];
+                            return _PostResultCard(
+                              post: post,
+                              onTap: () {
+                                context.push(
+                                    '${AppRoutes.feed}?postId=${post.id}');
+                              },
+                            );
+                          },
+                        );
+                      }
+
+                      if (results.isEmpty &&
+                          (_filter != SearchFilter.all ||
+                              filteredPosts.isEmpty) &&
+                          !_isLoadingBusinesses &&
+                          !_isLoadingUsers &&
+                          !_isLoadingPosts) {
+                        return const Center(child: Text('No results'));
+                      }
+
+                      if (_filter == SearchFilter.all) {
+                        final pageResults = results
+                            .where((item) => item.type == _SearchItemType.page)
+                            .toList();
+                        final userResults = results
+                            .where((item) => item.type == _SearchItemType.user)
+                            .toList();
+                        final hasMore = _hasMoreBusinesses ||
+                            _hasMoreUsers ||
+                            _hasMorePosts;
+                        final pagePreview = pageResults.take(4).toList();
+                        final userPreview = userResults.take(4).toList();
+                        final postPreview = filteredPosts.take(4).toList();
+
+                        return ListView(
+                          controller: _resultsScrollController,
+                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
+                          children: [
+                            if (pageResults.isNotEmpty) ...[
+                              _sectionHeader(
+                                'Pages',
+                                onSeeAll: pageResults.length >
+                                        pagePreview.length
+                                    ? () => setState(
+                                        () => _filter = SearchFilter.businesses)
+                                    : null,
+                              ),
+                              ...pagePreview.map(_buildSearchTile),
+                              const SizedBox(height: 14),
+                            ],
+                            if (userResults.isNotEmpty) ...[
+                              _sectionHeader(
+                                'Users',
+                                onSeeAll:
+                                    userResults.length > userPreview.length
+                                        ? () => setState(
+                                            () => _filter = SearchFilter.users)
+                                        : null,
+                              ),
+                              ...userPreview.map(_buildSearchTile),
+                              const SizedBox(height: 14),
+                            ],
+                            if (filteredPosts.isNotEmpty) ...[
+                              _sectionHeader(
+                                'Posts',
+                                onSeeAll:
+                                    filteredPosts.length > postPreview.length
+                                        ? () => setState(
+                                            () => _filter = SearchFilter.posts)
+                                        : null,
+                              ),
+                              ...postPreview.map(
+                                (post) => _PostResultCard(
+                                  post: post,
+                                  onTap: () {
+                                    context.push(
+                                        '${AppRoutes.feed}?postId=${post.id}');
+                                  },
+                                ),
+                              ),
+                            ],
+                            if (hasMore)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 16),
+                                child:
+                                    Center(child: CircularProgressIndicator()),
+                              ),
+                          ],
+                        );
+                      }
+
+                      final hasMoreBusinesses =
+                          _filter == SearchFilter.businesses ||
+                              _filter == SearchFilter.all;
+                      final hasMoreUsers = _filter == SearchFilter.users ||
+                          _filter == SearchFilter.all;
+                      final hasMore =
+                          (hasMoreBusinesses && _hasMoreBusinesses) ||
+                              (hasMoreUsers && _hasMoreUsers);
+
+                      return ListView.separated(
+                        controller: _resultsScrollController,
+                        itemCount: results.length + (hasMore ? 1 : 0),
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          if (index >= results.length) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          }
+                          final item = results[index];
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: AppColors.primary,
+                              backgroundImage: item.imageUrl != null
+                                  ? NetworkImage(item.imageUrl!)
+                                  : null,
+                              child: item.imageUrl == null
+                                  ? Text(
+                                      item.title.isNotEmpty
+                                          ? item.title[0].toUpperCase()
+                                          : '?',
+                                      style:
+                                          const TextStyle(color: Colors.white),
+                                    )
+                                  : null,
+                            ),
+                            title: Text(item.title),
+                            subtitle: Text(item.subtitle),
+                            trailing: _buildTrailing(item),
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              item.onTap();
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildDiscoverDesktopBody(String query, bool isDark) {
+    final searchInput = Padding(
+      padding: const EdgeInsets.all(12),
+      child: TextField(
+        controller: _controller,
+        style: TextStyle(
+          color: isDark ? Colors.white : Colors.black87,
+        ),
+        decoration: InputDecoration(
+          hintText: 'Search pages, users, or posts',
+          hintStyle: TextStyle(
+            color: isDark ? Colors.white54 : AppColors.grey,
+          ),
+          prefixIcon: Icon(
+            Icons.search,
+            color: isDark ? Colors.white70 : AppColors.grey,
+          ),
+          filled: true,
+          fillColor: Theme.of(context).cardColor,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+        ),
+        onChanged: (_) => setState(() {}),
+      ),
+    );
+
+    final discoverCard = query.isEmpty
+        ? Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: _DiscoverSpotlightCard(
+              pageCount: _businessResults.length,
+              userCount: _userResults.length,
+              postCount: _postResults.length,
+            ),
+          )
+        : const SizedBox.shrink();
+
+    final desktopFilters = SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          _quickExplorePill(
+            icon: Icons.trending_up_rounded,
+            label: 'Trending posts',
+            selected: _filter == SearchFilter.posts,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() {
+                _filter = _filter == SearchFilter.posts
+                    ? SearchFilter.all
+                    : SearchFilter.posts;
+              });
+            },
+          ),
+          _quickExplorePill(
+            icon: Icons.storefront_rounded,
+            label: 'Fresh pages',
+            selected: _filter == SearchFilter.businesses,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() {
+                _filter = _filter == SearchFilter.businesses
+                    ? SearchFilter.all
+                    : SearchFilter.businesses;
+              });
+            },
+          ),
+          _quickExplorePill(
+            icon: Icons.people_alt_rounded,
+            label: 'Meet users',
+            selected: _filter == SearchFilter.users,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() {
+                _filter = _filter == SearchFilter.users
+                    ? SearchFilter.all
+                    : SearchFilter.users;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+
+    final locationPages = _businessResults.where((business) {
+      if (query.isEmpty) return true;
+      final name = (business['name'] ?? '').toString().toLowerCase();
+      final location = (business['location'] ?? business['address'] ?? '')
+          .toString()
+          .toLowerCase();
+      return name.contains(query) || location.contains(query);
+    }).take(12).toList();
+
+    final markers = _buildPageMarkers(locationPages, isDark);
+    final mapCenter = markers.isNotEmpty ? markers.first.point : _defaultDiscoverCenter;
+
+    return Padding(
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 11,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                searchInput,
+                if (query.isEmpty) ...[
+                  const SizedBox(height: 12),
+                  discoverCard,
+                ],
+                const SizedBox(height: 12),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF151A24) : Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: isDark ? Colors.white10 : Colors.black12,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: const Icon(
+                                Icons.map_rounded,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Pages map',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'OpenStreetMap view of creator and page locations',
+                                    style: TextStyle(
+                                      color: AppColors.grey,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '${markers.length} pinned',
+                                style: const TextStyle(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(20),
+                            child: Stack(
+                              children: [
+                                FlutterMap(
+                                  options: MapOptions(
+                                    initialCenter: mapCenter,
+                                    initialZoom: markers.length > 1 ? 10.6 : 11.4,
+                                  ),
+                                  children: [
+                                    TileLayer(
+                                      urlTemplate:
+                                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                      userAgentPackageName: 'businessfinder',
+                                    ),
+                                    MarkerLayer(markers: markers),
+                                  ],
+                                ),
+                                if (markers.isEmpty)
+                                  Positioned.fill(
+                                    child: Container(
+                                      color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.04),
+                                      alignment: Alignment.center,
+                                      child: Text(
+                                        _resolvingPageLocations.isNotEmpty
+                                            ? 'Loading page locations...'
+                                            : 'No page locations to show yet',
+                                        style: const TextStyle(
+                                          color: AppColors.grey,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (locationPages.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: locationPages.take(4).map((page) {
+                              final pageId = (page['id'] ?? '').toString();
+                              final title = (page['name'] ?? 'Page').toString();
+                              return ActionChip(
+                                onPressed: pageId.isEmpty
+                                    ? null
+                                    : () => context.push(
+                                          AppRoutes.businessProfilePath(pageId),
+                                        ),
+                                avatar: const Icon(
+                                  Icons.storefront_rounded,
+                                  size: 16,
+                                  color: AppColors.primary,
+                                ),
+                                label: Text(
+                                  title,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(width: 16),
           Expanded(
-            child: Builder(
-              builder: (context) {
-                final results = _buildResults(
-                  query: query,
-                  businesses: _businessResults,
-                  users: _userResults,
-                );
-
-                final filteredPosts = query.isEmpty
-                    ? _postResults
-                    : _postResults.where((post) {
-                        final name = post.businessName.toLowerCase();
-                        final content = post.content.toLowerCase();
-                        return name.contains(query) || content.contains(query);
-                      }).toList();
-
-                if (_filter == SearchFilter.posts) {
-                  if (filteredPosts.isEmpty && !_isLoadingPosts) {
-                    return const Center(child: Text('No results'));
-                  }
-                  return ListView.builder(
-                    controller: _postScrollController,
-                    itemCount:
-                        filteredPosts.length + (_isLoadingPosts ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index >= filteredPosts.length) {
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          child: Center(
-                            child: CircularProgressIndicator(),
+            flex: 9,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF151A24) : Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: isDark ? Colors.white10 : Colors.black12,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(4, 2, 4, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Pages, people & posts',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
                           ),
-                        );
-                      }
-                      final post = filteredPosts[index];
-                      return _PostResultCard(
-                        post: post,
-                        onTap: () {
-                          context.push('${AppRoutes.feed}?postId=${post.id}');
-                        },
-                      );
-                    },
-                  );
-                }
-
-                if (results.isEmpty &&
-                    (_filter != SearchFilter.all || filteredPosts.isEmpty) &&
-                    !_isLoadingBusinesses &&
-                    !_isLoadingUsers &&
-                    !_isLoadingPosts) {
-                  return const Center(child: Text('No results'));
-                }
-
-                if (_filter == SearchFilter.all) {
-                  final pageResults = results
-                      .where((item) => item.type == _SearchItemType.page)
-                      .toList();
-                  final userResults = results
-                      .where((item) => item.type == _SearchItemType.user)
-                      .toList();
-                  final hasMore = _hasMoreBusinesses || _hasMoreUsers || _hasMorePosts;
-                  final pagePreview = pageResults.take(4).toList();
-                  final userPreview = userResults.take(4).toList();
-                  final postPreview = filteredPosts.take(4).toList();
-
-                  return ListView(
-                    controller: _resultsScrollController,
-                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
-                    children: [
-                      if (pageResults.isNotEmpty) ...[
-                        _sectionHeader(
-                          'Pages',
-                          onSeeAll: pageResults.length > pagePreview.length
-                              ? () => setState(() => _filter = SearchFilter.businesses)
-                              : null,
                         ),
-                        ...pagePreview.map(_buildSearchTile),
-                        const SizedBox(height: 14),
-                      ],
-                      if (userResults.isNotEmpty) ...[
-                        _sectionHeader(
-                          'Users',
-                          onSeeAll: userResults.length > userPreview.length
-                              ? () => setState(() => _filter = SearchFilter.users)
-                              : null,
-                        ),
-                        ...userPreview.map(_buildSearchTile),
-                        const SizedBox(height: 14),
-                      ],
-                      if (filteredPosts.isNotEmpty) ...[
-                        _sectionHeader(
-                          'Posts',
-                          onSeeAll: filteredPosts.length > postPreview.length
-                              ? () => setState(() => _filter = SearchFilter.posts)
-                              : null,
-                        ),
-                        ...postPreview.map(
-                          (post) => _PostResultCard(
-                            post: post,
-                            onTap: () {
-                              context.push('${AppRoutes.feed}?postId=${post.id}');
-                            },
+                        SizedBox(height: 4),
+                        Text(
+                          'Filter the results and jump straight into discovery.',
+                          style: TextStyle(
+                            color: AppColors.grey,
+                            fontSize: 12,
                           ),
                         ),
                       ],
-                      if (hasMore)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          child: Center(child: CircularProgressIndicator()),
-                        ),
-                    ],
-                  );
-                }
-
-                final hasMoreBusinesses =
-                    _filter == SearchFilter.businesses ||
-                        _filter == SearchFilter.all;
-                final hasMoreUsers =
-                    _filter == SearchFilter.users ||
-                        _filter == SearchFilter.all;
-                final hasMore = (hasMoreBusinesses && _hasMoreBusinesses) ||
-                    (hasMoreUsers && _hasMoreUsers);
-
-                return ListView.separated(
-                  controller: _resultsScrollController,
-                  itemCount: results.length + (hasMore ? 1 : 0),
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    if (index >= results.length) {
-                      return const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        child: Center(child: CircularProgressIndicator()),
-                      );
-                    }
-                    final item = results[index];
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: AppColors.primary,
-                        backgroundImage:
-                            item.imageUrl != null ? NetworkImage(item.imageUrl!) : null,
-                        child: item.imageUrl == null
-                            ? Text(
-                                item.title.isNotEmpty
-                                    ? item.title[0].toUpperCase()
-                                    : '?',
-                                style: const TextStyle(color: Colors.white),
-                              )
-                            : null,
-                      ),
-                      title: Text(item.title),
-                      subtitle: Text(item.subtitle),
-                      trailing: _buildTrailing(item),
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        item.onTap();
-                      },
-                    );
-                  },
-                );
-              },
+                    ),
+                  ),
+                  desktopFilters,
+                  const SizedBox(height: 8),
+                  Expanded(child: _buildSearchResultsBody(query)),
+                ],
+              ),
             ),
           ),
         ],
@@ -535,6 +1048,154 @@ class _SearchPageState extends State<SearchPage> {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSearchResultsBody(String query) {
+    final results = _buildResults(
+      query: query,
+      businesses: _businessResults,
+      users: _userResults,
+    );
+
+    final filteredPosts = query.isEmpty
+        ? _postResults
+        : _postResults.where((post) {
+            final name = post.businessName.toLowerCase();
+            final content = post.content.toLowerCase();
+            return name.contains(query) || content.contains(query);
+          }).toList();
+
+    if (_filter == SearchFilter.posts) {
+      if (filteredPosts.isEmpty && !_isLoadingPosts) {
+        return const Center(child: Text('No results'));
+      }
+      return ListView.builder(
+        controller: _postScrollController,
+        itemCount: filteredPosts.length + (_isLoadingPosts ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index >= filteredPosts.length) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final post = filteredPosts[index];
+          return _PostResultCard(
+            post: post,
+            onTap: () {
+              context.push('${AppRoutes.feed}?postId=${post.id}');
+            },
+          );
+        },
+      );
+    }
+
+    if (results.isEmpty &&
+        (_filter != SearchFilter.all || filteredPosts.isEmpty) &&
+        !_isLoadingBusinesses &&
+        !_isLoadingUsers &&
+        !_isLoadingPosts) {
+      return const Center(child: Text('No results'));
+    }
+
+    if (_filter == SearchFilter.all) {
+      final pageResults =
+          results.where((item) => item.type == _SearchItemType.page).toList();
+      final userResults =
+          results.where((item) => item.type == _SearchItemType.user).toList();
+      final hasMore = _hasMoreBusinesses || _hasMoreUsers || _hasMorePosts;
+      final pagePreview = pageResults.take(4).toList();
+      final userPreview = userResults.take(4).toList();
+      final postPreview = filteredPosts.take(4).toList();
+
+      return ListView(
+        controller: _resultsScrollController,
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
+        children: [
+          if (pageResults.isNotEmpty) ...[
+            _sectionHeader(
+              'Pages',
+              onSeeAll: pageResults.length > pagePreview.length
+                  ? () => setState(() => _filter = SearchFilter.businesses)
+                  : null,
+            ),
+            ...pagePreview.map(_buildSearchTile),
+            const SizedBox(height: 14),
+          ],
+          if (userResults.isNotEmpty) ...[
+            _sectionHeader(
+              'Users',
+              onSeeAll: userResults.length > userPreview.length
+                  ? () => setState(() => _filter = SearchFilter.users)
+                  : null,
+            ),
+            ...userPreview.map(_buildSearchTile),
+            const SizedBox(height: 14),
+          ],
+          if (filteredPosts.isNotEmpty) ...[
+            _sectionHeader(
+              'Posts',
+              onSeeAll: filteredPosts.length > postPreview.length
+                  ? () => setState(() => _filter = SearchFilter.posts)
+                  : null,
+            ),
+            ...postPreview.map((post) => _PostResultCard(
+                  post: post,
+                  onTap: () {
+                    context.push('${AppRoutes.feed}?postId=${post.id}');
+                  },
+                )),
+          ],
+          if (hasMore)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+        ],
+      );
+    }
+
+    final hasMoreBusinesses =
+        _filter == SearchFilter.businesses || _filter == SearchFilter.all;
+    final hasMoreUsers =
+        _filter == SearchFilter.users || _filter == SearchFilter.all;
+    final hasMore = (hasMoreBusinesses && _hasMoreBusinesses) ||
+        (hasMoreUsers && _hasMoreUsers);
+
+    return ListView.separated(
+      controller: _resultsScrollController,
+      itemCount: results.length + (hasMore ? 1 : 0),
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemBuilder: (context, index) {
+        if (index >= results.length) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final item = results[index];
+        return ListTile(
+          leading: CircleAvatar(
+            backgroundColor: AppColors.primary,
+            backgroundImage:
+                item.imageUrl != null ? NetworkImage(item.imageUrl!) : null,
+            child: item.imageUrl == null
+                ? Text(
+                    item.title.isNotEmpty ? item.title[0].toUpperCase() : '?',
+                    style: const TextStyle(color: Colors.white),
+                  )
+                : null,
+          ),
+          title: Text(item.title),
+          subtitle: Text(item.subtitle),
+          trailing: _buildTrailing(item),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            item.onTap();
+          },
+        );
+      },
     );
   }
 
@@ -673,8 +1334,7 @@ class _SearchPageState extends State<SearchPage> {
       return Icon(item.typeIcon, color: AppColors.grey);
     }
 
-    if (item.type == _SearchItemType.user &&
-        item.targetId == _currentUserId) {
+    if (item.type == _SearchItemType.user && item.targetId == _currentUserId) {
       return Icon(item.typeIcon, color: AppColors.grey);
     }
 

@@ -1,0 +1,17 @@
+SpotLight v1.0.0
+
+SpotLight is now live with a more social, creator-focused experience across the app.
+
+What's new
+- A redesigned Spotlight feed with smarter ranking, highlights, smoother interactions, and richer media posts
+- A more modern profile experience with post grids, creator tools, pages, collections, and insights
+- Upgraded messaging and notifications with grouped activity, cleaner inbox styling, and better social interactions
+- Improved post details and comments with threaded replies, likes, better media layout, and stronger social polish
+- Better discovery across users, pages, and posts with richer explore surfaces and cleaner navigation
+
+Technical improvements
+- Release build support updated for notification-related dependencies
+- Push notification plumbing prepared with deep links for posts, chats, and profiles
+
+Download
+- Android APK attached below as SpotLight-v1.0.0.apk

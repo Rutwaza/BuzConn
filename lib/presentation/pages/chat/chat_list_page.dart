@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/repositories/chat_repository.dart';
+import 'chat_page.dart';
 
 class ChatListPage extends StatefulWidget {
   const ChatListPage({super.key});
@@ -19,6 +20,8 @@ class _ChatListPageState extends State<ChatListPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   _InboxFilter _filter = _InboxFilter.all;
+  String? _selectedDesktopChatId;
+  Map<String, dynamic>? _selectedDesktopMeta;
 
   Future<Map<String, dynamic>> _resolveChatMeta(
     Map<String, dynamic> data,
@@ -33,9 +36,8 @@ class _ChatListPageState extends State<ChatListPage> {
       final userBId = data['userBId'] as String?;
       final isUserA = userAId == currentUserId;
       final otherUserId = isUserA ? userBId : userAId;
-      final title = isUserA
-          ? (data['userBName'] ?? '')
-          : (data['userAName'] ?? '');
+      final title =
+          isUserA ? (data['userBName'] ?? '') : (data['userAName'] ?? '');
       final avatarUrl = isUserA
           ? (data['userBImageUrl'] as String?)
           : (data['userAImageUrl'] as String?);
@@ -91,14 +93,16 @@ class _ChatListPageState extends State<ChatListPage> {
     }
 
     if (!isBusinessOwner && businessId != null) {
-      final bizSnap = await firestore.collection('businesses').doc(businessId).get();
+      final bizSnap =
+          await firestore.collection('businesses').doc(businessId).get();
       final biz = bizSnap.data() ?? {};
       if (title.isEmpty) title = biz['name'] ?? title;
       avatarUrl ??= biz['imageUrl'] as String?;
       final ownerId = data['businessOwnerId'] as String?;
       Timestamp? lastSeen;
       if (ownerId != null) {
-        final ownerSnap = await firestore.collection('users').doc(ownerId).get();
+        final ownerSnap =
+            await firestore.collection('users').doc(ownerId).get();
         lastSeen = ownerSnap.data()?['lastSeen'] as Timestamp?;
       }
       return {
@@ -110,13 +114,15 @@ class _ChatListPageState extends State<ChatListPage> {
     }
 
     if (title.isEmpty) {
-      final participants = (data['participants'] as List?)?.cast<String>() ?? [];
+      final participants =
+          (data['participants'] as List?)?.cast<String>() ?? [];
       final otherUserId = participants.firstWhere(
         (id) => id != currentUserId,
         orElse: () => '',
       );
       if (otherUserId.isNotEmpty) {
-        final userSnap = await firestore.collection('users').doc(otherUserId).get();
+        final userSnap =
+            await firestore.collection('users').doc(otherUserId).get();
         final user = userSnap.data() ?? {};
         title = user['name'] ?? title;
         avatarUrl ??= user['imageUrl'] as String?;
@@ -182,311 +188,436 @@ class _ChatListPageState extends State<ChatListPage> {
         backgroundColor: AppColors.primary,
         child: const Icon(Icons.edit_outlined, color: Colors.white),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.primary.withValues(alpha: 0.16),
-                        Colors.orange.withValues(alpha: 0.10),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        child: const Icon(
-                          Icons.forum_rounded,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Your social inbox',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Stay close to creators, friends, and fresh conversations.',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isDesktopWide = constraints.maxWidth >= 1180;
+          final inboxContent = Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.primary.withValues(alpha: 0.16),
+                            Colors.orange.withValues(alpha: 0.10),
                           ],
                         ),
+                        borderRadius: BorderRadius.circular(24),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _searchController,
-                  onChanged: (value) {
-                    setState(() {
-                      _searchQuery = value.trim().toLowerCase();
-                    });
-                  },
-                  decoration: InputDecoration(
-                    hintText: 'Search messages',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: _searchQuery.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.close_rounded),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() {
-                                _searchQuery = '';
-                              });
-                            },
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: const Icon(
+                              Icons.forum_rounded,
+                              color: Colors.white,
+                            ),
                           ),
-                    filled: true,
-                    fillColor: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest
-                        .withValues(alpha: 0.45),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _buildFilterChip(_InboxFilter.all, 'All'),
-                      _buildFilterChip(_InboxFilter.unread, 'Unread'),
-                      _buildFilterChip(_InboxFilter.creators, 'Creators'),
-                      _buildFilterChip(_InboxFilter.archived, 'Archived'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: repo.userChatsStream(user.uid),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final docs = snapshot.data?.docs ?? [];
-                if (docs.isEmpty) {
-                  return _buildEmptyState(
-                    icon: Icons.forum_outlined,
-                    title: 'No conversations yet',
-                    subtitle:
-                        'Start chatting from a profile or page to see your inbox come alive.',
-                  );
-                }
-
-                final filteredDocs = docs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  final hiddenFor = (data['hiddenFor'] as List?)?.cast<String>() ?? [];
-                  final isArchived = hiddenFor.contains(user.uid);
-                  final isCreatorChat =
-                      (data['chatType'] ?? '').toString() == 'business';
-                  final lastMessageAt = data['lastMessageAt'] as Timestamp?;
-                  final lastReadAt =
-                      data['lastReadAt'] as Map<String, dynamic>? ?? {};
-                  final lastReadForUser = lastReadAt[user.uid] as Timestamp?;
-                  final sentByMe =
-                      (data['lastMessageSenderId'] as String?) == user.uid;
-                  final unread = !sentByMe && lastMessageAt != null &&
-                      (lastReadForUser == null ||
-                          lastMessageAt.toDate().isAfter(
-                                lastReadForUser.toDate(),
-                              ));
-
-                  if (_filter == _InboxFilter.archived) {
-                    if (!isArchived) return false;
-                  } else if (isArchived) {
-                    return false;
-                  }
-                  if (_filter == _InboxFilter.unread && !unread) return false;
-                  if (_filter == _InboxFilter.creators && !isCreatorChat) {
-                    return false;
-                  }
-                  if (_searchQuery.isEmpty) return true;
-                  final lastMessage = (data['lastMessage'] ?? '').toString();
-                  final aName = (data['userAName'] ?? '').toString();
-                  final bName = (data['userBName'] ?? '').toString();
-                  final businessName = (data['businessName'] ?? '').toString();
-                  final clientName = (data['clientName'] ?? '').toString();
-                  final haystack =
-                      '$lastMessage $aName $bName $businessName $clientName'
-                          .toLowerCase();
-                  return haystack.contains(_searchQuery);
-                }).toList();
-
-                if (filteredDocs.isEmpty) {
-                  return _buildEmptyState(
-                    icon: _filter == _InboxFilter.archived
-                        ? Icons.archive_outlined
-                        : Icons.chat_bubble_outline_rounded,
-                    title: _searchQuery.isNotEmpty
-                        ? 'No results for "$_searchQuery"'
-                        : (_filter == _InboxFilter.archived
-                            ? 'No archived chats'
-                            : 'Nothing here yet'),
-                    subtitle: _searchQuery.isNotEmpty
-                        ? 'Try another name or message preview.'
-                        : 'New conversations will show up here as soon as you start connecting.',
-                  );
-                }
-
-                final sortedDocs = [...filteredDocs]
-                  ..sort((a, b) {
-                    final aData = a.data() as Map<String, dynamic>;
-                    final bData = b.data() as Map<String, dynamic>;
-                    final aTs = aData['lastMessageAt'] as Timestamp?;
-                    final bTs = bData['lastMessageAt'] as Timestamp?;
-                    final aMillis = aTs?.millisecondsSinceEpoch ?? 0;
-                    final bMillis = bTs?.millisecondsSinceEpoch ?? 0;
-                    return bMillis.compareTo(aMillis);
-                  });
-
-                final recentDocs = sortedDocs.take(8).toList();
-
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                  children: [
-                    if (recentDocs.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      _RecentChatsRow(
-                        docs: recentDocs,
-                        currentUserId: user.uid,
-                        resolveChatMeta: _resolveChatMeta,
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Your social inbox',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  'Stay close to creators, friends, and fresh conversations.',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 14),
-                    ],
-                    ...sortedDocs.map((doc) {
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _searchController,
+                      onChanged: (value) {
+                        setState(() {
+                          _searchQuery = value.trim().toLowerCase();
+                        });
+                      },
+                      decoration: InputDecoration(
+                        hintText: 'Search messages',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: _searchQuery.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.close_rounded),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() {
+                                    _searchQuery = '';
+                                  });
+                                },
+                              ),
+                        filled: true,
+                        fillColor: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.45),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _buildFilterChip(_InboxFilter.all, 'All'),
+                          _buildFilterChip(_InboxFilter.unread, 'Unread'),
+                          _buildFilterChip(_InboxFilter.creators, 'Creators'),
+                          _buildFilterChip(_InboxFilter.archived, 'Archived'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: repo.userChatsStream(user.uid),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final docs = snapshot.data?.docs ?? [];
+                    if (docs.isEmpty) {
+                      return _buildEmptyState(
+                        icon: Icons.forum_outlined,
+                        title: 'No conversations yet',
+                        subtitle:
+                            'Start chatting from a profile or page to see your inbox come alive.',
+                      );
+                    }
+
+                    final filteredDocs = docs.where((doc) {
                       final data = doc.data() as Map<String, dynamic>;
-                      final chatId = doc.id;
-                      final lastMessage = (data['lastMessage'] ?? '').toString();
+                      final hiddenFor =
+                          (data['hiddenFor'] as List?)?.cast<String>() ?? [];
+                      final isArchived = hiddenFor.contains(user.uid);
+                      final isCreatorChat =
+                          (data['chatType'] ?? '').toString() == 'business';
                       final lastMessageAt = data['lastMessageAt'] as Timestamp?;
                       final lastReadAt =
                           data['lastReadAt'] as Map<String, dynamic>? ?? {};
-                      final lastReadForUser = lastReadAt[user.uid] as Timestamp?;
+                      final lastReadForUser =
+                          lastReadAt[user.uid] as Timestamp?;
                       final sentByMe =
                           (data['lastMessageSenderId'] as String?) == user.uid;
-                      final unread = !sentByMe && lastMessageAt != null &&
+                      final unread = !sentByMe &&
+                          lastMessageAt != null &&
                           (lastReadForUser == null ||
                               lastMessageAt.toDate().isAfter(
                                     lastReadForUser.toDate(),
                                   ));
-                      final isArchived = (data['hiddenFor'] as List?)
-                              ?.cast<String>()
-                              .contains(user.uid) ??
-                          false;
-                      final isCreatorChat =
-                          (data['chatType'] ?? '').toString() == 'business';
 
-                      return FutureBuilder<Map<String, dynamic>>(
-                        future: _resolveChatMeta(data, user.uid),
-                        builder: (context, metaSnap) {
-                          final meta = metaSnap.data ?? {};
-                          final title = meta['title'] as String? ?? 'Chat';
-                          final avatarUrl = meta['avatarUrl'] as String?;
-                          final lastSeen = meta['lastSeen'] as Timestamp?;
-                          final participants =
-                              (data['participants'] as List?)?.cast<String>() ?? [];
-                          final otherUserId = participants.firstWhere(
-                            (id) => id != user.uid,
-                            orElse: () => '',
-                          );
-                          final otherLastRead = otherUserId.isNotEmpty
-                              ? lastReadAt[otherUserId] as Timestamp?
-                              : null;
-                          final isReadByOther = sentByMe &&
-                              lastMessageAt != null &&
-                              otherLastRead != null &&
-                              !otherLastRead.toDate().isBefore(lastMessageAt.toDate());
-                          final isDeliveredToOther = sentByMe &&
-                              lastMessageAt != null &&
-                              ((lastSeen != null &&
-                                      !lastSeen.toDate().isBefore(lastMessageAt.toDate())) ||
-                                  isReadByOther);
-                          if (_searchQuery.isNotEmpty &&
-                              !title.toLowerCase().contains(_searchQuery) &&
-                              !lastMessage.toLowerCase().contains(_searchQuery)) {
-                            return const SizedBox.shrink();
-                          }
+                      if (_filter == _InboxFilter.archived) {
+                        if (!isArchived) return false;
+                      } else if (isArchived) {
+                        return false;
+                      }
+                      if (_filter == _InboxFilter.unread && !unread) {
+                        return false;
+                      }
+                      if (_filter == _InboxFilter.creators && !isCreatorChat) {
+                        return false;
+                      }
+                      if (_searchQuery.isEmpty) return true;
+                      final lastMessage =
+                          (data['lastMessage'] ?? '').toString();
+                      final aName = (data['userAName'] ?? '').toString();
+                      final bName = (data['userBName'] ?? '').toString();
+                      final businessName =
+                          (data['businessName'] ?? '').toString();
+                      final clientName = (data['clientName'] ?? '').toString();
+                      final haystack =
+                          '$lastMessage $aName $bName $businessName $clientName'
+                              .toLowerCase();
+                      return haystack.contains(_searchQuery);
+                    }).toList();
 
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Dismissible(
-                              key: ValueKey('chat_$chatId'),
-                              direction: DismissDirection.endToStart,
-                              confirmDismiss: (_) async {
-                                HapticFeedback.lightImpact();
-                                await _toggleArchivedState(
-                                  chatId: chatId,
-                                  isHidden: isArchived,
-                                );
-                                return false;
-                              },
-                              background: _buildSwipeBackground(isArchived),
-                              child: _ChatPreviewCard(
-                                title: title,
-                                avatarUrl: avatarUrl,
-                                isUnread: unread,
-                                isCreatorChat: isCreatorChat,
-                                lastMessage: _formatPreview(lastMessage),
-                                timeLabel: _formatTimeAgo(lastMessageAt),
-                                isOnline: _isActuallyOnline(lastSeen),
-                                activityLabel: _formatActivity(lastSeen),
-                                sentByMe: sentByMe,
-                                isDeliveredToOther: isDeliveredToOther,
-                                isReadByOther: isReadByOther,
-                                onTap: () {
-                                  HapticFeedback.selectionClick();
-                                  context.push(AppRoutes.chatDetailPath(chatId));
-                                },
-                                onLongPress: () => _showChatActions(
-                                  chatId: chatId,
-                                  isHidden: isArchived,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
+                    if (filteredDocs.isEmpty) {
+                      return _buildEmptyState(
+                        icon: _filter == _InboxFilter.archived
+                            ? Icons.archive_outlined
+                            : Icons.chat_bubble_outline_rounded,
+                        title: _searchQuery.isNotEmpty
+                            ? 'No results for "$_searchQuery"'
+                            : (_filter == _InboxFilter.archived
+                                ? 'No archived chats'
+                                : 'Nothing here yet'),
+                        subtitle: _searchQuery.isNotEmpty
+                            ? 'Try another name or message preview.'
+                            : 'New conversations will show up here as soon as you start connecting.',
                       );
-                    }),
-                  ],
-                );
-              },
+                    }
+
+                    final sortedDocs = [...filteredDocs]..sort((a, b) {
+                        final aData = a.data() as Map<String, dynamic>;
+                        final bData = b.data() as Map<String, dynamic>;
+                        final aTs = aData['lastMessageAt'] as Timestamp?;
+                        final bTs = bData['lastMessageAt'] as Timestamp?;
+                        final aMillis = aTs?.millisecondsSinceEpoch ?? 0;
+                        final bMillis = bTs?.millisecondsSinceEpoch ?? 0;
+                        return bMillis.compareTo(aMillis);
+                      });
+
+                    final recentDocs = sortedDocs.take(8).toList();
+                    final hasSelectedVisibleChat =
+                        _selectedDesktopChatId != null &&
+                            sortedDocs
+                                .any((doc) => doc.id == _selectedDesktopChatId);
+                    if (isDesktopWide &&
+                        sortedDocs.isNotEmpty &&
+                        !hasSelectedVisibleChat) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) async {
+                        if (!mounted) return;
+                        final firstDoc = sortedDocs.first;
+                        final firstData =
+                            firstDoc.data() as Map<String, dynamic>;
+                        final firstMeta =
+                            await _resolveChatMeta(firstData, user.uid);
+                        if (!mounted) return;
+                        _selectDesktopChat(
+                          chatId: firstDoc.id,
+                          meta: firstMeta,
+                        );
+                      });
+                    }
+
+                    return ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                      children: [
+                        if (recentDocs.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          _RecentChatsRow(
+                            docs: recentDocs,
+                            currentUserId: user.uid,
+                            resolveChatMeta: _resolveChatMeta,
+                          ),
+                          const SizedBox(height: 14),
+                        ],
+                        ...sortedDocs.map((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          final chatId = doc.id;
+                          final lastMessage =
+                              (data['lastMessage'] ?? '').toString();
+                          final lastMessageAt =
+                              data['lastMessageAt'] as Timestamp?;
+                          final lastReadAt =
+                              data['lastReadAt'] as Map<String, dynamic>? ?? {};
+                          final lastReadForUser =
+                              lastReadAt[user.uid] as Timestamp?;
+                          final sentByMe =
+                              (data['lastMessageSenderId'] as String?) ==
+                                  user.uid;
+                          final unread = !sentByMe &&
+                              lastMessageAt != null &&
+                              (lastReadForUser == null ||
+                                  lastMessageAt.toDate().isAfter(
+                                        lastReadForUser.toDate(),
+                                      ));
+                          final isArchived = (data['hiddenFor'] as List?)
+                                  ?.cast<String>()
+                                  .contains(user.uid) ??
+                              false;
+                          final isCreatorChat =
+                              (data['chatType'] ?? '').toString() == 'business';
+
+                          return FutureBuilder<Map<String, dynamic>>(
+                            future: _resolveChatMeta(data, user.uid),
+                            builder: (context, metaSnap) {
+                              final meta = metaSnap.data ?? {};
+                              final title = meta['title'] as String? ?? 'Chat';
+                              final avatarUrl = meta['avatarUrl'] as String?;
+                              final lastSeen = meta['lastSeen'] as Timestamp?;
+                              final participants =
+                                  (data['participants'] as List?)
+                                          ?.cast<String>() ??
+                                      [];
+                              final otherUserId = participants.firstWhere(
+                                (id) => id != user.uid,
+                                orElse: () => '',
+                              );
+                              final otherLastRead = otherUserId.isNotEmpty
+                                  ? lastReadAt[otherUserId] as Timestamp?
+                                  : null;
+                              final isReadByOther = sentByMe &&
+                                  lastMessageAt != null &&
+                                  otherLastRead != null &&
+                                  !otherLastRead
+                                      .toDate()
+                                      .isBefore(lastMessageAt.toDate());
+                              final isDeliveredToOther = sentByMe &&
+                                  lastMessageAt != null &&
+                                  ((lastSeen != null &&
+                                          !lastSeen.toDate().isBefore(
+                                              lastMessageAt.toDate())) ||
+                                      isReadByOther);
+                              if (_searchQuery.isNotEmpty &&
+                                  !title.toLowerCase().contains(_searchQuery) &&
+                                  !lastMessage
+                                      .toLowerCase()
+                                      .contains(_searchQuery)) {
+                                return const SizedBox.shrink();
+                              }
+
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: Dismissible(
+                                  key: ValueKey('chat_$chatId'),
+                                  direction: DismissDirection.endToStart,
+                                  confirmDismiss: (_) async {
+                                    HapticFeedback.lightImpact();
+                                    await _toggleArchivedState(
+                                      chatId: chatId,
+                                      isHidden: isArchived,
+                                    );
+                                    return false;
+                                  },
+                                  background: _buildSwipeBackground(isArchived),
+                                  child: _ChatPreviewCard(
+                                    title: title,
+                                    avatarUrl: avatarUrl,
+                                    isUnread: unread,
+                                    isCreatorChat: isCreatorChat,
+                                    lastMessage: _formatPreview(lastMessage),
+                                    timeLabel: _formatTimeAgo(lastMessageAt),
+                                    isOnline: _isActuallyOnline(lastSeen),
+                                    activityLabel: _formatActivity(lastSeen),
+                                    sentByMe: sentByMe,
+                                    isDeliveredToOther: isDeliveredToOther,
+                                    isReadByOther: isReadByOther,
+                                    isSelected: isDesktopWide &&
+                                        _selectedDesktopChatId == chatId,
+                                    onTap: () {
+                                      HapticFeedback.selectionClick();
+                                      if (isDesktopWide) {
+                                        _selectDesktopChat(
+                                          chatId: chatId,
+                                          meta: meta,
+                                        );
+                                      } else {
+                                        context.push(
+                                            AppRoutes.chatDetailPath(chatId));
+                                      }
+                                    },
+                                    onLongPress: () => _showChatActions(
+                                      chatId: chatId,
+                                      isHidden: isArchived,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        }),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+
+          if (!isDesktopWide) {
+            return inboxContent;
+          }
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 16, bottom: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 4,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 500),
+                      child: inboxContent,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  flex: 6,
+                  child: _selectedDesktopChatId == null
+                      ? _DesktopInboxPanel(
+                          filterLabel: _desktopFilterLabel(_filter),
+                          onDiscover: () => context.push(AppRoutes.search),
+                          onCompose: () => context.push(AppRoutes.search),
+                        )
+                      : _DesktopChatShell(
+                          key: ValueKey(_selectedDesktopChatId),
+                          chatId: _selectedDesktopChatId!,
+                          title: _selectedDesktopMeta?['title'] as String? ??
+                              'Chat',
+                          avatarUrl:
+                              _selectedDesktopMeta?['avatarUrl'] as String?,
+                          activityLabel: _formatActivity(
+                              _selectedDesktopMeta?['lastSeen'] as Timestamp?),
+                          onBackToList: () {
+                            setState(() {
+                              _selectedDesktopChatId = null;
+                              _selectedDesktopMeta = null;
+                            });
+                          },
+                        ),
+                ),
+              ],
             ),
-          ),
-        ],
+          );
+        },
       ),
     );
+  }
+
+  String _desktopFilterLabel(_InboxFilter filter) {
+    switch (filter) {
+      case _InboxFilter.unread:
+        return 'Unread';
+      case _InboxFilter.creators:
+        return 'Creators';
+      case _InboxFilter.archived:
+        return 'Archived';
+      case _InboxFilter.all:
+        return 'All';
+    }
+  }
+
+  void _selectDesktopChat({
+    required String chatId,
+    required Map<String, dynamic> meta,
+  }) {
+    setState(() {
+      _selectedDesktopChatId = chatId;
+      _selectedDesktopMeta = meta;
+    });
   }
 
   Widget _buildFilterChip(_InboxFilter filter, String label) {
@@ -659,6 +790,310 @@ class _ChatListPageState extends State<ChatListPage> {
 
 enum _InboxFilter { all, unread, creators, archived }
 
+class _DesktopChatShell extends StatelessWidget {
+  const _DesktopChatShell({
+    super.key,
+    required this.chatId,
+    required this.title,
+    required this.avatarUrl,
+    required this.activityLabel,
+    required this.onBackToList,
+  });
+
+  final String chatId;
+  final String title;
+  final String? avatarUrl;
+  final String activityLabel;
+  final VoidCallback onBackToList;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF121720) : Colors.white,
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(
+          color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.06),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 26,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.03)
+                  : AppColors.primary.withValues(alpha: 0.05),
+              border: Border(
+                bottom: BorderSide(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.06)
+                      : Colors.black.withValues(alpha: 0.05),
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'Back to inbox',
+                  onPressed: onBackToList,
+                  icon: const Icon(Icons.arrow_back_rounded),
+                ),
+                const SizedBox(width: 6),
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: AppColors.primary,
+                  backgroundImage: avatarUrl != null && avatarUrl!.isNotEmpty
+                      ? NetworkImage(avatarUrl!)
+                      : null,
+                  child: avatarUrl == null || avatarUrl!.isEmpty
+                      ? Text(
+                          title.isNotEmpty ? title[0].toUpperCase() : '?',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        activityLabel,
+                        style: TextStyle(
+                          color: isDark ? Colors.white60 : AppColors.grey,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'Desktop chat',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ChatPage(
+              chatId: chatId,
+              embedded: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DesktopInboxPanel extends StatefulWidget {
+  const _DesktopInboxPanel({
+    required this.filterLabel,
+    required this.onDiscover,
+    required this.onCompose,
+  });
+
+  final String filterLabel;
+  final VoidCallback onDiscover;
+  final VoidCallback onCompose;
+
+  @override
+  State<_DesktopInboxPanel> createState() => _DesktopInboxPanelState();
+}
+
+class _DesktopInboxPanelState extends State<_DesktopInboxPanel> {
+  int _hoveredIndex = -1;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const SizedBox(height: 14),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Theme.of(context)
+                  .colorScheme
+                  .surfaceContainerHighest
+                  .withValues(alpha: 0.34),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Desktop Inbox',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Your current focus is ${widget.filterLabel.toLowerCase()} chats. Use the extra room to keep conversations and discovery moving together.',
+                  style: const TextStyle(
+                    color: AppColors.grey,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                _desktopAction(
+                  index: 0,
+                  icon: Icons.travel_explore_rounded,
+                  title: 'Discover people to message',
+                  subtitle:
+                      'Jump into profiles, pages, and fresh conversations.',
+                  onTap: widget.onDiscover,
+                ),
+                const SizedBox(height: 12),
+                _desktopAction(
+                  index: 1,
+                  icon: Icons.edit_rounded,
+                  title: 'Compose a new message',
+                  subtitle:
+                      'Use search to start a direct or creator conversation.',
+                  onTap: widget.onCompose,
+                ),
+                const SizedBox(height: 18),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Desktop feel',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Hover targets, wider reading space, and a calmer two-pane inbox make the social flow feel more natural on Windows.',
+                        style: TextStyle(
+                          color: AppColors.grey,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _desktopAction({
+    required int index,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    final hovered = _hoveredIndex == index;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hoveredIndex = index),
+      onExit: (_) => setState(() => _hoveredIndex = -1),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          color: hovered
+              ? AppColors.primary.withValues(alpha: 0.10)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(22),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(icon, color: AppColors.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          style: const TextStyle(
+                            color: AppColors.grey,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _RecentChatsRow extends StatelessWidget {
   const _RecentChatsRow({
     required this.docs,
@@ -707,8 +1142,9 @@ class _RecentChatsRow extends StatelessWidget {
                         children: [
                           CircleAvatar(
                             radius: 28,
-                            backgroundColor:
-                                Theme.of(context).dividerColor.withValues(alpha: 0.6),
+                            backgroundColor: Theme.of(context)
+                                .dividerColor
+                                .withValues(alpha: 0.6),
                             child: CircleAvatar(
                               radius: 25,
                               backgroundColor: AppColors.primary,
@@ -739,8 +1175,8 @@ class _RecentChatsRow extends StatelessWidget {
                                   color: Colors.greenAccent,
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color:
-                                        Theme.of(context).scaffoldBackgroundColor,
+                                    color: Theme.of(context)
+                                        .scaffoldBackgroundColor,
                                     width: 2,
                                   ),
                                 ),
@@ -784,6 +1220,7 @@ class _ChatPreviewCard extends StatelessWidget {
     required this.sentByMe,
     required this.isDeliveredToOther,
     required this.isReadByOther,
+    this.isSelected = false,
     required this.onTap,
     required this.onLongPress,
   });
@@ -799,6 +1236,7 @@ class _ChatPreviewCard extends StatelessWidget {
   final bool sentByMe;
   final bool isDeliveredToOther;
   final bool isReadByOther;
+  final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
@@ -807,6 +1245,7 @@ class _ChatPreviewCard extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
+        mouseCursor: SystemMouseCursors.click,
         onTap: onTap,
         onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(24),
@@ -815,15 +1254,19 @@ class _ChatPreviewCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: isUnread
                 ? AppColors.primary.withValues(alpha: 0.08)
-                : Theme.of(context)
-                    .colorScheme
-                    .surfaceContainerHighest
-                    .withValues(alpha: 0.28),
+                : isSelected
+                    ? AppColors.primary.withValues(alpha: 0.10)
+                    : Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest
+                        .withValues(alpha: 0.28),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
               color: isUnread
                   ? AppColors.primary.withValues(alpha: 0.24)
-                  : Colors.transparent,
+                  : isSelected
+                      ? AppColors.primary.withValues(alpha: 0.20)
+                      : Colors.transparent,
             ),
           ),
           child: Row(
@@ -888,12 +1331,10 @@ class _ChatPreviewCard extends StatelessWidget {
                             timeLabel,
                             style: TextStyle(
                               fontSize: 12,
-                              fontWeight: isUnread
-                                  ? FontWeight.w700
-                                  : FontWeight.w600,
-                              color: isUnread
-                                  ? AppColors.primary
-                                  : AppColors.grey,
+                              fontWeight:
+                                  isUnread ? FontWeight.w700 : FontWeight.w600,
+                              color:
+                                  isUnread ? AppColors.primary : AppColors.grey,
                             ),
                           ),
                       ],
@@ -945,7 +1386,9 @@ class _ChatPreviewCard extends StatelessWidget {
                                         ? FontWeight.w700
                                         : FontWeight.w500,
                                     color: isUnread
-                                        ? Theme.of(context).colorScheme.onSurface
+                                        ? Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
                                         : AppColors.grey,
                                   ),
                                 ),

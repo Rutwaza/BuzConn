@@ -168,9 +168,13 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                 child: const Icon(Icons.auto_awesome, color: Colors.white),
               ),
               const SizedBox(height: 12),
-              Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
-              Text(message, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.grey)),
+              Text(message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.grey)),
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -186,7 +190,8 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                       onPressed: () {
                         Navigator.of(context).pop();
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Premium upgrade is coming soon!')),
+                          const SnackBar(
+                              content: Text('Premium upgrade is coming soon!')),
                         );
                       },
                       child: const Text('Go Premium'),
@@ -205,7 +210,8 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
     if (!_isSelf) return;
     final count = await _activeBusinessCount();
     if (count >= _maxBusinesses) {
-      _showPremiumDialog('Go Premium', 'Free creators can run up to 2 active pages. Upgrade to add more.');
+      _showPremiumDialog('Go Premium',
+          'Free creators can run up to 2 active pages. Upgrade to add more.');
       return;
     }
     if (!mounted) return;
@@ -213,64 +219,13 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
   }
 
   Future<void> _setBusinessActive(String businessId, bool isActive) async {
-    await FirebaseFirestore.instance.collection('businesses').doc(businessId).update({
+    await FirebaseFirestore.instance
+        .collection('businesses')
+        .doc(businessId)
+        .update({
       'isActive': isActive,
       'updatedAt': FieldValue.serverTimestamp(),
     });
-  }
-
-  void _showEditDialog(String businessId, Map<String, dynamic> data) {
-    final nameController = TextEditingController(text: (data['name'] ?? '').toString());
-    final descController = TextEditingController(text: (data['description'] ?? '').toString());
-    final phoneController = TextEditingController(text: (data['phone'] ?? '').toString());
-    final emailController = TextEditingController(text: (data['email'] ?? '').toString());
-    final mapsController = TextEditingController(text: (data['googleMapsLink'] ?? '').toString());
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Page'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Page Name')),
-              const SizedBox(height: 8),
-              TextField(controller: descController, maxLines: 3, decoration: const InputDecoration(labelText: 'Description')),
-              const SizedBox(height: 8),
-              TextField(controller: phoneController, decoration: const InputDecoration(labelText: 'Phone')),
-              const SizedBox(height: 8),
-              TextField(controller: emailController, decoration: const InputDecoration(labelText: 'Email')),
-              const SizedBox(height: 8),
-              TextField(controller: mapsController, decoration: const InputDecoration(labelText: 'Google Maps Link')),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () async {
-              final newName = nameController.text.trim();
-              await FirebaseFirestore.instance.collection('businesses').doc(businessId).update({
-                'name': newName,
-                'description': descController.text.trim(),
-                'phone': phoneController.text.trim(),
-                'email': emailController.text.trim(),
-                'googleMapsLink': mapsController.text.trim(),
-                'updatedAt': FieldValue.serverTimestamp(),
-              });
-              final posts = await FirebaseFirestore.instance.collection('posts').where('businessId', isEqualTo: businessId).get();
-              final batch = FirebaseFirestore.instance.batch();
-              for (final doc in posts.docs) {
-                batch.update(doc.reference, {'businessName': newName});
-              }
-              await batch.commit();
-              if (mounted) Navigator.of(context).pop();
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _pickLogo(String businessId) async {
@@ -283,12 +238,18 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
         path: '$businessId/logo_${DateTime.now().millisecondsSinceEpoch}.jpg',
         bytes: await _selectedLogo!.readAsBytes(),
       );
-      await FirebaseFirestore.instance.collection('businesses').doc(businessId).update({
+      await FirebaseFirestore.instance
+          .collection('businesses')
+          .doc(businessId)
+          .update({
         if (url != null) 'imageUrl': url,
         'updatedAt': FieldValue.serverTimestamp(),
       });
       if (url != null) {
-        final posts = await FirebaseFirestore.instance.collection('posts').where('businessId', isEqualTo: businessId).get();
+        final posts = await FirebaseFirestore.instance
+            .collection('posts')
+            .where('businessId', isEqualTo: businessId)
+            .get();
         final batch = FirebaseFirestore.instance.batch();
         for (final doc in posts.docs) {
           batch.update(doc.reference, {'businessImageUrl': url});
@@ -297,7 +258,8 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Logo upload failed: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Logo upload failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _selectedLogo = null);
@@ -322,7 +284,10 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
       body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance.collection('users').doc(widget.userId).snapshots(),
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(widget.userId)
+            .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -338,139 +303,112 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
           final phone = (data['phone'] ?? '').toString();
           final email = (data['email'] ?? '').toString();
 
+          final isDesktop = MediaQuery.of(context).size.width >= 1200;
+
+          final profileHeader = _buildProfileHeader(
+            context: context,
+            name: name,
+            imageUrl: imageUrl,
+            bio: bio,
+            phone: phone,
+            isDark: isDark,
+            currentUserId: currentUserId,
+          );
+
+          final profileAbout = (email.isNotEmpty || phone.isNotEmpty)
+              ? _buildProfileAbout(
+                  context: context, email: email, phone: phone, isDark: isDark)
+              : null;
+
+          final profileTabs = ValueListenableBuilder<int>(
+            valueListenable: _profileTabNotifier,
+            builder: (context, currentTab, _) {
+              return Column(
+                children: [
+                  _profileTabs(currentTab),
+                  const SizedBox(height: 16),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.topCenter,
+                    child: Column(
+                      children: [
+                        _animatedProfilePane(
+                          index: 0,
+                          child: TickerMode(
+                            enabled: currentTab == 0,
+                            child: _postsSection(context),
+                          ),
+                        ),
+                        _animatedProfilePane(
+                          index: 1,
+                          child: TickerMode(
+                            enabled: currentTab == 1,
+                            child: _pagesSection(context),
+                          ),
+                        ),
+                        _animatedProfilePane(
+                          index: 2,
+                          child: TickerMode(
+                            enabled: currentTab == 2,
+                            child: _hubSection(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+
+          if (!isDesktop) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  profileHeader,
+                  const SizedBox(height: 14),
+                  if (profileAbout != null) profileAbout,
+                  if (profileAbout != null) const SizedBox(height: 22),
+                  profileTabs,
+                ],
+              ),
+            );
+          }
+
           return SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-            child: Column(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF151A24) : Colors.white,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
-                  ),
+                SizedBox(
+                  width: 340,
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _circleAction(Icons.call, phone.isEmpty ? null : () => _dialPhone(context, phone)),
-                          const SizedBox(width: 18),
-                          CircleAvatar(
-                            radius: 54,
-                            backgroundColor: AppColors.primary,
-                            backgroundImage: imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null,
-                            child: imageUrl.isEmpty
-                                ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.bold))
-                                : null,
-                          ),
-                          const SizedBox(width: 18),
-                          _circleAction(Icons.message, FirebaseAuth.instance.currentUser == null ? null : () => _startChat(context)),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Text(name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                      if (bio.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(bio, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.grey)),
-                      ],
-                      const SizedBox(height: 12),
-                      _profileStatsRow(context),
-                      const SizedBox(height: 14),
-                      if (_isSelf)
-                        OutlinedButton(
-                          onPressed: () => context.push(AppRoutes.profile),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.primary,
-                            side: const BorderSide(color: AppColors.primary),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          ),
-                          child: const Text('Edit Profile'),
-                        ),
-                      if (!_isSelf && currentUserId != null)
-                        StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                          stream: _followDocStream(currentUserId, widget.userId),
-                          builder: (context, followSnap) {
-                            final isFollowing = followSnap.data?.exists == true;
-                            return ElevatedButton(
-                              onPressed: () => isFollowing ? _unfollowUser(currentUserId, widget.userId) : _followUser(currentUserId, widget.userId),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: isFollowing ? Colors.transparent : AppColors.primary,
-                                foregroundColor: isFollowing ? AppColors.primary : Colors.white,
-                                elevation: 0,
-                                side: isFollowing ? const BorderSide(color: AppColors.primary) : BorderSide.none,
-                              ),
-                              child: Text(isFollowing ? 'Following' : 'Follow'),
-                            );
-                          },
-                        ),
+                      profileHeader,
+                      if (profileAbout != null) const SizedBox(height: 14),
+                      if (profileAbout != null) profileAbout,
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
-                if (email.isNotEmpty || phone.isNotEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF151A24) : Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('About', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 10),
-                        if (email.isNotEmpty) _aboutRow(Icons.email_outlined, email),
-                        if (email.isNotEmpty && phone.isNotEmpty) const SizedBox(height: 8),
-                        if (phone.isNotEmpty) _aboutRow(Icons.phone_outlined, phone),
-                      ],
-                    ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      profileTabs,
+                    ],
                   ),
-                const SizedBox(height: 22),
-                ValueListenableBuilder<int>(
-                  valueListenable: _profileTabNotifier,
-                  builder: (context, currentTab, _) {
-                    return Column(
-                      children: [
-                        _profileTabs(currentTab),
-                        const SizedBox(height: 16),
-                        AnimatedSize(
-                          duration: const Duration(milliseconds: 220),
-                          curve: Curves.easeOutCubic,
-                          alignment: Alignment.topCenter,
-                          child: Column(
-                            children: [
-                              _animatedProfilePane(
-                                index: 0,
-                                child: TickerMode(
-                                  enabled: currentTab == 0,
-                                  child: _postsSection(context),
-                                ),
-                              ),
-                              _animatedProfilePane(
-                                index: 1,
-                                child: TickerMode(
-                                  enabled: currentTab == 1,
-                                  child: _pagesSection(context),
-                                ),
-                              ),
-                              _animatedProfilePane(
-                                index: 2,
-                                child: TickerMode(
-                                  enabled: currentTab == 2,
-                                  child: _hubSection(context),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+                ),
+                const SizedBox(width: 16),
+                SizedBox(
+                  width: 300,
+                  child: _buildProfileRecommendations(
+                    currentUserId: currentUserId,
+                  ),
                 ),
               ],
             ),
@@ -539,44 +477,60 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
       children: [
         Icon(icon, size: 18),
         const SizedBox(width: 8),
-        Expanded(child: Text(value, style: const TextStyle(color: AppColors.grey))),
+        Expanded(
+            child: Text(value, style: const TextStyle(color: AppColors.grey))),
       ],
     );
   }
 
   Widget _profileStatsRow(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('user_follows').where('followingId', isEqualTo: widget.userId).snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('user_follows')
+          .where('followingId', isEqualTo: widget.userId)
+          .snapshots(),
       builder: (context, followersSnap) {
         final followersCount = followersSnap.data?.docs.length ?? 0;
         return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance.collection('user_follows').where('followerId', isEqualTo: widget.userId).snapshots(),
+          stream: FirebaseFirestore.instance
+              .collection('user_follows')
+              .where('followerId', isEqualTo: widget.userId)
+              .snapshots(),
           builder: (context, followingSnap) {
             final followingUsers = followingSnap.data?.docs.length ?? 0;
             return StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('page_follows').where('followerId', isEqualTo: widget.userId).snapshots(),
+              stream: FirebaseFirestore.instance
+                  .collection('page_follows')
+                  .where('followerId', isEqualTo: widget.userId)
+                  .snapshots(),
               builder: (context, pageFollowingSnap) {
                 final followingPages = pageFollowingSnap.data?.docs.length ?? 0;
                 return Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     GestureDetector(
-                      onTap: () => context.push(AppRoutes.userFollowersPath(widget.userId)),
+                      onTap: () => context
+                          .push(AppRoutes.userFollowersPath(widget.userId)),
                       child: _statPill('Followers', followersCount),
                     ),
                     const SizedBox(width: 12),
                     GestureDetector(
-                      onTap: () => context.push(AppRoutes.userFollowingPath(widget.userId)),
+                      onTap: () => context
+                          .push(AppRoutes.userFollowingPath(widget.userId)),
                       onLongPress: () {
-                        final isDark = Theme.of(context).brightness == Brightness.dark;
+                        final isDark =
+                            Theme.of(context).brightness == Brightness.dark;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('$followingUsers users, $followingPages pages'),
-                            backgroundColor: isDark ? const Color(0xFF151A24) : null,
+                            content: Text(
+                                '$followingUsers users, $followingPages pages'),
+                            backgroundColor:
+                                isDark ? const Color(0xFF151A24) : null,
                           ),
                         );
                       },
-                      child: _statPill('Following', followingUsers + followingPages),
+                      child: _statPill(
+                          'Following', followingUsers + followingPages),
                     ),
                   ],
                 );
@@ -600,7 +554,222 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
       child: Column(
         children: [
           Text('$value', style: const TextStyle(fontWeight: FontWeight.bold)),
-          Text(label, style: const TextStyle(fontSize: 11, color: AppColors.grey)),
+          Text(label,
+              style: const TextStyle(fontSize: 11, color: AppColors.grey)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileHeader({
+    required BuildContext context,
+    required String name,
+    required String imageUrl,
+    required String bio,
+    required String phone,
+    required bool isDark,
+    required String? currentUserId,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF151A24) : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _circleAction(Icons.call,
+                  phone.isEmpty ? null : () => _dialPhone(context, phone)),
+              const SizedBox(width: 18),
+              CircleAvatar(
+                radius: 54,
+                backgroundColor: AppColors.primary,
+                backgroundImage:
+                    imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null,
+                child: imageUrl.isEmpty
+                    ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 30,
+                            fontWeight: FontWeight.bold))
+                    : null,
+              ),
+              const SizedBox(width: 18),
+              _circleAction(
+                  Icons.message,
+                  FirebaseAuth.instance.currentUser == null
+                      ? null
+                      : () => _startChat(context)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(name,
+              textAlign: TextAlign.center,
+              style:
+                  const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          if (bio.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(bio,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.grey)),
+          ],
+          const SizedBox(height: 12),
+          _profileStatsRow(context),
+          const SizedBox(height: 14),
+          if (_isSelf)
+            OutlinedButton(
+              onPressed: () => context.push(AppRoutes.profile),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: const BorderSide(color: AppColors.primary),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('Edit Profile'),
+            ),
+          if (!_isSelf && currentUserId != null)
+            StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: _followDocStream(currentUserId, widget.userId),
+              builder: (context, followSnap) {
+                final isFollowing = followSnap.data?.exists == true;
+                return ElevatedButton(
+                  onPressed: () => isFollowing
+                      ? _unfollowUser(currentUserId, widget.userId)
+                      : _followUser(currentUserId, widget.userId),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor:
+                        isFollowing ? Colors.transparent : AppColors.primary,
+                    foregroundColor:
+                        isFollowing ? AppColors.primary : Colors.white,
+                    elevation: 0,
+                    side: isFollowing
+                        ? const BorderSide(color: AppColors.primary)
+                        : BorderSide.none,
+                  ),
+                  child: Text(isFollowing ? 'Following' : 'Follow'),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileAbout({
+    required BuildContext context,
+    required String email,
+    required String phone,
+    required bool isDark,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF151A24) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('About',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 10),
+          if (email.isNotEmpty) _aboutRow(Icons.email_outlined, email),
+          if (email.isNotEmpty && phone.isNotEmpty) const SizedBox(height: 8),
+          if (phone.isNotEmpty) _aboutRow(Icons.phone_outlined, phone),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileRecommendations({String? currentUserId}) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFF151A24)
+            : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Colors.white10
+                : Colors.black12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Who to follow',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .where('uid', isNotEqualTo: currentUserId ?? '')
+                .limit(5)
+                .snapshots(),
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final docs = snap.data?.docs ?? [];
+              if (docs.isEmpty) {
+                return const Text('No suggestions right now.',
+                    style: TextStyle(color: AppColors.grey));
+              }
+              return Column(
+                children: docs.map((doc) {
+                  final user = doc.data() as Map<String, dynamic>;
+                  final userName = (user['name'] ?? 'Creator').toString();
+                  final userId = doc.id;
+                  final avatar = (user['imageUrl'] ?? '').toString();
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: AppColors.lightGrey,
+                          backgroundImage:
+                              avatar.isNotEmpty ? NetworkImage(avatar) : null,
+                          child: avatar.isEmpty
+                              ? Text(
+                                  userName.isNotEmpty
+                                      ? userName[0].toUpperCase()
+                                      : '?',
+                                  style: const TextStyle(color: Colors.white))
+                              : null,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                            child: Text(userName,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600))),
+                        FilledButton(
+                          onPressed:
+                              currentUserId == null || currentUserId == userId
+                                  ? null
+                                  : () => _followUser(currentUserId, userId),
+                          style: FilledButton.styleFrom(
+                              minimumSize: const Size(70, 30)),
+                          child: const Text('Follow'),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -609,12 +778,17 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
   Widget _pagesSection(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('businesses').where('ownerId', isEqualTo: widget.userId).snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('businesses')
+          .where('ownerId', isEqualTo: widget.userId)
+          .snapshots(),
       builder: (context, snapshot) {
         final docs = [...(snapshot.data?.docs ?? [])];
         docs.sort((a, b) {
-          final aActive = ((a.data() as Map<String, dynamic>)['isActive'] != false);
-          final bActive = ((b.data() as Map<String, dynamic>)['isActive'] != false);
+          final aActive =
+              ((a.data() as Map<String, dynamic>)['isActive'] != false);
+          final bActive =
+              ((b.data() as Map<String, dynamic>)['isActive'] != false);
           if (aActive != bActive) return aActive ? -1 : 1;
           return 0;
         });
@@ -623,9 +797,17 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
           children: [
             Row(
               children: [
-                Text('Pages', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+                Text('Pages',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w700)),
                 const Spacer(),
-                if (_isSelf) TextButton.icon(onPressed: _createPage, icon: const Icon(Icons.add_circle_outline), label: const Text('Add page')),
+                if (_isSelf)
+                  TextButton.icon(
+                      onPressed: _createPage,
+                      icon: const Icon(Icons.add_circle_outline),
+                      label: const Text('Add page')),
               ],
             ),
             const SizedBox(height: 10),
@@ -636,10 +818,13 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                 decoration: BoxDecoration(
                   color: isDark ? const Color(0xFF151A24) : Colors.white,
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+                  border: Border.all(
+                      color: isDark ? Colors.white10 : Colors.black12),
                 ),
                 child: Text(
-                  _isSelf ? 'No pages yet. Build your first creator page.' : 'No pages yet',
+                  _isSelf
+                      ? 'No pages yet. Build your first creator page.'
+                      : 'No pages yet',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: AppColors.grey),
                 ),
@@ -659,14 +844,16 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                   final isActive = data['isActive'] != false;
                   final isVerified = data['isVerified'] == true;
                   return InkWell(
-                    onTap: () => context.push(AppRoutes.businessProfilePath(doc.id)),
+                    onTap: () =>
+                        context.push(AppRoutes.businessProfilePath(doc.id)),
                     borderRadius: BorderRadius.circular(20),
                     child: Ink(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
                         color: isDark ? const Color(0xFF151A24) : Colors.white,
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+                        border: Border.all(
+                            color: isDark ? Colors.white10 : Colors.black12),
                       ),
                       child: Row(
                         children: [
@@ -678,9 +865,16 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                               child: imageUrl.isNotEmpty
                                   ? Image.network(imageUrl, fit: BoxFit.cover)
                                   : Container(
-                                      color: AppColors.primary.withOpacity(0.15),
+                                      color:
+                                          AppColors.primary.withOpacity(0.15),
                                       alignment: Alignment.center,
-                                      child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 24)),
+                                      child: Text(
+                                          name.isNotEmpty
+                                              ? name[0].toUpperCase()
+                                              : '?',
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 24)),
                                     ),
                             ),
                           ),
@@ -691,24 +885,43 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                               children: [
                                 Row(
                                   children: [
-                                    Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16))),
-                                    if (isVerified) const Icon(Icons.verified, color: Color(0xFF61D1ED), size: 18),
+                                    Expanded(
+                                        child: Text(name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 16))),
+                                    if (isVerified)
+                                      const Icon(Icons.verified,
+                                          color: Color(0xFF61D1ED), size: 18),
                                   ],
                                 ),
                                 if (category.isNotEmpty) ...[
                                   const SizedBox(height: 4),
-                                  Text(category, style: const TextStyle(color: AppColors.grey, fontSize: 12)),
+                                  Text(category,
+                                      style: const TextStyle(
+                                          color: AppColors.grey, fontSize: 12)),
                                 ],
                                 const SizedBox(height: 8),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
                                   decoration: BoxDecoration(
-                                    color: (isActive ? AppColors.primary : Colors.orange).withOpacity(0.12),
+                                    color: (isActive
+                                            ? AppColors.primary
+                                            : Colors.orange)
+                                        .withOpacity(0.12),
                                     borderRadius: BorderRadius.circular(999),
                                   ),
                                   child: Text(
                                     isActive ? 'Active' : 'Hidden',
-                                    style: TextStyle(color: isActive ? AppColors.primary : Colors.orange, fontSize: 11, fontWeight: FontWeight.w700),
+                                    style: TextStyle(
+                                        color: isActive
+                                            ? AppColors.primary
+                                            : Colors.orange,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700),
                                   ),
                                 ),
                               ],
@@ -717,16 +930,33 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                           if (_isSelf)
                             PopupMenuButton<String>(
                               onSelected: (value) {
-                                if (value == 'edit') _showEditDialog(doc.id, data);
+                                if (value == 'edit') {
+                                  context.push(
+                                    '${AppRoutes.businessSetup}?businessId=${doc.id}',
+                                  );
+                                }
                                 if (value == 'logo') _pickLogo(doc.id);
-                                if (value == 'toggle') _setBusinessActive(doc.id, !isActive);
-                                if (value == 'verify') _showPremiumDialog('Premium Required', 'Verification is available on Premium. Upgrade when you are ready.');
+                                if (value == 'toggle') {
+                                  _setBusinessActive(doc.id, !isActive);
+                                }
+                                if (value == 'verify') {
+                                  _showPremiumDialog('Premium Required',
+                                      'Verification is available on Premium. Upgrade when you are ready.');
+                                }
                               },
                               itemBuilder: (context) => [
-                                const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                                const PopupMenuItem(value: 'logo', child: Text('Update logo')),
-                                PopupMenuItem(value: 'toggle', child: Text(isActive ? 'Hide page' : 'Unhide page')),
-                                const PopupMenuItem(value: 'verify', child: Text('Verify (Premium)')),
+                                const PopupMenuItem(
+                                    value: 'edit', child: Text('Edit')),
+                                const PopupMenuItem(
+                                    value: 'logo', child: Text('Update logo')),
+                                PopupMenuItem(
+                                    value: 'toggle',
+                                    child: Text(isActive
+                                        ? 'Hide page'
+                                        : 'Unhide page')),
+                                const PopupMenuItem(
+                                    value: 'verify',
+                                    child: Text('Verify (Premium)')),
                               ],
                             ),
                         ],
@@ -805,7 +1035,9 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
         final docs = snapshot.data?.docs ?? [];
         if (docs.isEmpty) {
           return _emptyCard(
-            _isSelf ? 'No posts yet. Start posting to build your Spotlight.' : 'No posts yet.',
+            _isSelf
+                ? 'No posts yet. Start posting to build your Spotlight.'
+                : 'No posts yet.',
           );
         }
 
@@ -965,7 +1197,11 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
       children: [
         Row(
           children: [
-            Text(_isSelf ? 'Collections' : 'Top creators liked', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+            Text(_isSelf ? 'Collections' : 'Top creators liked',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w700)),
             const Spacer(),
             if (_isSelf)
               Wrap(
@@ -982,7 +1218,10 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
           ],
         ),
         const SizedBox(height: 12),
-        if (!_isSelf || _collectionTab == 0) _likedBusinessesGrid() else _savedPostsGrid(),
+        if (!_isSelf || _collectionTab == 0)
+          _likedBusinessesGrid()
+        else
+          _savedPostsGrid(),
       ],
     );
   }
@@ -1000,7 +1239,10 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
 
   Widget _likedBusinessesGrid() {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('posts').where('likes', arrayContains: widget.userId).snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('posts')
+          .where('likes', arrayContains: widget.userId)
+          .snapshots(),
       builder: (context, snapshot) {
         final docs = snapshot.data?.docs ?? [];
         if (docs.isEmpty) return _emptyCard('No creator activity yet.');
@@ -1021,10 +1263,13 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: items.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
           itemBuilder: (context, index) => InkWell(
-            onTap: () => context.push(AppRoutes.businessProfilePath(items[index]['id']!)),
-            child: _squarePreview(items[index]['imageUrl']!, items[index]['name']!),
+            onTap: () => context
+                .push(AppRoutes.businessProfilePath(items[index]['id']!)),
+            child: _squarePreview(
+                items[index]['imageUrl']!, items[index]['name']!),
           ),
         );
       },
@@ -1035,7 +1280,12 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return _emptyCard('Sign in to see saved posts.');
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('users').doc(currentUser.uid).collection('favorites').orderBy('createdAt', descending: true).snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('favorites')
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
       builder: (context, snapshot) {
         final docs = snapshot.data?.docs ?? [];
         if (docs.isEmpty) return _emptyCard('No saved posts yet.');
@@ -1043,16 +1293,24 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: docs.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
           itemBuilder: (context, index) => StreamBuilder<DocumentSnapshot>(
-            stream: FirebaseFirestore.instance.collection('posts').doc(docs[index].id).snapshots(),
+            stream: FirebaseFirestore.instance
+                .collection('posts')
+                .doc(docs[index].id)
+                .snapshots(),
             builder: (context, postSnap) {
               if (!postSnap.hasData || !postSnap.data!.exists) {
-                return InkWell(onTap: () => _unsave(docs[index].id), child: _squarePreview('', 'Deleted'));
+                return InkWell(
+                    onTap: () => _unsave(docs[index].id),
+                    child: _squarePreview('', 'Deleted'));
               }
               final post = Post.fromFirestore(postSnap.data!);
               return InkWell(
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => business_post.PostDetailPage(post: post, initialMediaIndex: 0))),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => business_post.PostDetailPage(
+                        post: post, initialMediaIndex: 0))),
                 child: Stack(
                   children: [
                     Positioned.fill(child: _savedPreview(post)),
@@ -1067,7 +1325,8 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                           borderRadius: BorderRadius.circular(999),
                           child: const Padding(
                             padding: EdgeInsets.all(6),
-                            child: Icon(Icons.bookmark_remove, size: 16, color: Colors.white),
+                            child: Icon(Icons.bookmark_remove,
+                                size: 16, color: Colors.white),
                           ),
                         ),
                       ),
@@ -1092,7 +1351,9 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
       ),
-      child: Text(text, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.grey)),
+      child: Text(text,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: AppColors.grey)),
     );
   }
 
@@ -1101,10 +1362,14 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
       decoration: BoxDecoration(
         color: AppColors.lightGrey,
         borderRadius: BorderRadius.circular(12),
-        image: imageUrl.isNotEmpty ? DecorationImage(image: NetworkImage(imageUrl), fit: BoxFit.cover) : null,
+        image: imageUrl.isNotEmpty
+            ? DecorationImage(image: NetworkImage(imageUrl), fit: BoxFit.cover)
+            : null,
       ),
       child: imageUrl.isEmpty
-          ? Center(child: Text(fallback.isNotEmpty ? fallback[0].toUpperCase() : '?', style: const TextStyle(fontWeight: FontWeight.bold)))
+          ? Center(
+              child: Text(fallback.isNotEmpty ? fallback[0].toUpperCase() : '?',
+                  style: const TextStyle(fontWeight: FontWeight.bold)))
           : null,
     );
   }
@@ -1128,11 +1393,17 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
         fit: StackFit.expand,
         children: [
           if (previewUrl == null)
-            Container(color: AppColors.lightGrey, child: const Icon(Icons.image_outlined, color: AppColors.grey))
+            Container(
+                color: AppColors.lightGrey,
+                child: const Icon(Icons.image_outlined, color: AppColors.grey))
           else if (isVideo)
             _VideoThumb(url: previewUrl)
           else
-            Image.network(previewUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: AppColors.lightGrey, child: const Icon(Icons.broken_image_outlined))),
+            Image.network(previewUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                    color: AppColors.lightGrey,
+                    child: const Icon(Icons.broken_image_outlined))),
           Positioned(
             left: 0,
             right: 0,
@@ -1140,13 +1411,19 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
             child: Container(
               padding: const EdgeInsets.fromLTRB(8, 20, 8, 8),
               decoration: const BoxDecoration(
-                gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black54]),
+                gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Colors.black54]),
               ),
               child: Text(
                 post.content.isEmpty ? 'Saved post' : post.content,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -1226,14 +1503,16 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.favorite_border, color: Colors.white, size: 12),
+                  const Icon(Icons.favorite_border,
+                      color: Colors.white, size: 12),
                   const SizedBox(width: 4),
                   Text(
                     '${post.likes.length}',
                     style: const TextStyle(color: Colors.white, fontSize: 11),
                   ),
                   const SizedBox(width: 10),
-                  const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 12),
+                  const Icon(Icons.chat_bubble_outline,
+                      color: Colors.white, size: 12),
                   const SizedBox(width: 4),
                   Text(
                     '${post.comments.length}',
@@ -1257,17 +1536,25 @@ class _VideoThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Uint8List?>(
-      future: VideoThumbnail.thumbnailData(video: url, imageFormat: ImageFormat.JPEG, maxWidth: 300, quality: 70),
+      future: VideoThumbnail.thumbnailData(
+          video: url,
+          imageFormat: ImageFormat.JPEG,
+          maxWidth: 300,
+          quality: 70),
       builder: (context, snapshot) {
         final bytes = snapshot.data;
         if (bytes == null) {
-          return Container(color: Colors.black26, child: const Center(child: Icon(Icons.play_circle_fill, color: Colors.white70)));
+          return Container(
+              color: Colors.black26,
+              child: const Center(
+                  child: Icon(Icons.play_circle_fill, color: Colors.white70)));
         }
         return Stack(
           fit: StackFit.expand,
           children: [
             Image.memory(bytes, fit: BoxFit.cover),
-            const Center(child: Icon(Icons.play_circle_fill, color: Colors.white70)),
+            const Center(
+                child: Icon(Icons.play_circle_fill, color: Colors.white70)),
           ],
         );
       },

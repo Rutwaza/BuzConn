@@ -28,10 +28,7 @@ class DefaultFirebaseOptions {
           'you can reconfigure this by running the FlutterFire CLI again.',
         );
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return windows;
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
@@ -68,4 +65,15 @@ class DefaultFirebaseOptions {
     projectId: 'bussinessfinder-327f5',
     storageBucket: 'bussinessfinder-327f5.firebasestorage.app',
   );
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyBMQmHm-I0xpceru34OeC7SWi1X03KsDVk',
+    appId: '1:540337503772:web:e0a91fec12c4b1d4d769d9',
+    messagingSenderId: '540337503772',
+    projectId: 'bussinessfinder-327f5',
+    authDomain: 'bussinessfinder-327f5.firebaseapp.com',
+    storageBucket: 'bussinessfinder-327f5.firebasestorage.app',
+    measurementId: 'G-2XTM398N6D',
+  );
+
 }

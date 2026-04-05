@@ -10,6 +10,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'dart:io';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/services/social_notification_service.dart';
@@ -34,6 +36,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   final PostsRepository _postsRepository = PostsRepository();
   final TextEditingController _commentController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final PageController _reelsPageController = PageController();
   final Map<String, int> _mediaIndexByPostId = {};
   static const int _pageSize = 10;
   final List<Post> _posts = [];
@@ -41,7 +44,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   bool _isLoading = false;
   bool _isRefreshing = false;
   bool _hasMore = true;
-  String _feedMode = 'forYou';
+  String _feedMode =
+      'forYou'; // Default, will be updated based on profile completion
+  bool _showModeTabs = false;
   List<String> _followingPageIds = [];
   List<String> _followingUserIds = [];
   DocumentSnapshot? _followingFallbackLastDoc;
@@ -95,6 +100,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   void dispose() {
     _commentController.dispose();
     _scrollController.dispose();
+    _reelsPageController.dispose();
     _badgeClearedAt.dispose();
     super.dispose();
   }
@@ -103,12 +109,63 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    _loadInitial();
+    _bootstrapFeed();
+  }
+
+  Future<void> _bootstrapFeed() async {
+    final canOpenFeed = await _initializeFeedMode();
+    if (!canOpenFeed || !mounted) return;
+    await _loadInitial();
+  }
+
+  Future<bool> _initializeFeedMode() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return true;
+
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final userData = userDoc.data();
+      final profileCompleted = userData?['profileCompleted'] == true;
+
+      if (!profileCompleted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            context.go(AppRoutes.profile);
+          }
+        });
+        return false;
+      }
+
+      if (mounted) {
+        setState(() {
+          _feedMode = 'reels';
+        });
+      }
+      return true;
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _feedMode = 'forYou';
+        });
+      }
+      return true;
+    }
   }
 
   void _onScroll() {
     if (!_scrollController.hasClients) return;
     final position = _scrollController.position;
+
+    final shouldShowTabs = position.pixels > 80;
+    if (_showModeTabs != shouldShowTabs) {
+      setState(() {
+        _showModeTabs = shouldShowTabs;
+      });
+    }
+
     if (position.pixels >= position.maxScrollExtent - 400) {
       _loadMore();
     }
@@ -118,7 +175,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || userId.isEmpty || user.uid == userId) return;
     final docId = '${user.uid}_$userId';
-    final ref = FirebaseFirestore.instance.collection('user_follows').doc(docId);
+    final ref =
+        FirebaseFirestore.instance.collection('user_follows').doc(docId);
     try {
       if (isFollowing) {
         await ref.delete();
@@ -197,8 +255,10 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       return;
     }
     try {
-      final snap =
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
       final rawMap = snap.data()?['highlightViews'];
       final viewedMap =
           rawMap is Map ? rawMap.cast<String, dynamic>() : <String, dynamic>{};
@@ -221,10 +281,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .set({
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'highlightViews': {
           _highlightStorageKey(creatorKey): postId,
         },
@@ -263,7 +320,15 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
         final snap = await query.get();
         if (snap.docs.isNotEmpty) {
           _lastDoc = snap.docs.last;
-          _appendPosts(snap.docs);
+          if (_feedMode == 'reels') {
+            final videoPosts = snap.docs
+                .map((doc) => Post.fromFirestore(doc))
+                .where((post) => post.media.any((m) => m.isVideo))
+                .toList();
+            _appendFilteredPosts(videoPosts);
+          } else {
+            _appendPosts(snap.docs);
+          }
         }
         if (snap.docs.length < _pageSize) {
           _hasMore = false;
@@ -347,9 +412,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
 
   double _postScore(Post post) {
     final ageHours = DateTime.now().difference(post.createdAt).inMinutes / 60;
-    final freshnessBoost = ageHours <= 0
-        ? 3.0
-        : (72 - ageHours.clamp(0, 72)) / 24;
+    final freshnessBoost =
+        ageHours <= 0 ? 3.0 : (72 - ageHours.clamp(0, 72)) / 24;
     final engagementBoost =
         (post.likes.length * 0.18) + (post.comments.length * 0.34);
     final mediaBoost = post.media.isNotEmpty ? 0.4 : 0.0;
@@ -373,6 +437,59 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       _feedMode = mode;
     });
     _loadInitial();
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  Widget _buildFeedModeTabs() {
+    return Container(
+      height: 56,
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: Theme.of(context).colorScheme.surface.withOpacity(0.95),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _FeedTabButton(
+            label: 'For You',
+            isActive: _feedMode == 'forYou',
+            onTap: () => _toggleFeedMode('forYou'),
+          ),
+          _FeedTabButton(
+            label: 'Reels',
+            isActive: _feedMode == 'reels',
+            onTap: () => _toggleFeedMode('reels'),
+          ),
+          _FeedTabButton(
+            label: 'Following',
+            isActive: _feedMode == 'following',
+            onTap: () => _toggleFeedMode('following'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _appendFilteredPosts(List<Post> nextPosts) {
+    final existingIds = _posts.map((p) => p.id).toSet();
+    final itemstoAdd =
+        nextPosts.where((post) => !existingIds.contains(post.id)).toList();
+    if (itemstoAdd.isEmpty) return;
+    setState(() {
+      _posts.addAll(itemstoAdd);
+      _posts.sort(_comparePostsForDisplay);
+    });
   }
 
   Future<void> _refreshFeed() async {
@@ -491,8 +608,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    String displayName =
-        user.displayName?.trim().isNotEmpty == true ? user.displayName!.trim() : 'You';
+    String displayName = user.displayName?.trim().isNotEmpty == true
+        ? user.displayName!.trim()
+        : 'You';
     try {
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
@@ -513,7 +631,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     );
 
     _replacePost(postId, (current) {
-      final comments = List<Comment>.from(current.comments)..add(optimisticComment);
+      final comments = List<Comment>.from(current.comments)
+        ..add(optimisticComment);
       return Post(
         id: current.id,
         ownerId: current.ownerId,
@@ -550,8 +669,10 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
         videoUrl: current.videoUrl,
         media: current.media,
         googleMapsLink: current.googleMapsLink,
-        viewCount: field == 'viewCount' ? current.viewCount + 1 : current.viewCount,
-        playCount: field == 'playCount' ? current.playCount + 1 : current.playCount,
+        viewCount:
+            field == 'viewCount' ? current.viewCount + 1 : current.viewCount,
+        playCount:
+            field == 'playCount' ? current.playCount + 1 : current.playCount,
         likes: current.likes,
         comments: current.comments,
         createdAt: current.createdAt,
@@ -588,8 +709,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     }
     if (_scrollController.hasClients && visiblePosts.length > 1) {
       final ratio = index / (visiblePosts.length - 1);
-      final target =
-          _scrollController.position.maxScrollExtent * ratio;
+      final target = _scrollController.position.maxScrollExtent * ratio;
       _scrollController.animateTo(
         target.clamp(0, _scrollController.position.maxScrollExtent),
         duration: const Duration(milliseconds: 350),
@@ -757,6 +877,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   @override
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isDesktopWide = screenWidth >= 1200;
 
     return Scaffold(
       appBar: AppBar(
@@ -890,6 +1012,151 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
           }
 
           final posts = _posts;
+          final screenWidth = MediaQuery.sizeOf(context).width;
+          final isDesktopWide = screenWidth >= 1200;
+
+          // Build reels content if in reels mode
+          Widget? reelsContent;
+          if (_feedMode == 'reels') {
+            final reelPosts = posts
+                .where((post) => post.media.any((item) => item.isVideo))
+                .toList();
+            if (reelPosts.isEmpty && !_isLoading) {
+              reelsContent = const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.video_library, size: 64, color: AppColors.grey),
+                    SizedBox(height: 14),
+                    Text('No reels yet', style: TextStyle(fontSize: 18)),
+                    SizedBox(height: 6),
+                    Text('Video posts will appear here once creators upload.'),
+                  ],
+                ),
+              );
+            } else {
+              reelsContent = PageView.builder(
+                controller: _reelsPageController,
+                scrollDirection: Axis.vertical,
+                itemCount: reelPosts.length,
+                itemBuilder: (context, index) {
+                  final post = reelPosts[index];
+                  final videoMedia = post.media.firstWhere((m) => m.isVideo);
+                  final currentUserId =
+                      FirebaseAuth.instance.currentUser?.uid ?? '';
+                  final isLiked = post.likes.contains(currentUserId);
+                  final isFollowingCreator = post.businessId.isNotEmpty
+                      ? _followingPageIds.contains(post.businessId)
+                      : _followingUserIds.contains(post.ownerId);
+                  return GestureDetector(
+                    onTap: () {
+                      _recordFeedSignal(post,
+                          creatorDelta: 0.45, postDelta: 0.9);
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => business_post.PostDetailPage(
+                            post: post,
+                            initialMediaIndex: 0,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: _AutoPlayVideoPreview(
+                            url: videoMedia.url,
+                            height: MediaQuery.of(context).size.height,
+                            rounded: false,
+                            showReelLabel: true,
+                            onTap: () {},
+                          ),
+                        ),
+                        Positioned(
+                          left: 16,
+                          bottom: 34,
+                          right: 96,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                post.businessName.isNotEmpty
+                                    ? post.businessName
+                                    : 'Creator',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 17,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                post.content,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Positioned(
+                          right: 12,
+                          bottom: 40,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  isLiked
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: isLiked
+                                      ? Colors.pinkAccent
+                                      : Colors.white,
+                                ),
+                                onPressed: () {
+                                  final uid = currentUserId;
+                                  if (uid.isEmpty) return;
+                                  _optimisticallyToggleLike(post, uid);
+                                  _recordFeedSignal(
+                                    post,
+                                    creatorDelta: isLiked ? -0.15 : 0.6,
+                                    postDelta: isLiked ? -0.25 : 1.25,
+                                  );
+                                  _postsRepository.toggleLike(post.id);
+                                },
+                              ),
+                              Text('${post.likes.length}',
+                                  style: const TextStyle(color: Colors.white)),
+                              const SizedBox(height: 18),
+                              IconButton(
+                                icon: const Icon(Icons.chat_bubble_outline,
+                                    color: Colors.white),
+                                onPressed: () => _showCommentDialog(post.id),
+                              ),
+                              Text('${post.comments.length}',
+                                  style: const TextStyle(color: Colors.white)),
+                              const SizedBox(height: 18),
+                              IconButton(
+                                icon: const Icon(Icons.share,
+                                    color: Colors.white),
+                                onPressed: () => _sharePost(post),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            }
+          }
+
           final filtered = posts;
 
           final latestHighlightPosts = <String, Post>{};
@@ -919,8 +1186,10 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
             }
           }
           int sortHighlights(Post a, Post b) {
-            final aViewed = _viewedHighlightPosts[_creatorKeyForPost(a)] == a.id;
-            final bViewed = _viewedHighlightPosts[_creatorKeyForPost(b)] == b.id;
+            final aViewed =
+                _viewedHighlightPosts[_creatorKeyForPost(a)] == a.id;
+            final bViewed =
+                _viewedHighlightPosts[_creatorKeyForPost(b)] == b.id;
             if (aViewed != bViewed) {
               return aViewed ? 1 : -1;
             }
@@ -964,8 +1233,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
             if (suggestionCreators.length >= 6) break;
           }
           final suggestionList = suggestionCreators.values.toList();
-          final hasInlineSuggestions =
-              !_inlineSuggestionsDismissed &&
+          final hasInlineSuggestions = !_inlineSuggestionsDismissed &&
               suggestionList.isNotEmpty &&
               filtered.length >= 3;
           final suggestionIndex = hasInlineSuggestions ? 3 : -1;
@@ -997,8 +1265,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                             : 'They’ll show up here when they post')
                         : 'Follow creators to see their posts here',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppColors.grey,
-                    ),
+                          color: AppColors.grey,
+                        ),
                   ),
                 ],
               ),
@@ -1006,9 +1274,11 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
           }
 
           final postKeys = <String, GlobalObjectKey>{};
-          return Column(
+          final feedContent = Column(
             children: [
-              if (highlightList.isNotEmpty)
+              if (_showModeTabs)
+                _buildFeedModeTabs()
+              else if (highlightList.isNotEmpty)
                 SizedBox(
                   height: 105,
                   child: ListView.separated(
@@ -1019,8 +1289,10 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     itemBuilder: (context, index) {
                       final post = highlightList[index];
                       final creatorKey = _creatorKeyForPost(post);
-                      final viewed = _viewedHighlightPosts[creatorKey] == post.id;
+                      final viewed =
+                          _viewedHighlightPosts[creatorKey] == post.id;
                       return InkWell(
+                        mouseCursor: SystemMouseCursors.click,
                         onTap: () {
                           HapticFeedback.selectionClick();
                           setState(() {
@@ -1050,7 +1322,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                       if (viewed)
                                         Colors.white.withValues(alpha: 0.22)
                                       else
-                                        AppColors.primary.withValues(alpha: 0.9),
+                                        AppColors.primary
+                                            .withValues(alpha: 0.9),
                                       if (viewed)
                                         Colors.white.withValues(alpha: 0.12)
                                       else
@@ -1064,11 +1337,13 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                 ),
                                 child: CircleAvatar(
                                   radius: 29,
-                                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                                  backgroundColor:
+                                      Theme.of(context).scaffoldBackgroundColor,
                                   child: CircleAvatar(
                                     radius: 26,
                                     backgroundColor: AppColors.primary,
-                                    backgroundImage: post.businessImageUrl != null &&
+                                    backgroundImage: post.businessImageUrl !=
+                                                null &&
                                             post.businessImageUrl!.isNotEmpty
                                         ? CachedNetworkImageProvider(
                                             post.businessImageUrl!)
@@ -1077,7 +1352,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                             post.businessImageUrl!.isEmpty)
                                         ? Text(
                                             post.businessName.isNotEmpty
-                                                ? post.businessName[0].toUpperCase()
+                                                ? post.businessName[0]
+                                                    .toUpperCase()
                                                 : '?',
                                             style: const TextStyle(
                                               color: Colors.white,
@@ -1090,13 +1366,14 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                               ),
                               const SizedBox(height: 8),
                               Flexible(
-                                 child: Text(
-                                   currentUser != null && post.ownerId == currentUser.uid
-                                       ? 'You'
-                                       : post.businessName,
-                                   maxLines: 2,
-                                   overflow: TextOverflow.ellipsis,
-                                   textAlign: TextAlign.center,
+                                child: Text(
+                                  currentUser != null &&
+                                          post.ownerId == currentUser.uid
+                                      ? 'You'
+                                      : post.businessName,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
                                   style: const TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
@@ -1121,245 +1398,290 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                       child: _isLoading && filtered.isEmpty
                           ? const _FeedShimmerList()
                           : ListView.builder(
-                          controller: _scrollController,
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          itemCount: filtered.isEmpty
-                              ? 1
-                              : filtered.length +
-                                  (hasInlineSuggestions ? 1 : 0) +
-                                  (_hasMore ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            if (filtered.isEmpty) {
-                              return const Padding(
-                                padding: EdgeInsets.symmetric(
-                                    vertical: 24, horizontal: 16),
-                                child: Center(
-                                  child: Text('No posts yet'),
-                                ),
-                              );
-                            }
-                            if (hasInlineSuggestions && index == suggestionIndex) {
-                              return _InlineFollowSuggestionsCard(
-                                suggestions: suggestionList,
-                                onDismiss: () {
-                                  HapticFeedback.selectionClick();
-                                  setState(() {
-                                    _inlineSuggestionsDismissed = true;
-                                  });
-                                },
-                                onOpenCreator: (post) {
-                                  if (post.businessId.isNotEmpty) {
-                                    HapticFeedback.lightImpact();
-                                    context.push(
-                                      AppRoutes.businessProfilePath(post.businessId),
-                                    );
-                                  } else {
-                                    HapticFeedback.lightImpact();
-                                    context.push(
-                                      AppRoutes.clientProfilePath(post.ownerId),
-                                    );
-                                  }
-                                },
-                                onFollow: (post) {
-                                  if (post.businessId.isNotEmpty) {
-                                    HapticFeedback.lightImpact();
-                                    setState(() {
-                                      if (!_followingPageIds.contains(post.businessId)) {
-                                        _followingPageIds.add(post.businessId);
+                              controller: _scrollController,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              cacheExtent:
+                                  2000, // Preload more items for smoother scrolling
+                              itemCount: filtered.isEmpty
+                                  ? 1
+                                  : filtered.length +
+                                      (hasInlineSuggestions ? 1 : 0) +
+                                      (_hasMore ? 1 : 0),
+                              itemBuilder: (context, index) {
+                                if (filtered.isEmpty) {
+                                  return const Padding(
+                                    padding: EdgeInsets.symmetric(
+                                        vertical: 24, horizontal: 16),
+                                    child: Center(
+                                      child: Text('No posts yet'),
+                                    ),
+                                  );
+                                }
+                                if (hasInlineSuggestions &&
+                                    index == suggestionIndex) {
+                                  return _InlineFollowSuggestionsCard(
+                                    suggestions: suggestionList,
+                                    onDismiss: () {
+                                      HapticFeedback.selectionClick();
+                                      setState(() {
+                                        _inlineSuggestionsDismissed = true;
+                                      });
+                                    },
+                                    onOpenCreator: (post) {
+                                      if (post.businessId.isNotEmpty) {
+                                        HapticFeedback.lightImpact();
+                                        context.push(
+                                          AppRoutes.businessProfilePath(
+                                              post.businessId),
+                                        );
+                                      } else {
+                                        HapticFeedback.lightImpact();
+                                        context.push(
+                                          AppRoutes.clientProfilePath(
+                                              post.ownerId),
+                                        );
                                       }
-                                    });
-                                    _toggleFollowPage(post.businessId, false);
-                                  } else {
-                                    HapticFeedback.lightImpact();
-                                    setState(() {
-                                      if (!_followingUserIds.contains(post.ownerId)) {
-                                        _followingUserIds.add(post.ownerId);
+                                    },
+                                    onFollow: (post) {
+                                      if (post.businessId.isNotEmpty) {
+                                        HapticFeedback.lightImpact();
+                                        setState(() {
+                                          if (!_followingPageIds
+                                              .contains(post.businessId)) {
+                                            _followingPageIds
+                                                .add(post.businessId);
+                                          }
+                                        });
+                                        _toggleFollowPage(
+                                            post.businessId, false);
+                                      } else {
+                                        HapticFeedback.lightImpact();
+                                        setState(() {
+                                          if (!_followingUserIds
+                                              .contains(post.ownerId)) {
+                                            _followingUserIds.add(post.ownerId);
+                                          }
+                                        });
+                                        _toggleFollowUser(post.ownerId, false);
                                       }
-                                    });
-                                    _toggleFollowUser(post.ownerId, false);
+                                    },
+                                  );
+                                }
+                                final postIndex = hasInlineSuggestions &&
+                                        index > suggestionIndex
+                                    ? index - 1
+                                    : index;
+                                if (postIndex >= filtered.length) {
+                                  return const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 16),
+                                    child: Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  );
+                                }
+                                final post = filtered[postIndex];
+                                final key = postKeys.putIfAbsent(
+                                  post.id,
+                                  () => GlobalObjectKey(post.id),
+                                );
+                                WidgetsBinding.instance
+                                    .addPostFrameCallback((_) {
+                                  if (!_didJumpToPost &&
+                                      widget.initialPostId != null &&
+                                      post.id == widget.initialPostId) {
+                                    _didJumpToPost = true;
+                                    final ctx = key.currentContext;
+                                    if (ctx != null) {
+                                      Scrollable.ensureVisible(
+                                        ctx,
+                                        duration:
+                                            const Duration(milliseconds: 300),
+                                        alignment: 0.1,
+                                      );
+                                    }
                                   }
-                                },
-                              );
-                            }
-                            final postIndex = hasInlineSuggestions && index > suggestionIndex
-                                ? index - 1
-                                : index;
-                            if (postIndex >= filtered.length) {
-                              return const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 16),
-                                child: Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              );
-                            }
-                            final post = filtered[postIndex];
-              final key = postKeys.putIfAbsent(
-                post.id,
-                () => GlobalObjectKey(post.id),
-              );
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!_didJumpToPost &&
-                    widget.initialPostId != null &&
-                    post.id == widget.initialPostId) {
-                  _didJumpToPost = true;
-                  final ctx = key.currentContext;
-                  if (ctx != null) {
-                    Scrollable.ensureVisible(
-                      ctx,
-                      duration: const Duration(milliseconds: 300),
-                      alignment: 0.1,
-                    );
-                  }
-                }
-              });
+                                });
 
-              final followDocStream = currentUser == null
-                  ? const Stream<DocumentSnapshot>.empty()
-                  : (post.businessId.isNotEmpty
-                      ? FirebaseFirestore.instance
-                          .collection('page_follows')
-                          .doc('${currentUser.uid}_${post.businessId}')
-                          .snapshots()
-                      : FirebaseFirestore.instance
-                          .collection('user_follows')
-                          .doc('${currentUser.uid}_${post.ownerId}')
-                          .snapshots());
-              return StreamBuilder<DocumentSnapshot>(
-                stream: followDocStream,
-                builder: (context, followSnap) {
-                  final isFollowing = followSnap.data?.exists == true;
-                  return StreamBuilder<DocumentSnapshot>(
-                    stream: currentUser == null
-                        ? const Stream.empty()
-                        : FirebaseFirestore.instance
-                            .collection('users')
-                            .doc(currentUser.uid)
-                            .collection('favorites')
-                            .doc(post.id)
-                            .snapshots(),
-                    builder: (context, favSnap) {
-                      final isSaved = favSnap.data?.exists == true;
-                      return VisibilityDetector(
-                        key: ValueKey('feed_post_${post.id}'),
-                        onVisibilityChanged: (info) {
-                          _registerImpression(post, info.visibleFraction);
-                        },
-                        child: PostCard(
-                          key: key,
-                          post: post,
-                          currentUserId: currentUser?.uid ?? '',
-                          isSaved: isSaved,
-                          initialMediaIndex: _mediaIndexByPostId[post.id] ?? 0,
-                          onMediaIndexChanged: (index) {
-                            _mediaIndexByPostId[post.id] = index;
-                          },
-                          onMediaEngaged: (index) =>
-                              _registerMediaEngagement(post, index),
-                          onDoubleTapLike: () {
-                            final uid = currentUser?.uid ?? '';
-                            final alreadyLiked = post.likes.contains(uid);
-                            if (uid.isEmpty || alreadyLiked) return;
-                            HapticFeedback.mediumImpact();
-                            _optimisticallyToggleLike(post, uid);
-                            _recordFeedSignal(
-                              post,
-                              creatorDelta: 0.75,
-                              postDelta: 1.45,
-                            );
-                            _postsRepository.toggleLike(post.id);
-                          },
-                          onOpenDetail: (index) {
-                            HapticFeedback.selectionClick();
-                            _recordFeedSignal(
-                              post,
-                              creatorDelta: 0.45,
-                              postDelta: 0.9,
-                            );
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => business_post.PostDetailPage(
-                                  post: post,
-                                  initialMediaIndex: index,
-                                ),
-                              ),
-                            );
-                          },
-                          onLike: () {
-                            final currentlyLiked =
-                                post.likes.contains(currentUser?.uid ?? '');
-                            final uid = currentUser?.uid ?? '';
-                            if (uid.isNotEmpty) {
-                              HapticFeedback.lightImpact();
-                              _optimisticallyToggleLike(post, uid);
-                            }
-                            _recordFeedSignal(
-                              post,
-                              creatorDelta: currentlyLiked ? -0.15 : 0.6,
-                              postDelta: currentlyLiked ? -0.25 : 1.25,
-                            );
-                            _postsRepository.toggleLike(post.id);
-                          },
-                          onComment: () {
-                            HapticFeedback.selectionClick();
-                            _recordFeedSignal(
-                              post,
-                              creatorDelta: 0.7,
-                              postDelta: 1.15,
-                            );
-                            _showCommentDialog(post.id);
-                          },
-                          onShare: () {
-                            HapticFeedback.selectionClick();
-                            _recordFeedSignal(
-                              post,
-                              creatorDelta: 0.42,
-                              postDelta: 0.8,
-                            );
-                            _sharePost(post);
-                          },
-                          onLocationTap: () => _openLocation(post),
-                          onMessage: () {
-                            HapticFeedback.selectionClick();
-                            _recordFeedSignal(
-                              post,
-                              creatorDelta: 0.6,
-                              postDelta: 0.75,
-                            );
-                            _startChat(post);
-                          },
-                          onSave: () {
-                            HapticFeedback.lightImpact();
-                            _recordFeedSignal(
-                              post,
-                              creatorDelta: isSaved ? -0.12 : 0.75,
-                              postDelta: isSaved ? -0.2 : 1.2,
-                            );
-                            _toggleFavorite(post, isSaved);
-                          },
-                          isFollowingCreator: isFollowing,
-                          onFollowCreator: () {
-                            HapticFeedback.lightImpact();
-                            _recordFeedSignal(
-                              post,
-                              creatorDelta: isFollowing ? -0.4 : 1.6,
-                              postDelta: isFollowing ? -0.2 : 0.35,
-                            );
-                            if (post.businessId.isNotEmpty) {
-                              _toggleFollowPage(post.businessId, isFollowing);
-                            } else {
-                              _toggleFollowUser(post.ownerId, isFollowing);
-                            }
-                          },
-                          onEdit: () => _showEditDialog(post),
-                          onDelete: () => _confirmDelete(post),
-                        ),
-                      );
-                    },
-                  );
-                },
-              );
-                          },
-                        ),
+                                final followDocStream = currentUser == null
+                                    ? const Stream<DocumentSnapshot>.empty()
+                                    : (post.businessId.isNotEmpty
+                                        ? FirebaseFirestore.instance
+                                            .collection('page_follows')
+                                            .doc(
+                                                '${currentUser.uid}_${post.businessId}')
+                                            .snapshots()
+                                        : FirebaseFirestore.instance
+                                            .collection('user_follows')
+                                            .doc(
+                                                '${currentUser.uid}_${post.ownerId}')
+                                            .snapshots());
+                                return StreamBuilder<DocumentSnapshot>(
+                                  stream: followDocStream,
+                                  builder: (context, followSnap) {
+                                    final isFollowing =
+                                        followSnap.data?.exists == true;
+                                    return StreamBuilder<DocumentSnapshot>(
+                                      stream: currentUser == null
+                                          ? const Stream.empty()
+                                          : FirebaseFirestore.instance
+                                              .collection('users')
+                                              .doc(currentUser.uid)
+                                              .collection('favorites')
+                                              .doc(post.id)
+                                              .snapshots(),
+                                      builder: (context, favSnap) {
+                                        final isSaved =
+                                            favSnap.data?.exists == true;
+                                        return VisibilityDetector(
+                                          key: ValueKey('feed_post_${post.id}'),
+                                          onVisibilityChanged: (info) {
+                                            _registerImpression(
+                                                post, info.visibleFraction);
+                                          },
+                                          child: PostCard(
+                                            key: key,
+                                            post: post,
+                                            currentUserId:
+                                                currentUser?.uid ?? '',
+                                            isSaved: isSaved,
+                                            initialMediaIndex:
+                                                _mediaIndexByPostId[post.id] ??
+                                                    0,
+                                            onMediaIndexChanged: (index) {
+                                              _mediaIndexByPostId[post.id] =
+                                                  index;
+                                            },
+                                            onMediaEngaged: (index) =>
+                                                _registerMediaEngagement(
+                                                    post, index),
+                                            onDoubleTapLike: () {
+                                              final uid =
+                                                  currentUser?.uid ?? '';
+                                              final alreadyLiked =
+                                                  post.likes.contains(uid);
+                                              if (uid.isEmpty || alreadyLiked) {
+                                                return;
+                                              }
+                                              HapticFeedback.mediumImpact();
+                                              _optimisticallyToggleLike(
+                                                  post, uid);
+                                              _recordFeedSignal(
+                                                post,
+                                                creatorDelta: 0.75,
+                                                postDelta: 1.45,
+                                              );
+                                              _postsRepository
+                                                  .toggleLike(post.id);
+                                            },
+                                            onOpenDetail: (index) {
+                                              HapticFeedback.selectionClick();
+                                              _recordFeedSignal(
+                                                post,
+                                                creatorDelta: 0.45,
+                                                postDelta: 0.9,
+                                              );
+                                              Navigator.of(context).push(
+                                                MaterialPageRoute(
+                                                  builder: (_) => business_post
+                                                      .PostDetailPage(
+                                                    post: post,
+                                                    initialMediaIndex: index,
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                            onLike: () {
+                                              final currentlyLiked = post.likes
+                                                  .contains(
+                                                      currentUser?.uid ?? '');
+                                              final uid =
+                                                  currentUser?.uid ?? '';
+                                              if (uid.isNotEmpty) {
+                                                HapticFeedback.lightImpact();
+                                                _optimisticallyToggleLike(
+                                                    post, uid);
+                                              }
+                                              _recordFeedSignal(
+                                                post,
+                                                creatorDelta: currentlyLiked
+                                                    ? -0.15
+                                                    : 0.6,
+                                                postDelta: currentlyLiked
+                                                    ? -0.25
+                                                    : 1.25,
+                                              );
+                                              _postsRepository
+                                                  .toggleLike(post.id);
+                                            },
+                                            onComment: () {
+                                              HapticFeedback.selectionClick();
+                                              _recordFeedSignal(
+                                                post,
+                                                creatorDelta: 0.7,
+                                                postDelta: 1.15,
+                                              );
+                                              _showCommentDialog(post.id);
+                                            },
+                                            onShare: () {
+                                              HapticFeedback.selectionClick();
+                                              _recordFeedSignal(
+                                                post,
+                                                creatorDelta: 0.42,
+                                                postDelta: 0.8,
+                                              );
+                                              _sharePost(post);
+                                            },
+                                            onLocationTap: () =>
+                                                _openLocation(post),
+                                            onMessage: () {
+                                              HapticFeedback.selectionClick();
+                                              _recordFeedSignal(
+                                                post,
+                                                creatorDelta: 0.6,
+                                                postDelta: 0.75,
+                                              );
+                                              _startChat(post);
+                                            },
+                                            onSave: () {
+                                              HapticFeedback.lightImpact();
+                                              _recordFeedSignal(
+                                                post,
+                                                creatorDelta:
+                                                    isSaved ? -0.12 : 0.75,
+                                                postDelta: isSaved ? -0.2 : 1.2,
+                                              );
+                                              _toggleFavorite(post, isSaved);
+                                            },
+                                            isFollowingCreator: isFollowing,
+                                            onFollowCreator: () {
+                                              HapticFeedback.lightImpact();
+                                              _recordFeedSignal(
+                                                post,
+                                                creatorDelta:
+                                                    isFollowing ? -0.4 : 1.6,
+                                                postDelta:
+                                                    isFollowing ? -0.2 : 0.35,
+                                              );
+                                              if (post.businessId.isNotEmpty) {
+                                                _toggleFollowPage(
+                                                    post.businessId,
+                                                    isFollowing);
+                                              } else {
+                                                _toggleFollowUser(
+                                                    post.ownerId, isFollowing);
+                                              }
+                                            },
+                                            onEdit: () => _showEditDialog(post),
+                                            onDelete: () =>
+                                                _confirmDelete(post),
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
+                                );
+                              },
+                            ),
                     ),
                     IgnorePointer(
                       child: SafeArea(
@@ -1388,7 +1710,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                   borderRadius: BorderRadius.circular(999),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.12),
+                                      color:
+                                          Colors.black.withValues(alpha: 0.12),
                                       blurRadius: 20,
                                       offset: const Offset(0, 8),
                                     ),
@@ -1406,60 +1729,166 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
               ),
             ],
           );
+
+          // Use reels content if in reels mode, otherwise use feed content
+          final mainContent = reelsContent ?? feedContent;
+
+          if (!isDesktopWide) {
+            return mainContent;
+          }
+
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 20, 18),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 92,
+                  child: _DesktopSpotlightDock(
+                    feedMode: _feedMode,
+                    onSwitchFeed: () => _showFeedModePicker(),
+                    onOpenDiscover: () => context.push(AppRoutes.search),
+                    onOpenMessages: () => context.push(AppRoutes.chats),
+                    onCreatePost: _showCreateOptions,
+                    onOpenTraffic: () =>
+                        context.push(AppRoutes.trafficManagement),
+                  ),
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                          maxWidth: _feedMode == 'reels' ? 640 : 920),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? const Color(0xFF10141C)
+                              : Colors.white.withValues(alpha: 0.94),
+                          borderRadius: BorderRadius.circular(32),
+                          border: Border.all(
+                            color:
+                                Theme.of(context).brightness == Brightness.dark
+                                    ? Colors.white10
+                                    : Colors.black.withValues(alpha: 0.06),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.10),
+                              blurRadius: 28,
+                              offset: const Offset(0, 14),
+                            ),
+                          ],
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: mainContent,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 18),
+                SizedBox(
+                  width: 300,
+                  child: _DesktopSpotlightRail(
+                    feedMode: _feedMode,
+                    followingCount:
+                        _followingPageIds.length + _followingUserIds.length,
+                    recommendedCreators: suggestionList,
+                    onOpenCreator: (post) {
+                      if (post.businessId.isNotEmpty) {
+                        context.push(
+                            AppRoutes.businessProfilePath(post.businessId));
+                      } else {
+                        context.push(AppRoutes.clientProfilePath(post.ownerId));
+                      }
+                    },
+                    onFollowCreator: (post) {
+                      if (post.businessId.isNotEmpty) {
+                        if (!_followingPageIds.contains(post.businessId)) {
+                          setState(() {
+                            _followingPageIds.add(post.businessId);
+                          });
+                        }
+                        _toggleFollowPage(post.businessId, false);
+                      } else {
+                        if (!_followingUserIds.contains(post.ownerId)) {
+                          setState(() {
+                            _followingUserIds.add(post.ownerId);
+                          });
+                        }
+                        _toggleFollowUser(post.ownerId, false);
+                      }
+                    },
+                    onSwitchFeed: () => _showFeedModePicker(),
+                    onOpenDiscover: () => context.push(AppRoutes.search),
+                    onCreatePost: _showCreateOptions,
+                    onOpenMessages: () => context.push(AppRoutes.chats),
+                  ),
+                ),
+              ],
+            ),
+          );
         },
       ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: StreamBuilder<DocumentSnapshot>(
-          stream: currentUser == null
-              ? const Stream.empty()
-              : FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(currentUser.uid)
-                  .snapshots(),
-          builder: (context, userSnap) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _roundActionButton(
-                    icon: Icons.home,
-                    tooltip: 'Home',
-                    onTap: () => context.go(AppRoutes.feed),
-                    onLongPress: _showFeedModePicker,
-                  ),
-                  const SizedBox(width: 16),
-                  _roundActionButton(
-                    icon: Icons.search,
-                    tooltip: 'Discover',
-                    onTap: () => context.push(AppRoutes.search),
-                  ),
-                  const SizedBox(width: 16),
-                  _roundActionButton(
-                    icon: Icons.add,
-                    tooltip: 'Add post',
-                    filled: true,
-                    onTap: () => context.push(AppRoutes.createPost),
-                  ),
-                  const SizedBox(width: 16),
-                  _roundActionButton(
-                    icon: Icons.message,
-                    tooltip: 'Messages',
-                    onTap: () => context.push(AppRoutes.chats),
-                  ),
-                  const SizedBox(width: 16),
-                  _roundActionButton(
-                    icon: Icons.directions_car_filled_rounded,
-                    tooltip: 'Traffic',
-                    onTap: () => context.push(AppRoutes.trafficManagement),
-                  ),
-                ],
+      bottomNavigationBar: isDesktopWide
+          ? null
+          : SafeArea(
+              top: false,
+              child: StreamBuilder<DocumentSnapshot>(
+                stream: currentUser == null
+                    ? const Stream.empty()
+                    : FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(currentUser.uid)
+                        .snapshots(),
+                builder: (context, userSnap) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _roundActionButton(
+                          icon: Icons.home,
+                          tooltip: 'Home',
+                          onTap: () {
+                            if (_feedMode != 'forYou') {
+                              _toggleFeedMode('forYou');
+                            }
+                            context.go(AppRoutes.feed);
+                          },
+                        ),
+                        const SizedBox(width: 16),
+                        _roundActionButton(
+                          icon: Icons.search,
+                          tooltip: 'Discover',
+                          onTap: () => context.push(AppRoutes.search),
+                        ),
+                        const SizedBox(width: 16),
+                        _roundActionButton(
+                          icon: Icons.add,
+                          tooltip: 'Create',
+                          filled: true,
+                          onTap: _showCreateOptions,
+                        ),
+                        const SizedBox(width: 16),
+                        _roundActionButton(
+                          icon: Icons.message,
+                          tooltip: 'Messages',
+                          onTap: () => context.push(AppRoutes.chats),
+                        ),
+                        const SizedBox(width: 16),
+                        _roundActionButton(
+                          icon: Icons.directions_car_filled_rounded,
+                          tooltip: 'Traffic',
+                          onTap: () =>
+                              context.push(AppRoutes.trafficManagement),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
-            );
-          },
-        ),
-      ),
+            ),
     );
   }
 
@@ -1493,6 +1922,82 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     );
   }
 
+  Future<void> _showCreateOptions() async {
+    HapticFeedback.selectionClick();
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white24 : Colors.black26,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                Text(
+                  'Create',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Choose what you want to publish.',
+                  style: TextStyle(color: AppColors.grey),
+                ),
+                const SizedBox(height: 14),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: AppColors.primary,
+                    child: Icon(Icons.post_add_rounded, color: Colors.white),
+                  ),
+                  title: const Text('Create post'),
+                  subtitle: const Text('Share your next spotlight post'),
+                  onTap: () => Navigator.of(context).pop('post'),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.primary.withValues(alpha: 0.16),
+                    child: const Icon(
+                      Icons.storefront_rounded,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  title: const Text('Create page'),
+                  subtitle: const Text('Set up a new creator or business page'),
+                  onTap: () => Navigator.of(context).pop('page'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || selected == null) return;
+    if (selected == 'post') {
+      context.push(AppRoutes.createPost);
+    } else if (selected == 'page') {
+      context.push(AppRoutes.businessSetup);
+    }
+  }
+
   Future<void> _showFeedModePicker() async {
     HapticFeedback.selectionClick();
     final selected = await showModalBottomSheet<String>(
@@ -1508,8 +2013,11 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
             margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF101722) : Theme.of(context).colorScheme.surface,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+              color: isDark
+                  ? const Color(0xFF101722)
+                  : Theme.of(context).colorScheme.surface,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(26)),
               border: Border.all(
                 color: isDark ? Colors.white10 : Colors.black12,
               ),
@@ -1559,9 +2067,19 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 const SizedBox(height: 8),
                 _feedModeTile(
                   context: context,
+                  icon: Icons.video_collection,
+                  title: 'Reels',
+                  subtitle: 'Vertical scrolling video-only experience',
+                  selected: _feedMode == 'reels',
+                  onTap: () => Navigator.of(context).pop('reels'),
+                ),
+                const SizedBox(height: 8),
+                _feedModeTile(
+                  context: context,
                   icon: Icons.favorite_border,
                   title: 'Following',
-                  subtitle: 'Only the pages and creators you chose to keep up with',
+                  subtitle:
+                      'Only the pages and creators you chose to keep up with',
                   selected: _feedMode == 'following',
                   onTap: () => Navigator.of(context).pop('following'),
                 ),
@@ -1585,9 +2103,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     required VoidCallback onTap,
   }) {
     return Material(
-      color: selected
-          ? AppColors.primary.withOpacity(0.12)
-          : Colors.transparent,
+      color:
+          selected ? AppColors.primary.withOpacity(0.12) : Colors.transparent,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: onTap,
@@ -1755,9 +2272,11 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                         HapticFeedback.selectionClick();
                         Navigator.of(sheetContext).pop();
                         if (post.businessId.isNotEmpty) {
-                          context.push(AppRoutes.businessProfilePath(post.businessId));
+                          context.push(
+                              AppRoutes.businessProfilePath(post.businessId));
                         } else {
-                          context.push(AppRoutes.clientProfilePath(post.ownerId));
+                          context
+                              .push(AppRoutes.clientProfilePath(post.ownerId));
                         }
                       },
                     ),
@@ -1812,7 +2331,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       barrierDismissible: false,
       builder: (context) => StatefulBuilder(
         builder: (context, setLocalState) => AlertDialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
           contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           titlePadding: const EdgeInsets.only(top: 12),
           title: const Center(child: Text('Edit Post')),
@@ -2163,36 +2683,56 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   }
 }
 
-
 class _AutoPlayVideoPreview extends StatefulWidget {
   const _AutoPlayVideoPreview({
     required this.url,
     required this.onTap,
+    this.height = 440,
+    this.rounded = true,
     this.onDoubleTap,
     this.onActivePlayback,
+    this.showReelLabel = false,
   });
 
   final String url;
+  final double height;
+  final bool rounded;
   final VoidCallback onTap;
   final VoidCallback? onDoubleTap;
   final VoidCallback? onActivePlayback;
+  final bool showReelLabel;
 
   @override
   State<_AutoPlayVideoPreview> createState() => _AutoPlayVideoPreviewState();
 }
 
-class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
-  static final ValueNotifier<bool> _globalMuted =
-      ValueNotifier<bool>(true);
+class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview>
+    with AutomaticKeepAliveClientMixin {
+  static final ValueNotifier<bool> _globalMuted = ValueNotifier<bool>(true);
 
   VideoPlayerController? _controller;
+  Player? _mediaKitPlayer;
+  VideoController? _mediaKitController;
   bool _initialized = false;
   bool _isMuted = true;
   bool _didNotifyActivePlayback = false;
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   void initState() {
     super.initState();
+    if (Platform.isWindows) {
+      _initMediaKit();
+    } else {
+      _initVideoPlayer();
+    }
+    _isMuted = _globalMuted.value;
+    _globalMuted.addListener(_handleGlobalMuteChanged);
+  }
+
+  void _initVideoPlayer() {
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
       ..initialize().then((_) {
         if (mounted) {
@@ -2201,25 +2741,44 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
           _controller?.setVolume(_globalMuted.value ? 0 : 1);
         }
       });
-    _isMuted = _globalMuted.value;
-    _globalMuted.addListener(_handleGlobalMuteChanged);
+  }
+
+  void _initMediaKit() async {
+    _mediaKitPlayer = Player();
+    _mediaKitController = VideoController(_mediaKitPlayer!);
+    try {
+      await _mediaKitPlayer!.open(Media(widget.url));
+      _mediaKitPlayer!.setPlaylistMode(PlaylistMode.loop);
+      if (mounted) {
+        setState(() => _initialized = true);
+        _mediaKitPlayer!.setVolume(_globalMuted.value ? 0 : 100);
+      }
+    } catch (e) {
+      // Handle error silently
+    }
   }
 
   @override
   void dispose() {
-    _controller?.dispose();
+    if (Platform.isWindows) {
+      _mediaKitPlayer?.dispose();
+    } else {
+      _controller?.dispose();
+    }
     _globalMuted.removeListener(_handleGlobalMuteChanged);
     super.dispose();
   }
 
   void _handleGlobalMuteChanged() {
-    final controller = _controller;
-    if (controller == null) return;
     final nextMuted = _globalMuted.value;
     if (_isMuted == nextMuted) return;
     _isMuted = nextMuted;
-    if (controller.value.isInitialized) {
-      controller.setVolume(nextMuted ? 0 : 1);
+    if (Platform.isWindows) {
+      _mediaKitPlayer?.setVolume(nextMuted ? 0 : 100);
+    } else {
+      if (_controller?.value.isInitialized ?? false) {
+        _controller!.setVolume(nextMuted ? 0 : 1);
+      }
     }
     if (mounted) {
       setState(() {});
@@ -2228,69 +2787,138 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final controller = _controller;
     return VisibilityDetector(
       key: ValueKey('video_${widget.url}'),
       onVisibilityChanged: (info) {
-        if (controller == null) return;
-        if (!controller.value.isInitialized) return;
-        if (info.visibleFraction >= 0.6) {
-          if (!_didNotifyActivePlayback) {
-            _didNotifyActivePlayback = true;
-            widget.onActivePlayback?.call();
+        if (Platform.isWindows) {
+          if (_mediaKitPlayer == null) return;
+          if (info.visibleFraction >= 0.8) {
+            if (!_didNotifyActivePlayback) {
+              _didNotifyActivePlayback = true;
+              widget.onActivePlayback?.call();
+            }
+            _mediaKitPlayer!.play();
+            _mediaKitPlayer!.setVolume(_globalMuted.value ? 0 : 100);
+          } else {
+            _mediaKitPlayer!.pause();
           }
-          controller.play();
-          controller.setVolume(_globalMuted.value ? 0 : 1);
         } else {
-          controller.pause();
+          if (_controller == null) return;
+          if (!_controller!.value.isInitialized) return;
+          if (info.visibleFraction >= 0.8) {
+            if (!_didNotifyActivePlayback) {
+              _didNotifyActivePlayback = true;
+              widget.onActivePlayback?.call();
+            }
+            _controller!.play();
+            _controller!.setVolume(_globalMuted.value ? 0 : 1);
+          } else {
+            _controller!.pause();
+          }
         }
       },
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
         onDoubleTap: widget.onDoubleTap,
         onLongPressStart: (_) {
-          if (controller == null || !controller.value.isInitialized) return;
-          controller.pause();
+          if (Platform.isWindows) {
+            _mediaKitPlayer?.pause();
+          } else {
+            if (_controller == null || !_controller!.value.isInitialized) {
+              return;
+            }
+            _controller!.pause();
+          }
           if (mounted) {
             setState(() {});
           }
         },
         onLongPressEnd: (_) {
-          if (controller == null || !controller.value.isInitialized) return;
-          controller.play();
+          if (Platform.isWindows) {
+            _mediaKitPlayer?.play();
+          } else {
+            if (_controller == null || !_controller!.value.isInitialized) {
+              return;
+            }
+            _controller!.play();
+          }
           if (mounted) {
             setState(() {});
           }
         },
         child: Container(
-          height: 440,
+          height: widget.height,
           width: double.infinity,
           decoration: BoxDecoration(
             color: AppColors.lightGrey,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius:
+                widget.rounded ? BorderRadius.circular(8) : BorderRadius.zero,
           ),
-          child: _initialized && controller != null
+          child: _initialized
               ? ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: widget.rounded
+                      ? BorderRadius.circular(8)
+                      : BorderRadius.zero,
                   child: Stack(
                     children: [
                       Positioned.fill(
-                        child: FittedBox(
-                          fit: BoxFit.cover,
-                          child: SizedBox(
-                            width: controller.value.size.width,
-                            height: controller.value.size.height,
-                            child: VideoPlayer(controller),
-                          ),
+                        child: IgnorePointer(
+                          ignoring: true,
+                          child: Platform.isWindows
+                              ? Video(controller: _mediaKitController!)
+                              : FittedBox(
+                                  fit: BoxFit.cover,
+                                  child: SizedBox(
+                                    width: _controller!.value.size.width,
+                                    height: _controller!.value.size.height,
+                                    child: VideoPlayer(_controller!),
+                                  ),
+                                ),
                         ),
                       ),
                       Positioned(
                         left: 12,
                         top: 12,
-                        child: _VideoMetaBadge(
-                          icon: controller.value.isPlaying
-                              ? Icons.play_circle_fill_rounded
-                              : Icons.pause_circle_filled_rounded,
+                        child: Row(
+                          children: [
+                            _VideoMetaBadge(
+                              icon: Platform.isWindows
+                                  ? (_mediaKitPlayer!.state.playing
+                                      ? Icons.play_circle_fill_rounded
+                                      : Icons.pause_circle_filled_rounded)
+                                  : (_controller!.value.isPlaying
+                                      ? Icons.play_circle_fill_rounded
+                                      : Icons.pause_circle_filled_rounded),
+                            ),
+                            if (widget.showReelLabel) ...[
+                              const SizedBox(width: 8),
+                              const _VideoMetaBadge(
+                                icon: Icons.movie_creation_outlined,
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Text(
+                                  'REEL',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                            ]
+                          ],
                         ),
                       ),
                       Positioned(
@@ -2311,16 +2939,17 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
                           ),
                           child: Column(
                             children: [
-                              VideoProgressIndicator(
-                                controller,
-                                allowScrubbing: true,
-                                colors: VideoProgressColors(
-                                  playedColor:
-                                      Theme.of(context).colorScheme.primary,
-                                  bufferedColor: Colors.white24,
-                                  backgroundColor: Colors.white10,
+                              if (!Platform.isWindows)
+                                VideoProgressIndicator(
+                                  _controller!,
+                                  allowScrubbing: true,
+                                  colors: VideoProgressColors(
+                                    playedColor:
+                                        Theme.of(context).colorScheme.primary,
+                                    bufferedColor: Colors.white24,
+                                    backgroundColor: Colors.white10,
+                                  ),
                                 ),
-                              ),
                             ],
                           ),
                         ),
@@ -2438,7 +3067,8 @@ class _PostMediaCarouselState extends State<_PostMediaCarousel> {
                   if (item.isVideo) {
                     return _AutoPlayVideoPreview(
                       url: item.url,
-                      onActivePlayback: () => widget.onMediaEngaged?.call(index),
+                      onActivePlayback: () =>
+                          widget.onMediaEngaged?.call(index),
                       onDoubleTap: () {
                         widget.onDoubleTapLike?.call();
                         _triggerLikeBurst();
@@ -2462,8 +3092,8 @@ class _PostMediaCarouselState extends State<_PostMediaCarousel> {
                         placeholder: (context, url) => Container(
                           height: 440,
                           color: AppColors.lightGrey,
-                          child: const Center(
-                              child: CircularProgressIndicator()),
+                          child:
+                              const Center(child: CircularProgressIndicator()),
                         ),
                         errorWidget: (context, url, error) => Container(
                           height: 440,
@@ -2789,7 +3419,8 @@ class _RefreshingSpotlightPill extends StatefulWidget {
   const _RefreshingSpotlightPill();
 
   @override
-  State<_RefreshingSpotlightPill> createState() => _RefreshingSpotlightPillState();
+  State<_RefreshingSpotlightPill> createState() =>
+      _RefreshingSpotlightPillState();
 }
 
 class _RefreshingSpotlightPillState extends State<_RefreshingSpotlightPill>
@@ -2924,7 +3555,7 @@ class _InlineFollowSuggestionsCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           SizedBox(
-            height: 128,
+            height: 164,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: suggestions.length,
@@ -2935,15 +3566,18 @@ class _InlineFollowSuggestionsCard extends StatelessWidget {
                 return GestureDetector(
                   onTap: () => onOpenCreator(post),
                   child: SizedBox(
-                    width: 102,
+                    width: 108,
                     child: Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
                       children: [
                         CircleAvatar(
                           radius: 28,
                           backgroundColor: AppColors.primary,
                           backgroundImage: post.businessImageUrl != null &&
                                   post.businessImageUrl!.isNotEmpty
-                              ? CachedNetworkImageProvider(post.businessImageUrl!)
+                              ? CachedNetworkImageProvider(
+                                  post.businessImageUrl!,
+                                )
                               : null,
                           child: (post.businessImageUrl == null ||
                                   post.businessImageUrl!.isEmpty)
@@ -2959,14 +3593,18 @@ class _InlineFollowSuggestionsCard extends StatelessWidget {
                               : null,
                         ),
                         const SizedBox(height: 8),
-                        Text(
-                          post.businessName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
+                        SizedBox(
+                          height: 32,
+                          child: Text(
+                            post.businessName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                              height: 1.2,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -2977,13 +3615,18 @@ class _InlineFollowSuggestionsCard extends StatelessWidget {
                             fontSize: 11,
                           ),
                         ),
-                        const Spacer(),
+                        const SizedBox(height: 10),
                         SizedBox(
                           height: 30,
+                          width: double.infinity,
                           child: FilledButton(
                             onPressed: () => onFollow(post),
                             style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
+                              minimumSize: const Size.fromHeight(30),
+                              maximumSize: const Size(double.infinity, 30),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
                               textStyle: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
@@ -3062,9 +3705,11 @@ class PostCard extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          Column(
+      child: InkWell(
+        onTap: () => onOpenDetail(initialMediaIndex),
+        child: Stack(
+          children: [
+            Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
@@ -3180,7 +3825,8 @@ class PostCard extends StatelessWidget {
                                       vertical: 2,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.black.withValues(alpha: 0.06),
+                                      color:
+                                          Colors.black.withValues(alpha: 0.06),
                                       borderRadius: BorderRadius.circular(999),
                                       border: Border.all(
                                         color: isFollowingCreator
@@ -3317,8 +3963,8 @@ class PostCard extends StatelessWidget {
                       IconButton(
                         visualDensity: VisualDensity.compact,
                         padding: const EdgeInsets.all(4),
-                        constraints:
-                            const BoxConstraints.tightFor(width: 32, height: 32),
+                        constraints: const BoxConstraints.tightFor(
+                            width: 32, height: 32),
                         icon: const Icon(Icons.location_on),
                         onPressed: onLocationTap,
                         tooltip: 'Open location',
@@ -3348,7 +3994,8 @@ class PostCard extends StatelessWidget {
             ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   String _formatTimeAgo(DateTime dateTime) {
@@ -3444,6 +4091,49 @@ class _VideoMetaBadge extends StatelessWidget {
   }
 }
 
+class _FeedTabButton extends StatelessWidget {
+  const _FeedTabButton({
+    required this.label,
+    required this.onTap,
+    required this.isActive,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool isActive;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: isActive
+              ? AppColors.primary
+              : Theme.of(context).colorScheme.surface,
+          border: Border.all(
+            color: isActive
+                ? AppColors.primary
+                : Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: isActive
+                ? Colors.white
+                : Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ShareSheetPreview extends StatelessWidget {
   const _ShareSheetPreview({required this.post});
 
@@ -3507,6 +4197,484 @@ class _ShareSheetPreview extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DesktopSpotlightRail extends StatelessWidget {
+  const _DesktopSpotlightRail({
+    required this.feedMode,
+    required this.followingCount,
+    required this.recommendedCreators,
+    required this.onOpenCreator,
+    required this.onFollowCreator,
+    required this.onSwitchFeed,
+    required this.onOpenDiscover,
+    required this.onCreatePost,
+    required this.onOpenMessages,
+  });
+
+  final String feedMode;
+  final int followingCount;
+  final List<Post> recommendedCreators;
+  final void Function(Post) onOpenCreator;
+  final void Function(Post) onFollowCreator;
+  final VoidCallback onSwitchFeed;
+  final VoidCallback onOpenDiscover;
+  final VoidCallback onCreatePost;
+  final VoidCallback onOpenMessages;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _DesktopRailCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Spotlight on desktop',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'A wider social view for your feed, conversations, and creator flow.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.grey,
+                    ),
+              ),
+              const SizedBox(height: 14),
+              _DesktopRailAction(
+                icon: feedMode == 'reels'
+                    ? Icons.video_collection
+                    : Icons.dynamic_feed_rounded,
+                title: feedMode == 'reels'
+                    ? 'Reels feed'
+                    : feedMode == 'following'
+                        ? 'Following feed'
+                        : 'For You feed',
+                subtitle: feedMode == 'reels'
+                    ? 'All video posts, vertical swipe experience.'
+                    : (followingCount == 0
+                        ? 'Long-press home anytime to switch feed mode.'
+                        : 'Tracking $followingCount followed creators and pages.'),
+                onTap: onSwitchFeed,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (feedMode == 'reels')
+          _DesktopRailCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Reels tuned for you',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Swipe through short videos, and stay in flow. New reels refresh automatically.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppColors.grey,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    FilledButton.icon(
+                      onPressed: onOpenMessages,
+                      icon: const Icon(Icons.chat_bubble_outline),
+                      label: const Text('Inbox'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: onOpenDiscover,
+                      icon: const Icon(Icons.notifications_none),
+                      label: const Text('Updates'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 14),
+        _DesktopRailCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Follow recommendations',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 10),
+              if (recommendedCreators.isEmpty)
+                Text(
+                  'No recommendations yet. Check again in a moment.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppColors.grey,
+                      ),
+                )
+              else
+                Column(
+                  children: recommendedCreators
+                      .take(5)
+                      .map((post) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 5),
+                            child: Row(
+                              children: [
+                                ClipOval(
+                                  child: SizedBox(
+                                    width: 36,
+                                    height: 36,
+                                    child: post.businessImageUrl != null &&
+                                            post.businessImageUrl!.isNotEmpty
+                                        ? CachedNetworkImage(
+                                            imageUrl: post.businessImageUrl!,
+                                            fit: BoxFit.cover,
+                                          )
+                                        : Container(
+                                            color: AppColors.lightGrey,
+                                            child: Center(
+                                              child: Text(
+                                                post.businessName.isNotEmpty
+                                                    ? post.businessName[0]
+                                                        .toUpperCase()
+                                                    : '?',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () => onOpenCreator(post),
+                                    child: Text(
+                                      post.businessName.isNotEmpty
+                                          ? post.businessName
+                                          : 'Creator',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  height: 30,
+                                  child: FilledButton(
+                                    onPressed: () => onFollowCreator(post),
+                                    child: const Text('Follow'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ))
+                      .toList(),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DesktopSpotlightDock extends StatelessWidget {
+  const _DesktopSpotlightDock({
+    required this.feedMode,
+    required this.onSwitchFeed,
+    required this.onOpenDiscover,
+    required this.onOpenMessages,
+    required this.onCreatePost,
+    required this.onOpenTraffic,
+  });
+
+  final String feedMode;
+  final VoidCallback onSwitchFeed;
+  final VoidCallback onOpenDiscover;
+  final VoidCallback onOpenMessages;
+  final VoidCallback onCreatePost;
+  final VoidCallback onOpenTraffic;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: isDark
+            ? const Color(0xFF131923)
+            : Colors.white.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.06),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 22,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppColors.primary, Color(0xFF61D1ED)],
+              ),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: const Icon(
+              Icons.auto_awesome_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _DesktopDockButton(
+            icon: feedMode == 'following'
+                ? Icons.people_alt_rounded
+                : feedMode == 'reels'
+                    ? Icons.video_collection
+                    : Icons.home_rounded,
+            label: feedMode == 'following'
+                ? 'Following'
+                : feedMode == 'reels'
+                    ? 'Reels'
+                    : 'For You',
+            active: true,
+            onTap: onSwitchFeed,
+          ),
+          const SizedBox(height: 10),
+          _DesktopDockButton(
+            icon: Icons.travel_explore_rounded,
+            label: 'Discover',
+            onTap: onOpenDiscover,
+          ),
+          const SizedBox(height: 10),
+          _DesktopDockButton(
+            icon: Icons.chat_bubble_rounded,
+            label: 'Inbox',
+            onTap: onOpenMessages,
+          ),
+          const SizedBox(height: 10),
+          _DesktopDockButton(
+            icon: Icons.directions_car_filled_rounded,
+            label: 'Traffic',
+            onTap: onOpenTraffic,
+          ),
+          const Spacer(),
+          _DesktopDockButton(
+            icon: Icons.add_box_rounded,
+            label: 'Create',
+            active: true,
+            filled: true,
+            onTap: onCreatePost,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DesktopDockButton extends StatefulWidget {
+  const _DesktopDockButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.active = false,
+    this.filled = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool active;
+  final bool filled;
+
+  @override
+  State<_DesktopDockButton> createState() => _DesktopDockButtonState();
+}
+
+class _DesktopDockButtonState extends State<_DesktopDockButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final highlight = widget.active || _hovered;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          decoration: BoxDecoration(
+            color: widget.filled
+                ? AppColors.primary
+                : highlight
+                    ? AppColors.primary.withValues(alpha: isDark ? 0.18 : 0.12)
+                    : Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            children: [
+              Icon(
+                widget.icon,
+                color: widget.filled
+                    ? Colors.white
+                    : highlight
+                        ? AppColors.primary
+                        : (isDark ? Colors.white70 : Colors.black54),
+                size: 22,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                widget.label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: widget.filled
+                      ? Colors.white
+                      : highlight
+                          ? AppColors.primary
+                          : (isDark ? Colors.white70 : Colors.black54),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopRailCard extends StatelessWidget {
+  const _DesktopRailCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(
+              alpha:
+                  Theme.of(context).brightness == Brightness.dark ? 0.32 : 0.55,
+            ),
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _DesktopRailAction extends StatefulWidget {
+  const _DesktopRailAction({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  State<_DesktopRailAction> createState() => _DesktopRailActionState();
+}
+
+class _DesktopRailActionState extends State<_DesktopRailAction> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          color: _hovered
+              ? AppColors.primary.withValues(alpha: 0.12)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(widget.icon, color: AppColors.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          widget.subtitle,
+                          style: const TextStyle(
+                            color: AppColors.grey,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -3705,17 +4873,17 @@ class _AnimatedActionIconState extends State<_AnimatedActionIcon>
               ),
             ),
           TweenAnimationBuilder<double>(
-        key: ValueKey(widget.active),
-        tween: Tween<double>(begin: 0.68, end: 1),
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOutBack,
-        builder: (context, scale, iconChild) {
-          return Transform.scale(
-            scale: scale,
-            child: iconChild,
-          );
-        },
-        child: widget.child,
+            key: ValueKey(widget.active),
+            tween: Tween<double>(begin: 0.68, end: 1),
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutBack,
+            builder: (context, scale, iconChild) {
+              return Transform.scale(
+                scale: scale,
+                child: iconChild,
+              );
+            },
+            child: widget.child,
           ),
         ],
       ),
