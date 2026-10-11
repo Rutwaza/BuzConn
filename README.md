@@ -61,6 +61,18 @@ flutter pub get
 flutter run
 ```
 
+## Windows Installer
+To create a single Windows x64 setup executable:
+1. Install Visual Studio 2022 Build Tools with the Desktop development with C++ workload.
+2. Install Inno Setup 6.
+3. From the project root, run:
+   ```powershell
+   .\windows\installer\build_installer.ps1
+   ```
+4. The installer is written to `build\windows\installer-output\SpotlightSetup-1.0.0-x64.exe`.
+
+The setup installs the app, Flutter assets, plugin DLLs, and the Visual C++ runtime, then adds Start menu and optional desktop shortcuts. This is a Windows x64 installer, not a single-file portable app; it requires Windows 10 or newer. Unsigned installers may show a SmartScreen warning on PCs where they are first downloaded.
+
 ## Launcher Icon
 If you want the launcher icon:
 ```bash

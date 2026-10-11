@@ -35,10 +35,26 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/agency_members/$(request.auth.uid));
     }
 
-    function isAgencyTeamMember() {
-      // Team gate for agency domain: any active agency member.
-      // Roles (admin/staff/reader) are handled by app/functions flow.
-      return hasAgencyMembership();
+    function agencyMemberData() {
+      return get(/databases/$(database)/documents/agency_members/$(request.auth.uid)).data;
+    }
+
+    function isActiveAgencyMember() {
+      return hasAgencyMembership()
+        && agencyMemberData().active == true
+        && (agencyMemberData().role == 'agency_admin' || agencyMemberData().role == 'agency_staff');
+    }
+
+    function isAgencyAdmin() {
+      return isActiveAgencyMember() && agencyMemberData().role == 'agency_admin';
+    }
+
+    function sameAgency(agencyId) {
+      return isActiveAgencyMember() && agencyMemberData().agencyId == agencyId;
+    }
+
+    function agencyReadableDoc(agencyId) {
+      return isSuperAdmin() || sameAgency(agencyId);
     }
 
     match /users/{userId} {
@@ -117,12 +133,15 @@ service cloud.firestore {
 
     match /agencies/{agencyId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+      allow create, update, delete: if false;
     }
 
     match /agency_members/{uid} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+      allow read: if isSuperAdmin()
+        || (isSignedIn() && request.auth.uid == uid)
+        || (isAgencyAdmin()
+          && resource.data.agencyId == agencyMemberData().agencyId);
+      allow create, update, delete: if false;
     }
 
     match /agency_applications/{id} {
@@ -146,37 +165,62 @@ service cloud.firestore {
 
     match /routes/{routeId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+      allow create, update, delete: if false;
     }
 
     match /buses/{busId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+      allow create, update, delete: if false;
     }
 
     match /cards/{cardId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+      allow read: if isSuperAdmin()
+        || (isSignedIn() && resource.data.userId == request.auth.uid)
+        || (isActiveAgencyMember()
+          && resource.data.issuerAgencyId is string
+          && sameAgency(resource.data.issuerAgencyId));
+      allow create, update, delete: if false;
     }
 
     match /card_transactions/{txId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+      allow read: if isSuperAdmin()
+        || (isSignedIn() && resource.data.userId == request.auth.uid)
+        || (isSignedIn() && resource.data.bookingUserId == request.auth.uid)
+        || (isActiveAgencyMember()
+          && resource.data.agencyId is string
+          && sameAgency(resource.data.agencyId));
+      allow create, update, delete: if false;
     }
 
     match /bookings/{bookingId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+      allow read: if isSuperAdmin()
+        || (isSignedIn() && resource.data.userId == request.auth.uid)
+        || (isSignedIn() && resource.data.bookingUserId == request.auth.uid)
+        || (isActiveAgencyMember()
+          && resource.data.agencyId is string
+          && sameAgency(resource.data.agencyId));
+      allow create, update, delete: if false;
     }
 
     match /booking_events/{eventId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+      allow read: if isSuperAdmin()
+        || (isActiveAgencyMember()
+          && resource.data.agencyId is string
+          && sameAgency(resource.data.agencyId));
+      allow create, update, delete: if false;
     }
 
     match /admin_events/{eventId} {
+      allow read: if isSuperAdmin()
+        || (isActiveAgencyMember()
+          && resource.data.agencyId is string
+          && sameAgency(resource.data.agencyId));
+      allow create, update, delete: if false;
+    }
+
+    match /usernames/{username} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isAgencyTeamMember() || isSuperAdmin();
+      allow create, update, delete: if false;
     }
   }
 }

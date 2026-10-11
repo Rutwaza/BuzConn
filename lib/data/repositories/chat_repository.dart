@@ -108,6 +108,9 @@ class ChatRepository {
     String? mediaName,
     int? mediaSize,
     Map<String, dynamic>? replyTo,
+    bool isGhost = false,
+    String? ghostCipherText,
+    String? ghostNonce,
   }) async {
     final messageRef = _firestore
         .collection('chats')
@@ -124,6 +127,9 @@ class ChatRepository {
       'senderName': senderName,
       'senderAvatar': senderAvatar,
       'text': text,
+      'isGhost': isGhost,
+      'ghostCipherText': ghostCipherText,
+      'ghostNonce': ghostNonce,
       'mediaUrl': mediaUrl,
       'mediaType': mediaType,
       'mediaName': mediaName,
@@ -139,16 +145,18 @@ class ChatRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    try {
-      await _createMessageNotifications(
-        chatId: chatId,
-        senderId: senderId,
-        senderName: senderName,
-        senderAvatar: senderAvatar,
-        previewText: mediaUrl != null ? '[media]' : text,
-      );
-    } catch (_) {
-      // Notification failures should not block sending messages.
+    if (!isGhost) {
+      try {
+        await _createMessageNotifications(
+          chatId: chatId,
+          senderId: senderId,
+          senderName: senderName,
+          senderAvatar: senderAvatar,
+          previewText: mediaUrl != null ? '[media]' : text,
+        );
+      } catch (_) {
+        // Notification failures should not block sending messages.
+      }
     }
   }
 
@@ -227,6 +235,40 @@ class ChatRepository {
   Future<void> setUserLastSeen(String userId) async {
     await _firestore.collection('users').doc(userId).update({
       'lastSeen': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> hardDeleteMessage({
+    required String chatId,
+    required String messageId,
+  }) async {
+    final chatRef = _firestore.collection('chats').doc(chatId);
+    final messagesRef = chatRef.collection('messages');
+    await messagesRef.doc(messageId).delete();
+
+    final latestSnap = await messagesRef
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .get();
+
+    if (latestSnap.docs.isEmpty) {
+      await chatRef.update({
+        'lastMessage': '',
+        'lastMessageAt': null,
+        'lastMessageSenderId': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return;
+    }
+
+    final latest = latestSnap.docs.first.data();
+    await chatRef.update({
+      'lastMessage': latest['mediaUrl'] != null
+          ? '[media]'
+          : (latest['text'] ?? '').toString(),
+      'lastMessageAt': latest['createdAt'],
+      'lastMessageSenderId': latest['senderId'],
+      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 

@@ -583,7 +583,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
         );
       }
 
-      await _postsRepository.createPost(
+      final postId = await _postsRepository.createPost(
         content: _contentController.text.trim(),
         businessId: _postAsProfile ? null : _selectedBusinessId,
         media: uploadedMedia,
@@ -600,7 +600,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
       });
 
       if (!mounted) return;
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(postId);
     } catch (e) {
       if (!mounted) return;
       final message = e.toString().replaceFirst('Exception: ', '');

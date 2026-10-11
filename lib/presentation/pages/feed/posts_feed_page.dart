@@ -16,6 +16,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/services/social_notification_service.dart';
 import '../../../core/theme/colors.dart';
+import '../../../core/widgets/spotlight_loader.dart';
 import '../../../data/models/post_model.dart';
 import '../../../data/repositories/posts_repository.dart';
 import '../../../data/repositories/chat_repository.dart';
@@ -42,6 +43,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   final List<Post> _posts = [];
   DocumentSnapshot? _lastDoc;
   bool _isLoading = false;
+  bool _isBootstrapping = true;
   bool _isRefreshing = false;
   bool _hasMore = true;
   String _feedMode =
@@ -114,8 +116,16 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
 
   Future<void> _bootstrapFeed() async {
     final canOpenFeed = await _initializeFeedMode();
-    if (!canOpenFeed || !mounted) return;
+    if (!canOpenFeed || !mounted) {
+      if (mounted) {
+        setState(() => _isBootstrapping = false);
+      }
+      return;
+    }
     await _loadInitial();
+    if (mounted) {
+      setState(() => _isBootstrapping = false);
+    }
   }
 
   Future<bool> _initializeFeedMode() async {
@@ -141,7 +151,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
 
       if (mounted) {
         setState(() {
-          _feedMode = 'reels';
+          _feedMode = 'forYou';
         });
       }
       return true;
@@ -447,16 +457,26 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   }
 
   Widget _buildFeedModeTabs() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      height: 56,
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      height: 46,
+      margin: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        color: Theme.of(context).colorScheme.surface.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(18),
+        color: isDark
+            ? Colors.black.withValues(alpha: 0.28)
+            : Colors.white.withValues(alpha: 0.58),
         border: Border.all(
-          color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.22),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -464,16 +484,19 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
           _FeedTabButton(
             label: 'For You',
             isActive: _feedMode == 'forYou',
+            compact: true,
             onTap: () => _toggleFeedMode('forYou'),
           ),
           _FeedTabButton(
             label: 'Reels',
             isActive: _feedMode == 'reels',
+            compact: true,
             onTap: () => _toggleFeedMode('reels'),
           ),
           _FeedTabButton(
             label: 'Following',
             isActive: _feedMode == 'following',
+            compact: true,
             onTap: () => _toggleFeedMode('following'),
           ),
         ],
@@ -503,6 +526,27 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
         setState(() => _isRefreshing = false);
       }
     }
+  }
+
+  Future<void> _refreshAfterPostCreated(String postId) async {
+    if (_feedMode != 'forYou') {
+      setState(() => _feedMode = 'forYou');
+    }
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+    await _refreshFeed();
+
+    if (!mounted) return;
+    final snapshot =
+        await FirebaseFirestore.instance.collection('posts').doc(postId).get();
+    if (!snapshot.exists || !mounted) return;
+
+    final createdPost = Post.fromFirestore(snapshot);
+    setState(() {
+      _posts.removeWhere((post) => post.id == createdPost.id);
+      _posts.insert(0, createdPost);
+    });
   }
 
   String _creatorKeyForPost(Post post) {
@@ -877,8 +921,6 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   @override
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final isDesktopWide = screenWidth >= 1200;
 
     return Scaffold(
       appBar: AppBar(
@@ -1007,10 +1049,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       ),
       body: Builder(
         builder: (context) {
-          if (_isLoading && _posts.isEmpty) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
+          final waitingForFeed =
+              _isBootstrapping || (_isLoading && _posts.isEmpty);
           final posts = _posts;
           final screenWidth = MediaQuery.sizeOf(context).width;
           final isDesktopWide = screenWidth >= 1200;
@@ -1238,41 +1278,6 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
               filtered.length >= 3;
           final suggestionIndex = hasInlineSuggestions ? 3 : -1;
 
-          if (posts.isEmpty && !_isLoading) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.post_add,
-                    size: 64,
-                    color: AppColors.grey,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _feedMode == 'following'
-                        ? (_followingPageIds.isEmpty
-                            ? 'You are not following anyone yet'
-                            : 'No posts from creators you follow yet')
-                        : 'No posts yet',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _feedMode == 'following'
-                        ? (_followingPageIds.isEmpty
-                            ? 'Follow creators to see their posts here'
-                            : 'They’ll show up here when they post')
-                        : 'Follow creators to see their posts here',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.grey,
-                        ),
-                  ),
-                ],
-              ),
-            );
-          }
-
           final postKeys = <String, GlobalObjectKey>{};
           final feedContent = Column(
             children: [
@@ -1390,299 +1395,359 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
               Expanded(
                 child: Stack(
                   children: [
-                    RefreshIndicator(
-                      color: AppColors.primary,
-                      backgroundColor: Theme.of(context).cardColor,
-                      displacement: 72,
-                      onRefresh: _refreshFeed,
-                      child: _isLoading && filtered.isEmpty
-                          ? const _FeedShimmerList()
-                          : ListView.builder(
-                              controller: _scrollController,
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              cacheExtent:
-                                  2000, // Preload more items for smoother scrolling
-                              itemCount: filtered.isEmpty
-                                  ? 1
-                                  : filtered.length +
-                                      (hasInlineSuggestions ? 1 : 0) +
-                                      (_hasMore ? 1 : 0),
-                              itemBuilder: (context, index) {
-                                if (filtered.isEmpty) {
-                                  return const Padding(
-                                    padding: EdgeInsets.symmetric(
-                                        vertical: 24, horizontal: 16),
-                                    child: Center(
-                                      child: Text('No posts yet'),
-                                    ),
-                                  );
-                                }
-                                if (hasInlineSuggestions &&
-                                    index == suggestionIndex) {
-                                  return _InlineFollowSuggestionsCard(
-                                    suggestions: suggestionList,
-                                    onDismiss: () {
-                                      HapticFeedback.selectionClick();
-                                      setState(() {
-                                        _inlineSuggestionsDismissed = true;
-                                      });
-                                    },
-                                    onOpenCreator: (post) {
-                                      if (post.businessId.isNotEmpty) {
-                                        HapticFeedback.lightImpact();
-                                        context.push(
-                                          AppRoutes.businessProfilePath(
-                                              post.businessId),
-                                        );
-                                      } else {
-                                        HapticFeedback.lightImpact();
-                                        context.push(
-                                          AppRoutes.clientProfilePath(
-                                              post.ownerId),
-                                        );
-                                      }
-                                    },
-                                    onFollow: (post) {
-                                      if (post.businessId.isNotEmpty) {
-                                        HapticFeedback.lightImpact();
-                                        setState(() {
-                                          if (!_followingPageIds
-                                              .contains(post.businessId)) {
-                                            _followingPageIds
-                                                .add(post.businessId);
-                                          }
-                                        });
-                                        _toggleFollowPage(
-                                            post.businessId, false);
-                                      } else {
-                                        HapticFeedback.lightImpact();
-                                        setState(() {
-                                          if (!_followingUserIds
-                                              .contains(post.ownerId)) {
-                                            _followingUserIds.add(post.ownerId);
-                                          }
-                                        });
-                                        _toggleFollowUser(post.ownerId, false);
-                                      }
-                                    },
-                                  );
-                                }
-                                final postIndex = hasInlineSuggestions &&
-                                        index > suggestionIndex
-                                    ? index - 1
-                                    : index;
-                                if (postIndex >= filtered.length) {
-                                  return const Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 16),
-                                    child: Center(
-                                      child: CircularProgressIndicator(),
-                                    ),
-                                  );
-                                }
-                                final post = filtered[postIndex];
-                                final key = postKeys.putIfAbsent(
-                                  post.id,
-                                  () => GlobalObjectKey(post.id),
-                                );
-                                WidgetsBinding.instance
-                                    .addPostFrameCallback((_) {
-                                  if (!_didJumpToPost &&
-                                      widget.initialPostId != null &&
-                                      post.id == widget.initialPostId) {
-                                    _didJumpToPost = true;
-                                    final ctx = key.currentContext;
-                                    if (ctx != null) {
-                                      Scrollable.ensureVisible(
-                                        ctx,
-                                        duration:
-                                            const Duration(milliseconds: 300),
-                                        alignment: 0.1,
-                                      );
-                                    }
-                                  }
-                                });
-
-                                final followDocStream = currentUser == null
-                                    ? const Stream<DocumentSnapshot>.empty()
-                                    : (post.businessId.isNotEmpty
-                                        ? FirebaseFirestore.instance
-                                            .collection('page_follows')
-                                            .doc(
-                                                '${currentUser.uid}_${post.businessId}')
-                                            .snapshots()
-                                        : FirebaseFirestore.instance
-                                            .collection('user_follows')
-                                            .doc(
-                                                '${currentUser.uid}_${post.ownerId}')
-                                            .snapshots());
-                                return StreamBuilder<DocumentSnapshot>(
-                                  stream: followDocStream,
-                                  builder: (context, followSnap) {
-                                    final isFollowing =
-                                        followSnap.data?.exists == true;
-                                    return StreamBuilder<DocumentSnapshot>(
-                                      stream: currentUser == null
-                                          ? const Stream.empty()
-                                          : FirebaseFirestore.instance
-                                              .collection('users')
-                                              .doc(currentUser.uid)
-                                              .collection('favorites')
-                                              .doc(post.id)
-                                              .snapshots(),
-                                      builder: (context, favSnap) {
-                                        final isSaved =
-                                            favSnap.data?.exists == true;
-                                        return VisibilityDetector(
-                                          key: ValueKey('feed_post_${post.id}'),
-                                          onVisibilityChanged: (info) {
-                                            _registerImpression(
-                                                post, info.visibleFraction);
-                                          },
-                                          child: PostCard(
-                                            key: key,
-                                            post: post,
-                                            currentUserId:
-                                                currentUser?.uid ?? '',
-                                            isSaved: isSaved,
-                                            initialMediaIndex:
-                                                _mediaIndexByPostId[post.id] ??
-                                                    0,
-                                            onMediaIndexChanged: (index) {
-                                              _mediaIndexByPostId[post.id] =
-                                                  index;
-                                            },
-                                            onMediaEngaged: (index) =>
-                                                _registerMediaEngagement(
-                                                    post, index),
-                                            onDoubleTapLike: () {
-                                              final uid =
-                                                  currentUser?.uid ?? '';
-                                              final alreadyLiked =
-                                                  post.likes.contains(uid);
-                                              if (uid.isEmpty || alreadyLiked) {
-                                                return;
-                                              }
-                                              HapticFeedback.mediumImpact();
-                                              _optimisticallyToggleLike(
-                                                  post, uid);
-                                              _recordFeedSignal(
-                                                post,
-                                                creatorDelta: 0.75,
-                                                postDelta: 1.45,
-                                              );
-                                              _postsRepository
-                                                  .toggleLike(post.id);
-                                            },
-                                            onOpenDetail: (index) {
-                                              HapticFeedback.selectionClick();
-                                              _recordFeedSignal(
-                                                post,
-                                                creatorDelta: 0.45,
-                                                postDelta: 0.9,
-                                              );
-                                              Navigator.of(context).push(
-                                                MaterialPageRoute(
-                                                  builder: (_) => business_post
-                                                      .PostDetailPage(
-                                                    post: post,
-                                                    initialMediaIndex: index,
+                    if (waitingForFeed)
+                      const Center(child: SpotlightLoader(size: 44))
+                    else
+                      RefreshIndicator(
+                        color: AppColors.primary,
+                        backgroundColor: Theme.of(context).cardColor,
+                        displacement: 72,
+                        onRefresh: _refreshFeed,
+                        child: _isLoading && filtered.isEmpty
+                            ? const _FeedShimmerList()
+                            : ListView.builder(
+                                controller: _scrollController,
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                cacheExtent:
+                                    2000, // Preload more items for smoother scrolling
+                                itemCount: filtered.isEmpty
+                                    ? 1
+                                    : filtered.length +
+                                        (hasInlineSuggestions ? 1 : 0) +
+                                        (_hasMore ? 1 : 0),
+                                itemBuilder: (context, index) {
+                                  if (filtered.isEmpty) {
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 72,
+                                        horizontal: 24,
+                                      ),
+                                      child: Center(
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(
+                                              Icons.post_add_rounded,
+                                              size: 56,
+                                              color: AppColors.grey,
+                                            ),
+                                            const SizedBox(height: 16),
+                                            Text(
+                                              _feedMode == 'following'
+                                                  ? (_followingPageIds
+                                                              .isEmpty &&
+                                                          _followingUserIds
+                                                              .isEmpty
+                                                      ? 'You are not following anyone yet'
+                                                      : 'No posts from creators you follow yet')
+                                                  : 'No posts yet',
+                                              textAlign: TextAlign.center,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .headlineSmall,
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              _feedMode == 'following'
+                                                  ? 'Follow creators to see their posts here.'
+                                                  : 'Follow creators to discover their posts, or create the first one.',
+                                              textAlign: TextAlign.center,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodyMedium
+                                                  ?.copyWith(
+                                                    color: AppColors.grey,
                                                   ),
-                                                ),
-                                              );
-                                            },
-                                            onLike: () {
-                                              final currentlyLiked = post.likes
-                                                  .contains(
-                                                      currentUser?.uid ?? '');
-                                              final uid =
-                                                  currentUser?.uid ?? '';
-                                              if (uid.isNotEmpty) {
-                                                HapticFeedback.lightImpact();
-                                                _optimisticallyToggleLike(
-                                                    post, uid);
-                                              }
-                                              _recordFeedSignal(
-                                                post,
-                                                creatorDelta: currentlyLiked
-                                                    ? -0.15
-                                                    : 0.6,
-                                                postDelta: currentlyLiked
-                                                    ? -0.25
-                                                    : 1.25,
-                                              );
-                                              _postsRepository
-                                                  .toggleLike(post.id);
-                                            },
-                                            onComment: () {
-                                              HapticFeedback.selectionClick();
-                                              _recordFeedSignal(
-                                                post,
-                                                creatorDelta: 0.7,
-                                                postDelta: 1.15,
-                                              );
-                                              _showCommentDialog(post.id);
-                                            },
-                                            onShare: () {
-                                              HapticFeedback.selectionClick();
-                                              _recordFeedSignal(
-                                                post,
-                                                creatorDelta: 0.42,
-                                                postDelta: 0.8,
-                                              );
-                                              _sharePost(post);
-                                            },
-                                            onLocationTap: () =>
-                                                _openLocation(post),
-                                            onMessage: () {
-                                              HapticFeedback.selectionClick();
-                                              _recordFeedSignal(
-                                                post,
-                                                creatorDelta: 0.6,
-                                                postDelta: 0.75,
-                                              );
-                                              _startChat(post);
-                                            },
-                                            onSave: () {
-                                              HapticFeedback.lightImpact();
-                                              _recordFeedSignal(
-                                                post,
-                                                creatorDelta:
-                                                    isSaved ? -0.12 : 0.75,
-                                                postDelta: isSaved ? -0.2 : 1.2,
-                                              );
-                                              _toggleFavorite(post, isSaved);
-                                            },
-                                            isFollowingCreator: isFollowing,
-                                            onFollowCreator: () {
-                                              HapticFeedback.lightImpact();
-                                              _recordFeedSignal(
-                                                post,
-                                                creatorDelta:
-                                                    isFollowing ? -0.4 : 1.6,
-                                                postDelta:
-                                                    isFollowing ? -0.2 : 0.35,
-                                              );
-                                              if (post.businessId.isNotEmpty) {
-                                                _toggleFollowPage(
-                                                    post.businessId,
-                                                    isFollowing);
-                                              } else {
-                                                _toggleFollowUser(
-                                                    post.ownerId, isFollowing);
-                                              }
-                                            },
-                                            onEdit: () => _showEditDialog(post),
-                                            onDelete: () =>
-                                                _confirmDelete(post),
-                                          ),
-                                        );
+                                            ),
+                                            const SizedBox(height: 18),
+                                            FilledButton.icon(
+                                              onPressed: _showCreateOptions,
+                                              icon: const Icon(Icons.add),
+                                              label:
+                                                  const Text('Create a post'),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  if (hasInlineSuggestions &&
+                                      index == suggestionIndex) {
+                                    return _InlineFollowSuggestionsCard(
+                                      suggestions: suggestionList,
+                                      onDismiss: () {
+                                        HapticFeedback.selectionClick();
+                                        setState(() {
+                                          _inlineSuggestionsDismissed = true;
+                                        });
+                                      },
+                                      onOpenCreator: (post) {
+                                        if (post.businessId.isNotEmpty) {
+                                          HapticFeedback.lightImpact();
+                                          context.push(
+                                            AppRoutes.businessProfilePath(
+                                                post.businessId),
+                                          );
+                                        } else {
+                                          HapticFeedback.lightImpact();
+                                          context.push(
+                                            AppRoutes.clientProfilePath(
+                                                post.ownerId),
+                                          );
+                                        }
+                                      },
+                                      onFollow: (post) {
+                                        if (post.businessId.isNotEmpty) {
+                                          HapticFeedback.lightImpact();
+                                          setState(() {
+                                            if (!_followingPageIds
+                                                .contains(post.businessId)) {
+                                              _followingPageIds
+                                                  .add(post.businessId);
+                                            }
+                                          });
+                                          _toggleFollowPage(
+                                              post.businessId, false);
+                                        } else {
+                                          HapticFeedback.lightImpact();
+                                          setState(() {
+                                            if (!_followingUserIds
+                                                .contains(post.ownerId)) {
+                                              _followingUserIds
+                                                  .add(post.ownerId);
+                                            }
+                                          });
+                                          _toggleFollowUser(
+                                              post.ownerId, false);
+                                        }
                                       },
                                     );
-                                  },
-                                );
-                              },
-                            ),
-                    ),
+                                  }
+                                  final postIndex = hasInlineSuggestions &&
+                                          index > suggestionIndex
+                                      ? index - 1
+                                      : index;
+                                  if (postIndex >= filtered.length) {
+                                    return const Padding(
+                                      padding:
+                                          EdgeInsets.symmetric(vertical: 16),
+                                      child: Center(
+                                        child: CircularProgressIndicator(),
+                                      ),
+                                    );
+                                  }
+                                  final post = filtered[postIndex];
+                                  final key = postKeys.putIfAbsent(
+                                    post.id,
+                                    () => GlobalObjectKey(post.id),
+                                  );
+                                  WidgetsBinding.instance
+                                      .addPostFrameCallback((_) {
+                                    if (!_didJumpToPost &&
+                                        widget.initialPostId != null &&
+                                        post.id == widget.initialPostId) {
+                                      _didJumpToPost = true;
+                                      final ctx = key.currentContext;
+                                      if (ctx != null) {
+                                        Scrollable.ensureVisible(
+                                          ctx,
+                                          duration:
+                                              const Duration(milliseconds: 300),
+                                          alignment: 0.1,
+                                        );
+                                      }
+                                    }
+                                  });
+
+                                  final followDocStream = currentUser == null
+                                      ? const Stream<DocumentSnapshot>.empty()
+                                      : (post.businessId.isNotEmpty
+                                          ? FirebaseFirestore.instance
+                                              .collection('page_follows')
+                                              .doc(
+                                                  '${currentUser.uid}_${post.businessId}')
+                                              .snapshots()
+                                          : FirebaseFirestore.instance
+                                              .collection('user_follows')
+                                              .doc(
+                                                  '${currentUser.uid}_${post.ownerId}')
+                                              .snapshots());
+                                  return StreamBuilder<DocumentSnapshot>(
+                                    stream: followDocStream,
+                                    builder: (context, followSnap) {
+                                      final isFollowing =
+                                          followSnap.data?.exists == true;
+                                      return StreamBuilder<DocumentSnapshot>(
+                                        stream: currentUser == null
+                                            ? const Stream.empty()
+                                            : FirebaseFirestore.instance
+                                                .collection('users')
+                                                .doc(currentUser.uid)
+                                                .collection('favorites')
+                                                .doc(post.id)
+                                                .snapshots(),
+                                        builder: (context, favSnap) {
+                                          final isSaved =
+                                              favSnap.data?.exists == true;
+                                          return VisibilityDetector(
+                                            key: ValueKey(
+                                                'feed_post_${post.id}'),
+                                            onVisibilityChanged: (info) {
+                                              _registerImpression(
+                                                  post, info.visibleFraction);
+                                            },
+                                            child: PostCard(
+                                              key: key,
+                                              post: post,
+                                              currentUserId:
+                                                  currentUser?.uid ?? '',
+                                              isSaved: isSaved,
+                                              initialMediaIndex:
+                                                  _mediaIndexByPostId[
+                                                          post.id] ??
+                                                      0,
+                                              onMediaIndexChanged: (index) {
+                                                _mediaIndexByPostId[post.id] =
+                                                    index;
+                                              },
+                                              onMediaEngaged: (index) =>
+                                                  _registerMediaEngagement(
+                                                      post, index),
+                                              onDoubleTapLike: () {
+                                                final uid =
+                                                    currentUser?.uid ?? '';
+                                                final alreadyLiked =
+                                                    post.likes.contains(uid);
+                                                if (uid.isEmpty ||
+                                                    alreadyLiked) {
+                                                  return;
+                                                }
+                                                HapticFeedback.mediumImpact();
+                                                _optimisticallyToggleLike(
+                                                    post, uid);
+                                                _recordFeedSignal(
+                                                  post,
+                                                  creatorDelta: 0.75,
+                                                  postDelta: 1.45,
+                                                );
+                                                _postsRepository
+                                                    .toggleLike(post.id);
+                                              },
+                                              onOpenDetail: (index) {
+                                                HapticFeedback.selectionClick();
+                                                _recordFeedSignal(
+                                                  post,
+                                                  creatorDelta: 0.45,
+                                                  postDelta: 0.9,
+                                                );
+                                                Navigator.of(context).push(
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        business_post
+                                                            .PostDetailPage(
+                                                      post: post,
+                                                      initialMediaIndex: index,
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                              onLike: () {
+                                                final currentlyLiked =
+                                                    post.likes.contains(
+                                                        currentUser?.uid ?? '');
+                                                final uid =
+                                                    currentUser?.uid ?? '';
+                                                if (uid.isNotEmpty) {
+                                                  HapticFeedback.lightImpact();
+                                                  _optimisticallyToggleLike(
+                                                      post, uid);
+                                                }
+                                                _recordFeedSignal(
+                                                  post,
+                                                  creatorDelta: currentlyLiked
+                                                      ? -0.15
+                                                      : 0.6,
+                                                  postDelta: currentlyLiked
+                                                      ? -0.25
+                                                      : 1.25,
+                                                );
+                                                _postsRepository
+                                                    .toggleLike(post.id);
+                                              },
+                                              onComment: () {
+                                                HapticFeedback.selectionClick();
+                                                _recordFeedSignal(
+                                                  post,
+                                                  creatorDelta: 0.7,
+                                                  postDelta: 1.15,
+                                                );
+                                                _showCommentDialog(post.id);
+                                              },
+                                              onShare: () {
+                                                HapticFeedback.selectionClick();
+                                                _recordFeedSignal(
+                                                  post,
+                                                  creatorDelta: 0.42,
+                                                  postDelta: 0.8,
+                                                );
+                                                _sharePost(post);
+                                              },
+                                              onLocationTap: () =>
+                                                  _openLocation(post),
+                                              onMessage: () {
+                                                HapticFeedback.selectionClick();
+                                                _recordFeedSignal(
+                                                  post,
+                                                  creatorDelta: 0.6,
+                                                  postDelta: 0.75,
+                                                );
+                                                _startChat(post);
+                                              },
+                                              onSave: () {
+                                                HapticFeedback.lightImpact();
+                                                _recordFeedSignal(
+                                                  post,
+                                                  creatorDelta:
+                                                      isSaved ? -0.12 : 0.75,
+                                                  postDelta:
+                                                      isSaved ? -0.2 : 1.2,
+                                                );
+                                                _toggleFavorite(post, isSaved);
+                                              },
+                                              isFollowingCreator: isFollowing,
+                                              onFollowCreator: () {
+                                                HapticFeedback.lightImpact();
+                                                _recordFeedSignal(
+                                                  post,
+                                                  creatorDelta:
+                                                      isFollowing ? -0.4 : 1.6,
+                                                  postDelta:
+                                                      isFollowing ? -0.2 : 0.35,
+                                                );
+                                                if (post
+                                                    .businessId.isNotEmpty) {
+                                                  _toggleFollowPage(
+                                                      post.businessId,
+                                                      isFollowing);
+                                                } else {
+                                                  _toggleFollowUser(
+                                                      post.ownerId,
+                                                      isFollowing);
+                                                }
+                                              },
+                                              onEdit: () =>
+                                                  _showEditDialog(post),
+                                              onDelete: () =>
+                                                  _confirmDelete(post),
+                                            ),
+                                          );
+                                        },
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
                     IgnorePointer(
                       child: SafeArea(
                         child: Align(
@@ -1750,8 +1815,6 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     onOpenDiscover: () => context.push(AppRoutes.search),
                     onOpenMessages: () => context.push(AppRoutes.chats),
                     onCreatePost: _showCreateOptions,
-                    onOpenTraffic: () =>
-                        context.push(AppRoutes.trafficManagement),
                   ),
                 ),
                 const SizedBox(width: 18),
@@ -1830,91 +1893,157 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
           );
         },
       ),
-      bottomNavigationBar: isDesktopWide
-          ? null
-          : SafeArea(
-              top: false,
-              child: StreamBuilder<DocumentSnapshot>(
-                stream: currentUser == null
-                    ? const Stream.empty()
-                    : FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(currentUser.uid)
-                        .snapshots(),
-                builder: (context, userSnap) {
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _roundActionButton(
-                          icon: Icons.home,
-                          tooltip: 'Home',
-                          onTap: () {
-                            if (_feedMode != 'forYou') {
-                              _toggleFeedMode('forYou');
-                            }
-                            context.go(AppRoutes.feed);
-                          },
-                        ),
-                        const SizedBox(width: 16),
-                        _roundActionButton(
-                          icon: Icons.search,
-                          tooltip: 'Discover',
-                          onTap: () => context.push(AppRoutes.search),
-                        ),
-                        const SizedBox(width: 16),
-                        _roundActionButton(
-                          icon: Icons.add,
-                          tooltip: 'Create',
-                          filled: true,
-                          onTap: _showCreateOptions,
-                        ),
-                        const SizedBox(width: 16),
-                        _roundActionButton(
-                          icon: Icons.message,
-                          tooltip: 'Messages',
-                          onTap: () => context.push(AppRoutes.chats),
-                        ),
-                        const SizedBox(width: 16),
-                        _roundActionButton(
-                          icon: Icons.directions_car_filled_rounded,
-                          tooltip: 'Traffic',
-                          onTap: () =>
-                              context.push(AppRoutes.trafficManagement),
-                        ),
-                      ],
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Align(
+          alignment: Alignment.center,
+          heightFactor: 1,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 900),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .outlineVariant
+                        .withValues(alpha: 0.55),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.10),
+                      blurRadius: 20,
+                      offset: const Offset(0, 6),
                     ),
-                  );
-                },
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _bottomNavigationItem(
+                        icon: Icons.home_rounded,
+                        label: 'Home',
+                        selected: true,
+                        onTap: () {
+                          if (_feedMode != 'forYou') {
+                            setState(() => _feedMode = 'forYou');
+                          }
+                          if (_scrollController.hasClients) {
+                            _scrollController.jumpTo(0);
+                          }
+                          _refreshFeed();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _bottomNavigationItem(
+                        icon: Icons.search_rounded,
+                        label: 'Discover',
+                        onTap: () => context.push(AppRoutes.search),
+                      ),
+                    ),
+                    Expanded(
+                      child: _bottomNavigationItem(
+                        icon: Icons.add_rounded,
+                        label: 'Create',
+                        emphasized: true,
+                        onTap: _showCreateOptions,
+                      ),
+                    ),
+                    Expanded(
+                      child: _bottomNavigationItem(
+                        icon: Icons.message_rounded,
+                        label: 'Messages',
+                        onTap: () => context.push(AppRoutes.chats),
+                      ),
+                    ),
+                    Expanded(
+                      child: _bottomNavigationItem(
+                        icon: Icons.person_rounded,
+                        label: 'Profile',
+                        onTap: currentUser == null
+                            ? () => context.go(AppRoutes.profile)
+                            : () => context.push(
+                                  AppRoutes.clientProfilePath(
+                                    currentUser.uid,
+                                  ),
+                                ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
+          ),
+        ),
+      ),
     );
   }
 
-  Widget _roundActionButton({
+  Widget _bottomNavigationItem({
     required IconData icon,
-    required String tooltip,
+    required String label,
     required VoidCallback onTap,
-    VoidCallback? onLongPress,
-    bool filled = false,
+    bool selected = false,
+    bool emphasized = false,
   }) {
     final scheme = Theme.of(context).colorScheme;
+    final iconColor = emphasized
+        ? scheme.onPrimary
+        : selected
+            ? scheme.primary
+            : scheme.onSurfaceVariant;
+
     return Tooltip(
-      message: tooltip,
+      message: label,
       child: Material(
-        color: filled ? scheme.primary : scheme.surface,
-        shape: const CircleBorder(),
-        elevation: filled ? 4 : 1,
+        color: Colors.transparent,
         child: InkWell(
-          customBorder: const CircleBorder(),
+          borderRadius: BorderRadius.circular(18),
           onTap: onTap,
-          onLongPress: onLongPress,
           child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Icon(
-              icon,
-              color: filled ? scheme.onPrimary : scheme.onSurface,
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: emphasized
+                        ? scheme.primary
+                        : selected
+                            ? scheme.primary.withValues(alpha: 0.12)
+                            : Colors.transparent,
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    icon,
+                    size: 22,
+                    color: iconColor,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color:
+                            selected ? scheme.primary : scheme.onSurfaceVariant,
+                        fontWeight:
+                            selected ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                ),
+              ],
             ),
           ),
         ),
@@ -1992,7 +2121,10 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     );
     if (!mounted || selected == null) return;
     if (selected == 'post') {
-      context.push(AppRoutes.createPost);
+      final postId = await context.push<String>(AppRoutes.createPost);
+      if (postId != null && mounted) {
+        await _refreshAfterPostCreated(postId);
+      }
     } else if (selected == 'page') {
       context.push(AppRoutes.businessSetup);
     }
@@ -3626,7 +3758,8 @@ class _InlineFollowSuggestionsCard extends StatelessWidget {
                               maximumSize: const Size(double.infinity, 30),
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
                               textStyle: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
@@ -3710,292 +3843,294 @@ class PostCard extends StatelessWidget {
         child: Stack(
           children: [
             Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: contentPadding,
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      backgroundColor: AppColors.primary,
-                      backgroundImage: (post.businessImageUrl != null &&
-                              post.businessImageUrl!.isNotEmpty)
-                          ? CachedNetworkImageProvider(post.businessImageUrl!)
-                          : null,
-                      child: (post.businessImageUrl == null ||
-                              post.businessImageUrl!.isEmpty)
-                          ? Text(
-                              (post.businessName.isNotEmpty
-                                      ? post.businessName[0]
-                                      : '?')
-                                  .toUpperCase(),
-                              style: const TextStyle(color: Colors.white),
-                            )
-                          : null,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              GestureDetector(
-                                onTap: () {
-                                  if (post.businessId.isNotEmpty) {
-                                    context.push(
-                                      AppRoutes.businessProfilePath(
-                                        post.businessId,
-                                      ),
-                                    );
-                                  } else {
-                                    context.push(
-                                      AppRoutes.clientProfilePath(
-                                        post.ownerId,
-                                      ),
-                                    );
-                                  }
-                                },
-                                child: Text(
-                                  post.businessName.isNotEmpty
-                                      ? post.businessName
-                                      : 'Unknown Creator',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: contentPadding,
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: AppColors.primary,
+                        backgroundImage: (post.businessImageUrl != null &&
+                                post.businessImageUrl!.isNotEmpty)
+                            ? CachedNetworkImageProvider(post.businessImageUrl!)
+                            : null,
+                        child: (post.businessImageUrl == null ||
+                                post.businessImageUrl!.isEmpty)
+                            ? Text(
+                                (post.businessName.isNotEmpty
+                                        ? post.businessName[0]
+                                        : '?')
+                                    .toUpperCase(),
+                                style: const TextStyle(color: Colors.white),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: () {
+                                    if (post.businessId.isNotEmpty) {
+                                      context.push(
+                                        AppRoutes.businessProfilePath(
+                                          post.businessId,
+                                        ),
+                                      );
+                                    } else {
+                                      context.push(
+                                        AppRoutes.clientProfilePath(
+                                          post.ownerId,
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  child: Text(
+                                    post.businessName.isNotEmpty
+                                        ? post.businessName
+                                        : 'Unknown Creator',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isProfilePost
-                                      ? AppColors.primary.withValues(alpha: 0.1)
-                                      : Colors.orange.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      isProfilePost
-                                          ? Icons.person_outline_rounded
-                                          : Icons.campaign_outlined,
-                                      size: 11,
-                                      color: isProfilePost
-                                          ? AppColors.primary
-                                          : Colors.orange.shade700,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      isProfilePost ? 'Profile' : 'Page',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w700,
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isProfilePost
+                                        ? AppColors.primary
+                                            .withValues(alpha: 0.1)
+                                        : Colors.orange.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isProfilePost
+                                            ? Icons.person_outline_rounded
+                                            : Icons.campaign_outlined,
+                                        size: 11,
                                         color: isProfilePost
                                             ? AppColors.primary
                                             : Colors.orange.shade700,
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          Row(
-                            children: [
-                              Text(
-                                timeAgo,
-                                style: const TextStyle(
-                                  color: AppColors.grey,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              if (post.ownerId != currentUserId)
-                                GestureDetector(
-                                  onTap: onFollowCreator,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          Colors.black.withValues(alpha: 0.06),
-                                      borderRadius: BorderRadius.circular(999),
-                                      border: Border.all(
-                                        color: isFollowingCreator
-                                            ? AppColors.primary
-                                                .withValues(alpha: 0.4)
-                                            : AppColors.grey
-                                                .withValues(alpha: 0.4),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        isProfilePost ? 'Profile' : 'Page',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: isProfilePost
+                                              ? AppColors.primary
+                                              : Colors.orange.shade700,
+                                        ),
                                       ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          isFollowingCreator
-                                              ? Icons.verified
-                                              : Icons.add,
-                                          size: 12,
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                Text(
+                                  timeAgo,
+                                  style: const TextStyle(
+                                    color: AppColors.grey,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                if (post.ownerId != currentUserId)
+                                  GestureDetector(
+                                    onTap: onFollowCreator,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black
+                                            .withValues(alpha: 0.06),
+                                        borderRadius:
+                                            BorderRadius.circular(999),
+                                        border: Border.all(
                                           color: isFollowingCreator
                                               ? AppColors.primary
-                                              : AppColors.grey,
+                                                  .withValues(alpha: 0.4)
+                                              : AppColors.grey
+                                                  .withValues(alpha: 0.4),
                                         ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          isFollowingCreator
-                                              ? 'Following'
-                                              : (isProfilePost
-                                                  ? 'Connect'
-                                                  : 'Follow'),
-                                          style: TextStyle(
-                                            fontSize: 11,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            isFollowingCreator
+                                                ? Icons.verified
+                                                : Icons.add,
+                                            size: 12,
                                             color: isFollowingCreator
                                                 ? AppColors.primary
                                                 : AppColors.grey,
-                                            fontWeight: FontWeight.w600,
                                           ),
-                                        ),
-                                      ],
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            isFollowingCreator
+                                                ? 'Following'
+                                                : (isProfilePost
+                                                    ? 'Connect'
+                                                    : 'Follow'),
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: isFollowingCreator
+                                                  ? AppColors.primary
+                                                  : AppColors.grey,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                ),
-                              const Spacer(),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (post.ownerId == currentUserId)
-                      PopupMenuButton<String>(
-                        onSelected: (value) {
-                          if (value == 'edit') {
-                            onEdit();
-                          } else if (value == 'delete') {
-                            onDelete();
-                          }
-                        },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(
-                            value: 'edit',
-                            child: Text('Edit'),
-                          ),
-                          PopupMenuItem(
-                            value: 'delete',
-                            child: Text('Delete'),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
-              ),
-              if (media.isNotEmpty) ...[
-                _PostMediaCarousel(
-                  media: media,
-                  initialIndex: initialMediaIndex,
-                  onIndexChanged: onMediaIndexChanged,
-                  onTap: onOpenDetail,
-                  onMediaEngaged: onMediaEngaged,
-                  onDoubleTapLike: onDoubleTapLike,
-                  overlayText: post.content,
-                ),
-              ] else ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
-                  child: Text(
-                    post.content,
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                ),
-              ],
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-                child: Row(
-                  children: [
-                    _AnimatedActionIcon(
-                      active: isLiked,
-                      onPressed: onLike,
-                      burstOnActivate: true,
-                      burstColor: Colors.pinkAccent,
-                      child: Icon(
-                        isLiked ? Icons.favorite : Icons.favorite_border,
-                        color: isLiked ? Colors.pinkAccent : null,
-                      ),
-                    ),
-                    _AnimatedCountText(value: post.likes.length),
-                    const SizedBox(width: 6),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.all(4),
-                      constraints:
-                          const BoxConstraints.tightFor(width: 32, height: 32),
-                      icon: const Icon(Icons.chat_bubble_outline),
-                      onPressed: onComment,
-                    ),
-                    _AnimatedCountText(value: post.comments.length),
-                    const SizedBox(width: 6),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.all(4),
-                      constraints:
-                          const BoxConstraints.tightFor(width: 32, height: 32),
-                      icon: const Icon(Icons.forward),
-                      onPressed: onShare,
-                    ),
-                    if (hasVideo)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 2, right: 4),
-                        child: _PostMetaChip(
-                          icon: Icons.play_arrow_rounded,
-                          label: _formatCompactMetric(post.playCount),
-                          accent: Colors.pinkAccent,
+                                const Spacer(),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
-                    const Spacer(),
-                    if (post.googleMapsLink != null &&
-                        post.googleMapsLink!.isNotEmpty)
+                      if (post.ownerId == currentUserId)
+                        PopupMenuButton<String>(
+                          onSelected: (value) {
+                            if (value == 'edit') {
+                              onEdit();
+                            } else if (value == 'delete') {
+                              onDelete();
+                            }
+                          },
+                          itemBuilder: (context) => const [
+                            PopupMenuItem(
+                              value: 'edit',
+                              child: Text('Edit'),
+                            ),
+                            PopupMenuItem(
+                              value: 'delete',
+                              child: Text('Delete'),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+                if (media.isNotEmpty) ...[
+                  _PostMediaCarousel(
+                    media: media,
+                    initialIndex: initialMediaIndex,
+                    onIndexChanged: onMediaIndexChanged,
+                    onTap: onOpenDetail,
+                    onMediaEngaged: onMediaEngaged,
+                    onDoubleTapLike: onDoubleTapLike,
+                    overlayText: post.content,
+                  ),
+                ] else ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
+                    child: Text(
+                      post.content,
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                  ),
+                ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+                  child: Row(
+                    children: [
+                      _AnimatedActionIcon(
+                        active: isLiked,
+                        onPressed: onLike,
+                        burstOnActivate: true,
+                        burstColor: Colors.pinkAccent,
+                        child: Icon(
+                          isLiked ? Icons.favorite : Icons.favorite_border,
+                          color: isLiked ? Colors.pinkAccent : null,
+                        ),
+                      ),
+                      _AnimatedCountText(value: post.likes.length),
+                      const SizedBox(width: 6),
                       IconButton(
                         visualDensity: VisualDensity.compact,
                         padding: const EdgeInsets.all(4),
                         constraints: const BoxConstraints.tightFor(
                             width: 32, height: 32),
-                        icon: const Icon(Icons.location_on),
-                        onPressed: onLocationTap,
-                        tooltip: 'Open location',
+                        icon: const Icon(Icons.chat_bubble_outline),
+                        onPressed: onComment,
                       ),
-                    _AnimatedActionIcon(
-                      active: isSaved,
-                      onPressed: onSave,
-                      child: Icon(
-                        isSaved ? Icons.bookmark : Icons.bookmark_border,
-                        color: isSaved ? AppColors.primary : null,
+                      _AnimatedCountText(value: post.comments.length),
+                      const SizedBox(width: 6),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints.tightFor(
+                            width: 32, height: 32),
+                        icon: const Icon(Icons.forward),
+                        onPressed: onShare,
                       ),
-                    ),
-                  ],
+                      if (hasVideo)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 2, right: 4),
+                          child: _PostMetaChip(
+                            icon: Icons.play_arrow_rounded,
+                            label: _formatCompactMetric(post.playCount),
+                            accent: Colors.pinkAccent,
+                          ),
+                        ),
+                      const Spacer(),
+                      if (post.googleMapsLink != null &&
+                          post.googleMapsLink!.isNotEmpty)
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints.tightFor(
+                              width: 32, height: 32),
+                          icon: const Icon(Icons.location_on),
+                          onPressed: onLocationTap,
+                          tooltip: 'Open location',
+                        ),
+                      _AnimatedActionIcon(
+                        active: isSaved,
+                        onPressed: onSave,
+                        child: Icon(
+                          isSaved ? Icons.bookmark : Icons.bookmark_border,
+                          color: isSaved ? AppColors.primary : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (post.ownerId != currentUserId)
+              Positioned(
+                right: 6,
+                top: 6,
+                child: IconButton(
+                  icon: const Icon(Icons.send),
+                  onPressed: onMessage,
+                  tooltip: 'Message creator',
                 ),
               ),
-            ],
-          ),
-          if (post.ownerId != currentUserId)
-            Positioned(
-              right: 6,
-              top: 6,
-              child: IconButton(
-                icon: const Icon(Icons.send),
-                onPressed: onMessage,
-                tooltip: 'Message creator',
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
   }
 
   String _formatTimeAgo(DateTime dateTime) {
@@ -4096,11 +4231,13 @@ class _FeedTabButton extends StatelessWidget {
     required this.label,
     required this.onTap,
     required this.isActive,
+    this.compact = false,
   });
 
   final String label;
   final VoidCallback onTap;
   final bool isActive;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -4108,22 +4245,29 @@ class _FeedTabButton extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 11 : 12,
+          vertical: compact ? 6 : 9,
+        ),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(compact ? 13 : 16),
           color: isActive
               ? AppColors.primary
-              : Theme.of(context).colorScheme.surface,
+              : Theme.of(context).colorScheme.surface.withValues(alpha: 0.22),
           border: Border.all(
             color: isActive
                 ? AppColors.primary
-                : Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+                : Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.12),
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontWeight: FontWeight.w700,
+            fontSize: compact ? 12 : 14,
             color: isActive
                 ? Colors.white
                 : Theme.of(context).colorScheme.onSurface,
@@ -4396,7 +4540,6 @@ class _DesktopSpotlightDock extends StatelessWidget {
     required this.onOpenDiscover,
     required this.onOpenMessages,
     required this.onCreatePost,
-    required this.onOpenTraffic,
   });
 
   final String feedMode;
@@ -4404,7 +4547,6 @@ class _DesktopSpotlightDock extends StatelessWidget {
   final VoidCallback onOpenDiscover;
   final VoidCallback onOpenMessages;
   final VoidCallback onCreatePost;
-  final VoidCallback onOpenTraffic;
 
   @override
   Widget build(BuildContext context) {
@@ -4470,12 +4612,6 @@ class _DesktopSpotlightDock extends StatelessWidget {
             icon: Icons.chat_bubble_rounded,
             label: 'Inbox',
             onTap: onOpenMessages,
-          ),
-          const SizedBox(height: 10),
-          _DesktopDockButton(
-            icon: Icons.directions_car_filled_rounded,
-            label: 'Traffic',
-            onTap: onOpenTraffic,
           ),
           const Spacer(),
           _DesktopDockButton(

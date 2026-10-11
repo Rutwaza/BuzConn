@@ -1,10 +1,12 @@
-import 'dart:typed_data';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
@@ -16,7 +18,6 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:media_store_plus/media_store_plus.dart';
 import 'package:video_player/video_player.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -61,15 +62,19 @@ class _ChatPageState extends State<ChatPage> {
   String? _recordedPath;
   bool _showScrollToBottom = false;
   bool _isSendingText = false;
+  final Set<String> _revealedReceivedGhostMessageIds = <String>{};
   List<_ChatMediaItem> _latestMediaItems = const [];
   StreamSubscription<DocumentSnapshot>? _callSub;
   bool _hasIncomingCall = false;
   bool _hasActiveCall = false;
   bool _incomingDialogShown = false;
+  static const MethodChannel _privacyChannel =
+      MethodChannel('spotlight/privacy');
 
   @override
   void initState() {
     super.initState();
+    _setScreenPrivacy(true);
     _scrollController.addListener(_handleScroll);
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
@@ -113,6 +118,7 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    _setScreenPrivacy(false);
     _controller.dispose();
     _typingTimer?.cancel();
     _setTyping(false);
@@ -122,6 +128,18 @@ class _ChatPageState extends State<ChatPage> {
     _scrollController.dispose();
     _callSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _setScreenPrivacy(bool enabled) async {
+    if (!Platform.isAndroid && !Platform.isWindows) return;
+    try {
+      await _privacyChannel.invokeMethod<void>(
+        'setSecureScreen',
+        {'enabled': enabled},
+      );
+    } catch (_) {
+      // Privacy flag support is best-effort on nonstandard Android shells.
+    }
   }
 
   Future<void> _sendText() async {
@@ -134,6 +152,13 @@ class _ChatPageState extends State<ChatPage> {
     if (text.isEmpty) return;
 
     final replyTo = _replyingTo;
+    final ghostNonce = _ghostNonce();
+    final ghostCipherText = _encodeGhostText(
+      text,
+      chatId: widget.chatId,
+      senderId: user.uid,
+      nonce: ghostNonce,
+    );
     _typingTimer?.cancel();
     _isTyping = false;
 
@@ -148,8 +173,11 @@ class _ChatPageState extends State<ChatPage> {
       await _repo.sendMessage(
         chatId: widget.chatId,
         senderId: user.uid,
-        text: text,
+        text: ghostCipherText,
         replyTo: replyTo,
+        isGhost: true,
+        ghostCipherText: ghostCipherText,
+        ghostNonce: ghostNonce,
       );
     } catch (e) {
       if (!mounted) return;
@@ -747,7 +775,7 @@ class _ChatPageState extends State<ChatPage> {
                                           : Colors.black87,
                                     ),
                                     decoration: InputDecoration(
-                                      hintText: 'Message your people...',
+                                      hintText: 'Encrypted message...',
                                       hintStyle: TextStyle(
                                         color: isDark
                                             ? Colors.white54
@@ -771,8 +799,9 @@ class _ChatPageState extends State<ChatPage> {
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  AppColors.primary,
-                                  AppColors.primary.withValues(alpha: 0.78),
+                                  const Color(0xFF61D1ED),
+                                  const Color(0xFF7C4DFF)
+                                      .withValues(alpha: 0.78),
                                 ],
                               ),
                               shape: BoxShape.circle,
@@ -961,6 +990,9 @@ class _ChatPageState extends State<ChatPage> {
             final data = doc.data() as Map<String, dynamic>;
             final isMe = data['senderId'] == user.uid;
             final text = data['text'] ?? '';
+            final isGhost = data['isGhost'] == true;
+            final ghostCipherText = data['ghostCipherText'] as String?;
+            final ghostNonce = data['ghostNonce'] as String?;
             final mediaUrl = data['mediaUrl'] as String?;
             final mediaType = data['mediaType'] as String?;
             final senderName = data['senderName'] ?? 'User';
@@ -972,7 +1004,8 @@ class _ChatPageState extends State<ChatPage> {
             _messageKeys.putIfAbsent(messageId, () => GlobalKey());
             final isLinkOnly = _isSingleUrl(text.toString());
             final isAudio = mediaUrl != null && mediaType == 'audio';
-            final isEmojiOnly = _isEmojiOnly(text.toString()) &&
+            final isEmojiOnly = !isGhost &&
+                _isEmojiOnly(text.toString()) &&
                 mediaUrl == null &&
                 replyTo == null;
 
@@ -984,6 +1017,27 @@ class _ChatPageState extends State<ChatPage> {
                   fontStyle: FontStyle.italic,
                   color: AppColors.grey,
                 ),
+              );
+            } else if (isGhost) {
+              final decodedText = _decodeGhostText(
+                ghostCipherText ?? '',
+                chatId: widget.chatId,
+                senderId: data['senderId']?.toString() ?? '',
+                nonce: ghostNonce ?? '',
+              );
+              content = _GhostMessageContent(
+                encryptedText: ghostCipherText ?? text.toString(),
+                text: decodedText.isEmpty
+                    ? 'Ghost message unavailable'
+                    : decodedText,
+                isMe: isMe,
+                isDark: isDark,
+                onReveal: isMe
+                    ? null
+                    : () {
+                        _revealedReceivedGhostMessageIds.add(messageId);
+                      },
+                onHide: null,
               );
             } else if (mediaUrl != null && mediaType == 'image') {
               final index = mediaItems.indexWhere(
@@ -999,13 +1053,6 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                     child: Image.network(mediaUrl, width: 200),
                   ),
-                  const SizedBox(height: 6),
-                  _downloadChip(
-                    url: mediaUrl,
-                    name: null,
-                    isMe: isMe,
-                    mediaType: 'image',
-                  ),
                 ],
               );
             } else if (mediaUrl != null && mediaType == 'audio') {
@@ -1016,46 +1063,37 @@ class _ChatPageState extends State<ChatPage> {
               content = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  InkWell(
-                    onTap: () => _openDocument(mediaUrl),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: replyBarColor,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.insert_drive_file),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if (size != null)
-                                  Text(
-                                    _formatBytes(size),
-                                    style: const TextStyle(fontSize: 11),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: replyBarColor,
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  _downloadChip(
-                    url: mediaUrl,
-                    name: name.toString(),
-                    isMe: isMe,
-                    mediaType: 'document',
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.lock_outline_rounded),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                size == null
+                                    ? 'Download disabled'
+                                    : '${_formatBytes(size)} - download disabled',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               );
@@ -1098,13 +1136,6 @@ class _ChatPageState extends State<ChatPage> {
                         ),
                       );
                     },
-                  ),
-                  const SizedBox(height: 6),
-                  _downloadChip(
-                    url: mediaUrl,
-                    name: null,
-                    isMe: isMe,
-                    mediaType: 'video',
                   ),
                 ],
               );
@@ -1231,7 +1262,7 @@ class _ChatPageState extends State<ChatPage> {
                               onLongPress: () => _showMessageActions(
                                 messageId: messageId,
                                 isMe: isMe,
-                                text: text,
+                                text: isGhost ? '[ghost message]' : text,
                                 senderName: senderName,
                                 replyTo: replyTo,
                               ),
@@ -2120,7 +2151,6 @@ class _ChatPageState extends State<ChatPage> {
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final item = items[index];
-        final url = item['url'] as String;
         final size = item['size'] as int?;
         return InkWell(
           borderRadius: BorderRadius.circular(16),
@@ -2169,10 +2199,13 @@ class _ChatPageState extends State<ChatPage> {
                     ],
                   ),
                 ),
-                IconButton(
-                  tooltip: 'Open document',
-                  onPressed: () => _openDocument(url),
-                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                Tooltip(
+                  message: 'Downloads disabled',
+                  child: Icon(
+                    Icons.lock_outline_rounded,
+                    size: 18,
+                    color: isDark ? Colors.white54 : AppColors.grey,
+                  ),
                 ),
               ],
             ),
@@ -2204,13 +2237,6 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Future<void> _openDocument(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
-
   String _formatBytes(int bytes) {
     const kb = 1024;
     const mb = kb * 1024;
@@ -2228,6 +2254,94 @@ class _ChatPageState extends State<ChatPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$feature coming soon!')),
     );
+  }
+
+  Future<void> _hardDeleteGhostMessage(String messageId) async {
+    try {
+      await _repo.hardDeleteMessage(
+        chatId: widget.chatId,
+        messageId: messageId,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ghost message deletion failed: $e')),
+      );
+    }
+  }
+
+  void _deleteRevealedReceivedGhostMessages() {
+    if (_revealedReceivedGhostMessageIds.isEmpty) return;
+    final ids = List<String>.from(_revealedReceivedGhostMessageIds);
+    _revealedReceivedGhostMessageIds.clear();
+    for (final id in ids) {
+      unawaited(_hardDeleteGhostMessage(id));
+    }
+  }
+
+  String _ghostNonce() {
+    final random = math.Random.secure();
+    final bytes = List<int>.generate(12, (_) => random.nextInt(256));
+    return base64UrlEncode(bytes);
+  }
+
+  String _encodeGhostText(
+    String plainText, {
+    required String chatId,
+    required String senderId,
+    required String nonce,
+  }) {
+    final plainBytes = utf8.encode(plainText);
+    final cipherBytes = <int>[];
+    for (var i = 0; i < plainBytes.length; i++) {
+      final keyByte = _ghostKeyByte(
+        index: i,
+        chatId: chatId,
+        senderId: senderId,
+        nonce: nonce,
+      );
+      cipherBytes.add(plainBytes[i] ^ keyByte);
+    }
+    return base64UrlEncode(cipherBytes);
+  }
+
+  String _decodeGhostText(
+    String cipherText, {
+    required String chatId,
+    required String senderId,
+    required String nonce,
+  }) {
+    if (cipherText.isEmpty || nonce.isEmpty || senderId.isEmpty) return '';
+    try {
+      final cipherBytes = base64Url.decode(cipherText);
+      final plainBytes = <int>[];
+      for (var i = 0; i < cipherBytes.length; i++) {
+        final keyByte = _ghostKeyByte(
+          index: i,
+          chatId: chatId,
+          senderId: senderId,
+          nonce: nonce,
+        );
+        plainBytes.add(cipherBytes[i] ^ keyByte);
+      }
+      return utf8.decode(plainBytes);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  int _ghostKeyByte({
+    required int index,
+    required String chatId,
+    required String senderId,
+    required String nonce,
+  }) {
+    final block = index ~/ 32;
+    final digest = Hmac(
+      sha256,
+      utf8.encode('$chatId|$senderId|spotlight-ghost-v2'),
+    ).convert(utf8.encode('$nonce|$block'));
+    return digest.bytes[index % digest.bytes.length];
   }
 
   void _showAttachmentSheet() {
@@ -2371,33 +2485,6 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  Widget _downloadChip({
-    required String url,
-    required String? name,
-    required bool isMe,
-    required String mediaType,
-  }) {
-    final color = isMe ? Colors.white70 : Theme.of(context).colorScheme.primary;
-    return InkWell(
-      onTap: () => _downloadMedia(
-        url: url,
-        fileName: name,
-        mediaType: mediaType,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.download, size: 16, color: color),
-          const SizedBox(width: 4),
-          Text(
-            'Download',
-            style: TextStyle(fontSize: 12, color: color),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _openLink(String url) async {
     final uri = Uri.tryParse(url);
     if (uri == null) return;
@@ -2529,73 +2616,6 @@ class _ChatPageState extends State<ChatPage> {
         false;
   }
 
-  Future<void> _downloadMedia({
-    required String url,
-    String? fileName,
-    required String mediaType,
-  }) async {
-    try {
-      final fallbackName = 'file_${DateTime.now().millisecondsSinceEpoch}';
-      final segments = Uri.parse(url).pathSegments;
-      final derivedName = segments.isNotEmpty ? segments.last : fallbackName;
-      final safeName = (fileName == null || fileName.trim().isEmpty)
-          ? derivedName
-          : fileName;
-
-      final tempDir = await getTemporaryDirectory();
-      final tempFile = File('${tempDir.path}/$safeName');
-      final request = await HttpClient().getUrl(Uri.parse(url));
-      final response = await request.close();
-      if (response.statusCode != 200) {
-        throw Exception('Download failed (${response.statusCode})');
-      }
-      await response.pipe(tempFile.openWrite());
-
-      if (Platform.isAndroid) {
-        MediaStore.appFolder = 'BusinessFinder';
-        await MediaStore.ensureInitialized();
-        final dirType = mediaType == 'image'
-            ? DirType.photo
-            : mediaType == 'video'
-                ? DirType.video
-                : DirType.download;
-        final dirName = mediaType == 'image'
-            ? DirName.pictures
-            : mediaType == 'video'
-                ? DirName.movies
-                : DirName.download;
-        await MediaStore().saveFile(
-          tempFilePath: tempFile.path,
-          dirType: dirType,
-          dirName: dirName,
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Saved to gallery/downloads'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Download saved to app storage'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download failed: $e')),
-        );
-      }
-    }
-  }
-
   String _formatTime(DateTime time) {
     final h = time.hour.toString().padLeft(2, '0');
     final m = time.minute.toString().padLeft(2, '0');
@@ -2640,6 +2660,9 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _handleTyping(String value) {
+    if (value.trim().isNotEmpty) {
+      _deleteRevealedReceivedGhostMessages();
+    }
     if (!_isTyping) {
       _isTyping = true;
       _setTyping(true);
@@ -3109,6 +3132,232 @@ class _ChatActionButton extends StatelessWidget {
       ),
     );
   }
+}
+
+class _GhostMessageContent extends StatefulWidget {
+  const _GhostMessageContent({
+    required this.encryptedText,
+    required this.text,
+    required this.isMe,
+    required this.isDark,
+    this.onReveal,
+    this.onHide,
+  });
+
+  final String encryptedText;
+  final String text;
+  final bool isMe;
+  final bool isDark;
+  final VoidCallback? onReveal;
+  final VoidCallback? onHide;
+
+  @override
+  State<_GhostMessageContent> createState() => _GhostMessageContentState();
+}
+
+class _GhostMessageContentState extends State<_GhostMessageContent> {
+  bool _revealed = false;
+  bool _dissolving = false;
+
+  Future<void> _handleTap() async {
+    if (_dissolving) return;
+    if (!_revealed) {
+      setState(() {
+        _revealed = true;
+      });
+      widget.onReveal?.call();
+      return;
+    }
+    setState(() {
+      _dissolving = true;
+    });
+    await Future.delayed(const Duration(milliseconds: 920));
+    if (!mounted) return;
+    setState(() {
+      _revealed = false;
+      _dissolving = false;
+    });
+    widget.onHide?.call();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = widget.isMe
+        ? Colors.white
+        : (widget.isDark ? const Color(0xFF61D1ED) : AppColors.primary);
+    return Semantics(
+      button: true,
+      label: _revealed ? 'Hide encrypted message' : 'Reveal encrypted message',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: _handleTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          constraints: const BoxConstraints(minWidth: 150),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: widget.isMe ? 0.12 : 0.08),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: accent.withValues(alpha: 0.28)),
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                child: _revealed && !_dissolving
+                    ? Text(
+                        widget.text,
+                        key: const ValueKey('revealed'),
+                        style: TextStyle(
+                          color: widget.isMe
+                              ? Colors.white
+                              : (widget.isDark ? Colors.white : Colors.black87),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      )
+                    : ConstrainedBox(
+                        key: const ValueKey('hidden'),
+                        constraints: const BoxConstraints(maxWidth: 250),
+                        child: Text(
+                          widget.encryptedText,
+                          maxLines: 5,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 12,
+                            fontFamily: 'RobotoMono',
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ),
+              ),
+              if (_dissolving)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: _FloatingGhostLetters(
+                      text: widget.text,
+                      color: accent,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FloatingGhostLetters extends StatefulWidget {
+  const _FloatingGhostLetters({
+    required this.text,
+    required this.color,
+  });
+
+  final String text;
+  final Color color;
+
+  @override
+  State<_FloatingGhostLetters> createState() => _FloatingGhostLettersState();
+}
+
+class _FloatingGhostLettersState extends State<_FloatingGhostLetters>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final List<_GhostLetterParticle> _particles;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 880),
+    )..forward();
+    final chars = widget.text.runes
+        .map((rune) => String.fromCharCode(rune))
+        .where((char) => char.trim().isNotEmpty)
+        .take(34)
+        .toList();
+    final random = math.Random(widget.text.hashCode);
+    _particles = List<_GhostLetterParticle>.generate(chars.length, (index) {
+      return _GhostLetterParticle(
+        char: chars[index],
+        x: random.nextDouble(),
+        rise: 16 + random.nextDouble() * 34,
+        drift: (random.nextDouble() - 0.5) * 46,
+        delay: random.nextDouble() * 0.22,
+        scale: 0.74 + random.nextDouble() * 0.55,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            return Stack(
+              clipBehavior: Clip.none,
+              children: _particles.map((particle) {
+                final rawProgress =
+                    ((_controller.value - particle.delay) / 0.78)
+                        .clamp(0.0, 1.0);
+                final eased = Curves.easeOutCubic.transform(rawProgress);
+                return Positioned(
+                  left: (constraints.maxWidth * particle.x) +
+                      (particle.drift * eased),
+                  top: (constraints.maxHeight * 0.48) -
+                      (particle.rise * eased),
+                  child: Opacity(
+                    opacity: (1 - eased).clamp(0.0, 1.0),
+                    child: Transform.scale(
+                      scale: particle.scale + (eased * 0.45),
+                      child: Text(
+                        particle.char,
+                        style: TextStyle(
+                          color: widget.color,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _GhostLetterParticle {
+  const _GhostLetterParticle({
+    required this.char,
+    required this.x,
+    required this.rise,
+    required this.drift,
+    required this.delay,
+    required this.scale,
+  });
+
+  final String char;
+  final double x;
+  final double rise;
+  final double drift;
+  final double delay;
+  final double scale;
 }
 
 class _ComposerIconButton extends StatelessWidget {

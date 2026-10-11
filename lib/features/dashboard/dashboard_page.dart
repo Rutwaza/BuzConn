@@ -332,13 +332,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           },
         ),
         _buildActionCard(
-          icon: Icons.traffic,
-          title: 'Traffic Management',
-          onTap: () {
-            context.push(AppRoutes.trafficManagement);
-          },
-        ),
-        _buildActionCard(
           icon: Icons.message,
           title: 'Messages',
           badgeCount: unreadCount,
@@ -368,13 +361,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           title: 'My Pages',
           onTap: () {
             context.push(AppRoutes.businesses);
-          },
-        ),
-        _buildActionCard(
-          icon: Icons.traffic,
-          title: 'Traffic Management',
-          onTap: () {
-            context.push(AppRoutes.trafficManagement);
           },
         ),
         _buildActionCard(

@@ -11,8 +11,6 @@ import 'package:businessfinder/presentation/pages/business/businesses_page.dart'
 import 'package:businessfinder/presentation/pages/feed/posts_feed_page.dart';
 import 'package:businessfinder/presentation/pages/feed/create_post_page.dart';
 import 'package:businessfinder/presentation/pages/business/business_profile_page.dart';
-import 'package:businessfinder/presentation/pages/traffic/traffic_management_page.dart';
-import 'package:businessfinder/presentation/pages/admin/admin_dashboard_page.dart';
 import 'package:businessfinder/presentation/pages/chat/chat_list_page.dart';
 import 'package:businessfinder/presentation/pages/chat/chat_page.dart';
 import 'package:businessfinder/presentation/pages/search/search_page.dart';
@@ -23,6 +21,7 @@ import 'package:businessfinder/presentation/pages/analytics/analytics_page.dart'
 import 'package:businessfinder/presentation/pages/profile/follow_list_page.dart';
 import 'package:businessfinder/presentation/pages/business/page_followers_page.dart';
 import 'package:businessfinder/presentation/pages/settings/settings_page.dart';
+import 'package:businessfinder/core/widgets/spotlight_loader.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:businessfinder/data/models/post_model.dart';
@@ -91,7 +90,7 @@ class AppRouter {
             builder: (context, snapshot) {
               if (!snapshot.hasData) {
                 return const Scaffold(
-                  body: Center(child: CircularProgressIndicator()),
+                  body: Center(child: SpotlightLoader(size: 44)),
                 );
               }
               if (!snapshot.data!.exists) {
@@ -116,14 +115,6 @@ class AppRouter {
       GoRoute(
         path: AppRoutes.search,
         builder: (context, state) => const SearchPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.trafficManagement,
-        builder: (context, state) => const TrafficManagementPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.adminDashboard,
-        builder: (context, state) => const AdminDashboardPage(),
       ),
       GoRoute(
         path: AppRoutes.chats,

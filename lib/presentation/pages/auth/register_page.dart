@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:country_code_picker/country_code_picker.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../core/widgets/spotlight_toast.dart';
 
 class RegisterPage extends ConsumerStatefulWidget {
   const RegisterPage({super.key});
@@ -21,7 +23,7 @@ class RegisterPage extends ConsumerStatefulWidget {
 
 class _RegisterPageState extends ConsumerState<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
@@ -29,7 +31,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -43,17 +45,31 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       });
 
       try {
+        final email = _emailController.text.trim().toLowerCase();
+        final username = _usernameController.text.trim().toLowerCase();
+        final existingMethods =
+            await FirebaseAuth.instance.fetchSignInMethodsForEmail(email);
+        if (existingMethods.isNotEmpty) {
+          throw FirebaseAuthException(
+            code: 'email-already-in-use',
+            message: 'An account already exists with this email.',
+          );
+        }
+
         UserCredential userCredential =
             await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: _emailController.text.trim(),
+          email: email,
           password: _passwordController.text.trim(),
         );
 
         if (userCredential.user != null) {
+          await FirebaseFunctions.instance
+              .httpsCallable('claimUsername')
+              .call({'username': username});
           await _ensureUserDocument(
             userCredential.user!,
-            name: _nameController.text.trim(),
-            email: _emailController.text.trim(),
+            username: username,
+            email: email,
           );
         }
 
@@ -79,20 +95,23 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           errorMessage = 'The password provided is too weak.';
         } else if (e.code == 'email-already-in-use') {
           errorMessage = 'An account already exists with this email.';
+        } else if (e.code == 'already-exists' ||
+            (e.message ?? '').toLowerCase().contains('username')) {
+          errorMessage = 'That username is already taken.';
         } else if (e.code == 'invalid-email') {
           errorMessage = 'Invalid email address.';
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
-        );
+        showSpotlightToast(context, errorMessage, success: false);
       } catch (e) {
         if (mounted) {
           setState(() {
             _isLoading = false;
           });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Registration failed: ${e.toString()}')),
+          showSpotlightToast(
+            context,
+            'Registration failed: ${e.toString()}',
+            success: false,
           );
         }
       }
@@ -102,16 +121,27 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   Future<void> _ensureUserDocument(
     User user, {
     String? name,
+    String? username,
     String? email,
     String? phone,
     bool isNewAccount = false,
   }) async {
     final doc = FirebaseFirestore.instance.collection('users').doc(user.uid);
     final snapshot = await doc.get();
-    if (snapshot.exists) return;
+    final normalizedEmail = (email ?? user.email ?? '').toLowerCase();
+    if (snapshot.exists) {
+      await doc.set({
+        if (normalizedEmail.isNotEmpty) 'emailLower': normalizedEmail,
+      }, SetOptions(merge: true));
+      return;
+    }
     await doc.set({
       'name': name ?? user.displayName ?? 'User',
+      'displayName': name ?? user.displayName ?? 'User',
+      'username': username,
+      'usernameLower': username?.toLowerCase(),
       'email': email ?? user.email,
+      'emailLower': normalizedEmail,
       'phone': phone ?? user.phoneNumber,
       'createdAt': FieldValue.serverTimestamp(),
       'userType': 'client',
@@ -154,13 +184,13 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         }
       }
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Google sign-in failed')),
+      showSpotlightToast(
+        context,
+        e.message ?? 'Google sign-in failed',
+        success: false,
       );
     } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Google sign-in failed')),
-      );
+      showSpotlightToast(context, 'Google sign-in failed', success: false);
     } finally {
       if (mounted) {
         setState(() {
@@ -330,13 +360,10 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                                   },
                                   verificationFailed:
                                       (FirebaseAuthException e) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          e.message ??
-                                              'Phone verification failed',
-                                        ),
-                                      ),
+                                    showSpotlightToast(
+                                      context,
+                                      e.message ?? 'Phone verification failed',
+                                      success: false,
                                     );
                                     if (context.mounted) {
                                       setState(() {
@@ -386,13 +413,10 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                                     }
                                   }
                                 } on FirebaseAuthException catch (e) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        e.message ??
-                                            'Invalid verification code',
-                                      ),
-                                    ),
+                                  showSpotlightToast(
+                                    context,
+                                    e.message ?? 'Invalid verification code',
+                                    success: false,
                                   );
                                 } finally {
                                   if (mounted) {
@@ -501,9 +525,12 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     ),
                     const SizedBox(height: 48),
                     AppTextField(
-                      controller: _nameController,
-                      label: 'Full Name',
-                      hintText: 'Enter your full name',
+                      controller: _usernameController,
+                      label: 'Username',
+                      hintText: 'lowercase, numbers, . or _',
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9._]')),
+                      ],
                       fillColor: fieldFillColor,
                       textColor: Colors.white,
                       hintColor: Colors.white60,
@@ -513,12 +540,17 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                         backgroundColor: Colors.transparent,
                       ),
                       prefixIcon: const Icon(
-                        Icons.person_outline_rounded,
+                        Icons.alternate_email_rounded,
                         color: Colors.white70,
                       ),
                       validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter your name';
+                        final v = (value ?? '').trim().toLowerCase();
+                        if (v.isEmpty) {
+                          return 'Please choose a username';
+                        }
+                        final ok = RegExp(r'^[a-z0-9._]{3,20}$').hasMatch(v);
+                        if (!ok) {
+                          return 'Use 3-20 chars: a-z, 0-9, dot, underscore';
                         }
                         return null;
                       },

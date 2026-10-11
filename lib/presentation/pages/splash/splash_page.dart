@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
+import '../../../core/widgets/spotlight_loader.dart';
 import '../../../core/services/firebase_service.dart';
 
 class SplashPage extends ConsumerStatefulWidget {
@@ -96,10 +97,8 @@ class _SplashPageState extends ConsumerState<SplashPage> {
               ),
             ),
             const SizedBox(height: 48),
-            // Loading Animation
-            const CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(AppColors.white),
-            ),
+            // SpotLight loader
+            const SpotlightLoader(size: 42, color: AppColors.white),
           ],
         ),
       ),

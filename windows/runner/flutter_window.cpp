@@ -1,8 +1,24 @@
 #include "flutter_window.h"
 
+#include <flutter/encodable_value.h>
+#include <flutter/method_channel.h>
+#include <flutter/standard_method_codec.h>
+#include <windows.h>
+
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+
+#ifndef WDA_EXCLUDEFROMCAPTURE
+#define WDA_EXCLUDEFROMCAPTURE 0x00000011
+#endif
+
+namespace {
+
+constexpr int kMaxWindowWidth = 1600;
+constexpr int kMaxWindowHeight = 1000;
+
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -25,6 +41,7 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  RegisterPrivacyChannel();
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -39,6 +56,41 @@ bool FlutterWindow::OnCreate() {
   return true;
 }
 
+void FlutterWindow::RegisterPrivacyChannel() {
+  auto channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "spotlight/privacy",
+      &flutter::StandardMethodCodec::GetInstance());
+
+  channel->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+        if (call.method_name() != "setSecureScreen") {
+          result->NotImplemented();
+          return;
+        }
+
+        bool enabled = false;
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        if (args) {
+          auto value = args->find(flutter::EncodableValue("enabled"));
+          if (value != args->end()) {
+            if (const auto* bool_value = std::get_if<bool>(&value->second)) {
+              enabled = *bool_value;
+            }
+          }
+        }
+
+        const DWORD affinity = enabled ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE;
+        if (!SetWindowDisplayAffinity(GetHandle(), affinity) && enabled) {
+          // Older Windows builds do not support WDA_EXCLUDEFROMCAPTURE.
+          SetWindowDisplayAffinity(GetHandle(), WDA_MONITOR);
+        }
+        result->Success();
+      });
+
+  privacy_channel_ = std::move(channel);
+}
+
 void FlutterWindow::OnDestroy() {
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
@@ -51,6 +103,44 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (message == WM_GETMINMAXINFO) {
+    const LRESULT default_result =
+        DefWindowProc(hwnd, message, wparam, lparam);
+    auto* min_max_info = reinterpret_cast<MINMAXINFO*>(lparam);
+    const double scale_factor = GetDpiForWindow(hwnd) / 96.0;
+    const int max_width =
+        static_cast<int>(kMaxWindowWidth * scale_factor);
+    const int max_height =
+        static_cast<int>(kMaxWindowHeight * scale_factor);
+
+    MONITORINFO monitor_info{sizeof(MONITORINFO)};
+    const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    if (GetMonitorInfo(monitor, &monitor_info)) {
+      const int work_width =
+          monitor_info.rcWork.right - monitor_info.rcWork.left;
+      const int work_height =
+          monitor_info.rcWork.bottom - monitor_info.rcWork.top;
+      const int constrained_width =
+          max_width < work_width ? max_width : work_width;
+      const int constrained_height =
+          max_height < work_height ? max_height : work_height;
+
+      min_max_info->ptMaxPosition.x = (work_width - constrained_width) / 2;
+      min_max_info->ptMaxPosition.y = (work_height - constrained_height) / 2;
+      min_max_info->ptMaxSize.x = constrained_width;
+      min_max_info->ptMaxSize.y = constrained_height;
+      min_max_info->ptMaxTrackSize.x = constrained_width;
+      min_max_info->ptMaxTrackSize.y = constrained_height;
+    } else {
+      min_max_info->ptMaxSize.x = max_width;
+      min_max_info->ptMaxSize.y = max_height;
+      min_max_info->ptMaxTrackSize.x = max_width;
+      min_max_info->ptMaxTrackSize.y = max_height;
+    }
+
+    return default_result;
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

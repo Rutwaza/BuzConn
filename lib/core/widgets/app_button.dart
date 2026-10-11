@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../theme/colors.dart';
+import 'spotlight_loader.dart';
 
 class AppButton extends ConsumerWidget {
   final String text;
@@ -71,10 +72,7 @@ class AppButton extends ConsumerWidget {
       return const SizedBox(
         width: 24,
         height: 24,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-        ),
+        child: SpotlightLoader(size: 22, color: Colors.white),
       );
     }
 

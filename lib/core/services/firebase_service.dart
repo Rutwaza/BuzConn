@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -25,17 +24,12 @@ class FirebaseService {
     firestore = FirebaseFirestore.instance;
     storage = FirebaseStorage.instance;
     
-    // Enable offline persistence
+    // Privacy-first default: keep Firestore in memory so sensitive chat docs
+    // are not intentionally persisted in the local offline cache.
     try {
-      if (kIsWeb) {
-        await firestore.enablePersistence(
-          const PersistenceSettings(synchronizeTabs: true),
-        );
-      } else {
-        await firestore.enablePersistence();
-      }
+      firestore.settings = const Settings(persistenceEnabled: false);
     } catch (_) {
-      // Ignore if persistence is already enabled or unsupported.
+      // Ignore if settings were already locked by an earlier Firestore use.
     }
   }
 

@@ -11,6 +11,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../core/widgets/spotlight_toast.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -85,9 +86,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           return;
         }
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(errorMessage)),
-          );
+          showSpotlightToast(context, errorMessage, success: false);
         }
       } catch (e) {
         if (mounted) {
@@ -101,9 +100,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           return;
         }
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Unexpected error: $e')),
-          );
+          showSpotlightToast(context, 'Unexpected error: $e', success: false);
         }
       }
     }
@@ -117,10 +114,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }) async {
     final doc = FirebaseFirestore.instance.collection('users').doc(user.uid);
     final snapshot = await doc.get();
-    if (snapshot.exists) return;
+    final normalizedEmail = (email ?? user.email ?? '').toLowerCase();
+    if (snapshot.exists) {
+      await doc.set({
+        if (normalizedEmail.isNotEmpty) 'emailLower': normalizedEmail,
+      }, SetOptions(merge: true));
+      return;
+    }
     await doc.set({
       'name': name ?? user.displayName ?? 'User',
       'email': email ?? user.email,
+      'emailLower': normalizedEmail,
       'phone': phone ?? user.phoneNumber,
       'createdAt': FieldValue.serverTimestamp(),
       'userType': 'client',
@@ -160,13 +164,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         context.go(AppRoutes.feed);
       }
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Google sign-in failed')),
+      showSpotlightToast(
+        context,
+        e.message ?? 'Google sign-in failed',
+        success: false,
       );
     } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Google sign-in failed')),
-      );
+      showSpotlightToast(context, 'Google sign-in failed', success: false);
     } finally {
       if (mounted) {
         setState(() {
@@ -273,12 +277,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 }
                               },
                               verificationFailed: (FirebaseAuthException e) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      e.message ?? 'Phone verification failed',
-                                    ),
-                                  ),
+                                showSpotlightToast(
+                                  context,
+                                  e.message ?? 'Phone verification failed',
+                                  success: false,
                                 );
                               },
                               codeSent: (String id, int? resendToken) {
@@ -330,12 +332,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 context.go(AppRoutes.feed);
                               }
                             } on FirebaseAuthException catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    e.message ?? 'Invalid verification code',
-                                  ),
-                                ),
+                              showSpotlightToast(
+                                context,
+                                e.message ?? 'Invalid verification code',
+                                success: false,
                               );
                             } finally {
                               if (mounted) {
@@ -391,18 +391,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 );
                 if (mounted) {
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Password reset email sent.'),
-                    ),
+                  showSpotlightToast(
+                    context,
+                    'Password reset email sent.',
+                    success: true,
                   );
                 }
               } catch (_) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Failed to send reset email.'),
-                    ),
+                  showSpotlightToast(
+                    context,
+                    'Failed to send reset email.',
+                    success: false,
                   );
                 }
               }

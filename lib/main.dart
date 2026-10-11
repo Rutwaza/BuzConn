@@ -13,6 +13,7 @@ import 'core/services/push_notification_service.dart';
 import 'core/services/theme_mode_service.dart';
 import 'core/routes/router.dart';
 import 'core/widgets/network_status_banner.dart';
+import 'core/widgets/night_sky_background.dart';
 import 'firebase_options.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -31,12 +32,12 @@ void main() async {
     debugPrint('Uncaught error: $error\n$stack');
     return true;
   };
-  
+
   // Initialize MediaKit for cross-platform video playback (only on Windows)
   if (Platform.isWindows) {
     MediaKit.ensureInitialized();
   }
-  
+
   // Initialize Firebase
   await FirebaseService.instance.initialize();
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
@@ -44,9 +45,10 @@ void main() async {
   // Initialize Supabase
   await Supabase.initialize(
     url: 'https://zzisdifibmelvozmoybv.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6aXNkaWZpYm1lbHZvem1veWJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAzODUwNDQsImV4cCI6MjA4NTk2MTA0NH0.kiCExd0zlXFmZ_iSg2MB2-MAdJGkXRbVyhGGW4Vuq34',
+    anonKey:
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6aXNkaWZpYm1lbHZvem1veWJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAzODUwNDQsImV4cCI6MjA4NTk2MTA0NH0.kiCExd0zlXFmZ_iSg2MB2-MAdJGkXRbVyhGGW4Vuq34',
   );
-  
+
   runApp(
     const ProviderScope(
       child: MyApp(),
@@ -84,31 +86,11 @@ class MyApp extends ConsumerWidget {
             if (mode == AppThemeMode.light) {
               return content;
             }
-            final mq = MediaQuery.of(context);
-            final dpr = mq.devicePixelRatio;
-            final cacheWidth = (mq.size.width * dpr).round();
-            final cacheHeight = (mq.size.height * dpr).round();
             return Stack(
               children: [
-                Positioned.fill(
+                const Positioned.fill(
                   child: IgnorePointer(
-                    child: RepaintBoundary(
-                      child: Opacity(
-                        opacity: 0.25,
-                        child: Image.asset(
-                          'assets/images/chat_bg.gif',
-                          fit: BoxFit.cover,
-                          alignment: Alignment.center,
-                          filterQuality: FilterQuality.low,
-                          gaplessPlayback: true,
-                          cacheWidth: cacheWidth,
-                          cacheHeight: cacheHeight,
-                          errorBuilder: (context, error, stackTrace) => Container(
-                            color: Theme.of(context).scaffoldBackgroundColor,
-                          ),
-                        ),
-                      ),
-                    ),
+                    child: NightSkyBackground(),
                   ),
                 ),
                 content,
