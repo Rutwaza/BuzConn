@@ -1,10 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:country_code_picker/country_code_picker.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_constants.dart';
@@ -12,6 +13,10 @@ import '../../../core/theme/colors.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/spotlight_toast.dart';
+import '../../../core/services/windows_google_auth_service.dart';
+import 'email_verification_notice.dart';
+import 'phone_sign_in_sheet.dart';
+import 'windows_auth_layout.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -25,6 +30,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+  bool _showPassword = false;
 
   @override
   void dispose() {
@@ -39,21 +45,40 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         _isLoading = true;
       });
 
+      var didSignIn = false;
       try {
         // Firebase authentication
-        final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        final credential =
+            await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
+        didSignIn = true;
 
         final user = credential.user;
-        if (user != null) {
+        final isEmailPasswordUser =
+            user?.providerData.any((info) => info.providerId == 'password') ??
+                false;
+        if (user != null && isEmailPasswordUser && !user.emailVerified) {
+          var verificationSent = false;
           try {
-            await _ensureUserDocument(user);
-          } catch (_) {
-            // Do not block login if user doc creation fails.
+            await user.sendEmailVerification();
+            verificationSent = true;
+          } catch (_) {}
+          await FirebaseAuth.instance.signOut();
+          didSignIn = false;
+          if (mounted) setState(() => _isLoading = false);
+          if (mounted) {
+            await showEmailVerificationNotice(
+              context,
+              email: user.email ?? _emailController.text.trim(),
+              emailSent: verificationSent,
+            );
           }
+          return;
         }
+        final isProfileComplete =
+            user == null ? false : await _ensureUserDocument(user);
 
         if (!mounted) return;
         setState(() {
@@ -61,7 +86,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         });
 
         // Navigate to feed after successful login
-        context.go(AppRoutes.feed);
+        context.go(
+          isProfileComplete ? AppRoutes.dashboard : AppRoutes.profile,
+        );
       } on FirebaseAuthException catch (e) {
         if (mounted) {
           setState(() {
@@ -80,9 +107,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           errorMessage = 'Invalid credentials.';
         }
 
-        if (FirebaseAuth.instance.currentUser != null && mounted) {
-          // Auth succeeded but an exception was raised after; proceed.
-          context.go(AppRoutes.feed);
+        if (didSignIn && mounted) {
+          context.go(AppRoutes.profile);
           return;
         }
         if (mounted) {
@@ -95,8 +121,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           });
         }
 
-        if (FirebaseAuth.instance.currentUser != null && mounted) {
-          context.go(AppRoutes.feed);
+        if (didSignIn && mounted) {
+          context.go(AppRoutes.profile);
           return;
         }
         if (mounted) {
@@ -106,7 +132,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
-  Future<void> _ensureUserDocument(
+  Future<bool> _ensureUserDocument(
     User user, {
     String? name,
     String? email,
@@ -119,7 +145,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       await doc.set({
         if (normalizedEmail.isNotEmpty) 'emailLower': normalizedEmail,
       }, SetOptions(merge: true));
-      return;
+      final data = snapshot.data() ?? <String, dynamic>{};
+      return data['profileCompleted'] == true;
     }
     await doc.set({
       'name': name ?? user.displayName ?? 'User',
@@ -130,7 +157,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       'userType': 'client',
       'fcmTokens': [],
       'themeMode': 'dark',
+      'profileCompleted': false,
     });
+    return false;
   }
 
   Future<void> _handleGoogleSignIn() async {
@@ -138,6 +167,26 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       _isLoading = true;
     });
     try {
+      if (Platform.isWindows) {
+        final googleTokens = await WindowsGoogleAuthService.signIn();
+        if (googleTokens?.accessToken == null) return;
+        final credential = GoogleAuthProvider.credential(
+          accessToken: googleTokens!.accessToken,
+          idToken: googleTokens.idToken,
+        );
+        final result = await FirebaseAuth.instance.signInWithCredential(
+          credential,
+        );
+        final user = result.user;
+        final isProfileComplete =
+            user == null ? false : await _ensureUserDocument(user);
+        if (mounted && user != null) {
+          context.go(
+            isProfileComplete ? AppRoutes.dashboard : AppRoutes.profile,
+          );
+        }
+        return;
+      }
       final googleUser = await GoogleSignIn().signIn();
       if (googleUser == null) {
         setState(() {
@@ -153,15 +202,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       final userCredential =
           await FirebaseAuth.instance.signInWithCredential(credential);
       final user = userCredential.user;
+      var isProfileComplete = false;
       if (user != null) {
-        await _ensureUserDocument(
+        isProfileComplete = await _ensureUserDocument(
           user,
           name: user.displayName ?? googleUser.displayName,
           email: user.email ?? googleUser.email,
         );
       }
       if (mounted) {
-        context.go(AppRoutes.feed);
+        context.go(
+          isProfileComplete ? AppRoutes.dashboard : AppRoutes.profile,
+        );
       }
     } on FirebaseAuthException catch (e) {
       showSpotlightToast(
@@ -169,8 +221,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         e.message ?? 'Google sign-in failed',
         success: false,
       );
-    } catch (_) {
-      showSpotlightToast(context, 'Google sign-in failed', success: false);
+    } catch (error, stackTrace) {
+      debugPrint('Google sign-in failed: $error\n$stackTrace');
+      showSpotlightToast(
+        context,
+        'Google sign-in failed: $error',
+        success: false,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -181,241 +238,289 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 
   Future<void> _handlePhoneSignIn() async {
-    final phoneController = TextEditingController();
-    final codeController = TextEditingController();
-    String? verificationId;
-    bool isSending = false;
-    bool isVerifying = false;
-    bool codeSent = false;
-    String dialCode = '+250';
-    String fullPhone = '';
+    if (Platform.isWindows) {
+      showSpotlightToast(
+        context,
+        'Phone verification is currently available in the Android app only.',
+        success: false,
+      );
+      return;
+    }
+    final credential = await showPhoneSignInSheet(context);
+    final user = credential?.user;
+    if (user == null || !mounted) return;
 
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Continue with phone'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: phoneController,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      hintText: '7XXXXXXXX',
-                      labelText: 'Phone number',
-                      prefixIcon: Icon(Icons.phone),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Text('Country'),
-                      const SizedBox(width: 12),
-                      CountryCodePicker(
-                        initialSelection: 'RW',
-                        favorite: const ['RW', 'KE', 'UG', 'TZ'],
-                        showFlag: true,
-                        showCountryOnly: false,
-                        showOnlyCountryWhenClosed: false,
-                        onChanged: (code) {
-                          dialCode = code.dialCode ?? '+250';
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  if (codeSent)
-                    TextField(
-                      controller: codeController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        hintText: '123456',
-                        labelText: 'Verification code',
-                      ),
-                    ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isSending || isVerifying
-                      ? null
-                      : () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                if (!codeSent)
-                  ElevatedButton(
-                    onPressed: isSending
-                        ? null
-                        : () async {
-                            final phone = phoneController.text.trim();
-                            if (phone.isEmpty) return;
-                            fullPhone = '$dialCode$phone';
-                            setState(() {
-                              isSending = true;
-                            });
-                            await FirebaseAuth.instance.verifyPhoneNumber(
-                              phoneNumber: fullPhone,
-                              verificationCompleted:
-                                  (PhoneAuthCredential credential) async {
-                                final userCredential = await FirebaseAuth
-                                    .instance
-                                    .signInWithCredential(credential);
-                                final user = userCredential.user;
-                                if (user != null) {
-                                  await _ensureUserDocument(
-                                    user,
-                                    phone: user.phoneNumber ?? fullPhone,
-                                  );
-                                }
-                                if (mounted) {
-                                  Navigator.pop(context);
-                                  context.go(AppRoutes.feed);
-                                }
-                              },
-                              verificationFailed: (FirebaseAuthException e) {
-                                showSpotlightToast(
-                                  context,
-                                  e.message ?? 'Phone verification failed',
-                                  success: false,
-                                );
-                              },
-                              codeSent: (String id, int? resendToken) {
-                                verificationId = id;
-                                setState(() {
-                                  codeSent = true;
-                                  isSending = false;
-                                });
-                              },
-                              codeAutoRetrievalTimeout: (String id) {
-                                verificationId = id;
-                              },
-                            );
-                          },
-                    child: isSending
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Send code'),
-                  ),
-                if (codeSent)
-                  ElevatedButton(
-                    onPressed: isVerifying
-                        ? null
-                        : () async {
-                            final code = codeController.text.trim();
-                            if (code.isEmpty || verificationId == null) return;
-                            setState(() {
-                              isVerifying = true;
-                            });
-                            try {
-                            final credential = PhoneAuthProvider.credential(
-                              verificationId: verificationId!,
-                              smsCode: code,
-                            );
-                            final userCredential = await FirebaseAuth.instance
-                                .signInWithCredential(credential);
-                            final user = userCredential.user;
-                            if (user != null) {
-                              await _ensureUserDocument(
-                                user,
-                                phone: user.phoneNumber ?? fullPhone,
-                              );
-                            }
-                              if (mounted) {
-                                Navigator.pop(context);
-                                context.go(AppRoutes.feed);
-                              }
-                            } on FirebaseAuthException catch (e) {
-                              showSpotlightToast(
-                                context,
-                                e.message ?? 'Invalid verification code',
-                                success: false,
-                              );
-                            } finally {
-                              if (mounted) {
-                                setState(() {
-                                  isVerifying = false;
-                                });
-                              }
-                            }
-                          },
-                    child: isVerifying
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Verify'),
-                  ),
-              ],
-            );
-          },
+    setState(() => _isLoading = true);
+    try {
+      final isProfileComplete = await _ensureUserDocument(
+        user,
+        phone: user.phoneNumber,
+      );
+      if (mounted) {
+        context.go(
+          isProfileComplete ? AppRoutes.dashboard : AppRoutes.profile,
         );
-      },
-    );
+      }
+    } catch (error) {
+      if (mounted) {
+        showSpotlightToast(
+          context,
+          'Signed in, but we could not load your profile. Please try again.',
+          success: false,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _showForgotPasswordDialog() async {
     final emailController = TextEditingController(
       text: _emailController.text.trim(),
     );
-    await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Reset password'),
-        content: TextField(
-          controller: emailController,
-          keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(
-            hintText: 'Enter your email',
+    var isSending = false;
+    String? errorText;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            icon: const Icon(Icons.mark_email_read_outlined),
+            title: const Text('Reset your password'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Enter the email on your account. We will send a secure reset link if the address is registered.',
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: emailController,
+                  autofocus: true,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.send,
+                  decoration: const InputDecoration(
+                    labelText: 'Email address',
+                    hintText: 'you@example.com',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.alternate_email_rounded),
+                  ),
+                ),
+                if (errorText != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    errorText!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSending
+                    ? null
+                    : () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: isSending
+                    ? null
+                    : () async {
+                        final email = emailController.text.trim();
+                        if (email.isEmpty ||
+                            !RegExp(r'^[^@]+@[^@]+\.[^@]+$')
+                                .hasMatch(email)) {
+                          setDialogState(() {
+                            errorText = 'Enter a valid email address.';
+                          });
+                          return;
+                        }
+                        setDialogState(() {
+                          isSending = true;
+                          errorText = null;
+                        });
+                        try {
+                          await FirebaseAuth.instance.sendPasswordResetEmail(
+                            email: email,
+                          );
+                          if (dialogContext.mounted) {
+                            Navigator.of(dialogContext).pop();
+                          }
+                          if (mounted) {
+                            showSpotlightToast(
+                              context,
+                              'Check your inbox and spam folder for password reset instructions.',
+                              success: true,
+                            );
+                          }
+                        } on FirebaseAuthException catch (error) {
+                          setDialogState(() {
+                            isSending = false;
+                            errorText = switch (error.code) {
+                              'invalid-email' => 'That email address is invalid.',
+                              'too-many-requests' =>
+                                'Too many attempts. Wait a little and try again.',
+                              'network-request-failed' =>
+                                'Check your internet connection and try again.',
+                              _ => 'We could not send the reset email. Please try again.',
+                            };
+                          });
+                        } catch (_) {
+                          setDialogState(() {
+                            isSending = false;
+                            errorText =
+                                'We could not send the reset email. Please try again.';
+                          });
+                        }
+                      },
+                child: isSending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Send reset link'),
+              ),
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final email = emailController.text.trim();
-              if (email.isEmpty) return;
-              try {
-                await FirebaseAuth.instance.sendPasswordResetEmail(
-                  email: email,
-                );
-                if (mounted) {
-                  Navigator.pop(context);
-                  showSpotlightToast(
-                    context,
-                    'Password reset email sent.',
-                    success: true,
-                  );
+      );
+    } finally {
+      emailController.dispose();
+    }
+  }
+
+  Widget _buildWindowsLayout() {
+    const fieldFill = Color(0xFFF5F7FB);
+    const fieldBorder = Color(0xFFDCE3ED);
+    const ink = Color(0xFF172235);
+    return WindowsAuthLayout(
+      eyebrow: 'Welcome back',
+      title: 'Sign in to Spotlight',
+      subtitle: 'Pick up where you left off and keep your network moving.',
+      footerPrompt: "New to Spotlight?",
+      footerAction: 'Create account',
+      onFooterTap: () => context.go(AppRoutes.register),
+      form: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppTextField(
+              label: 'Email address',
+              hintText: 'you@example.com',
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
+              fillColor: fieldFill,
+              textColor: ink,
+              hintColor: const Color(0xFF8995A7),
+              borderColor: fieldBorder,
+              prefixIcon: const Icon(Icons.alternate_email_rounded,
+                  color: Color(0xFF77849A)),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your email';
                 }
-              } catch (_) {
-                if (mounted) {
-                  showSpotlightToast(
-                    context,
-                    'Failed to send reset email.',
-                    success: false,
-                  );
+                if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
+                  return 'Please enter a valid email';
                 }
-              }
-            },
-            child: const Text('Send'),
-          ),
-        ],
+                return null;
+              },
+            ),
+            const SizedBox(height: 18),
+            AppTextField(
+              label: 'Password',
+              hintText: 'Enter your password',
+              controller: _passwordController,
+              obscureText: !_showPassword,
+              fillColor: fieldFill,
+              textColor: ink,
+              hintColor: const Color(0xFF8995A7),
+              borderColor: fieldBorder,
+              prefixIcon: const Icon(Icons.lock_outline_rounded,
+                  color: Color(0xFF77849A)),
+              suffixIcon: IconButton(
+                tooltip: _showPassword ? 'Hide password' : 'Show password',
+                onPressed: () => setState(() => _showPassword = !_showPassword),
+                icon: Icon(
+                  _showPassword
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  color: const Color(0xFF77849A),
+                ),
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your password';
+                }
+                if (value.trim().length < AppConstants.minPasswordLength) {
+                  return 'Password must be at least ${AppConstants.minPasswordLength} characters';
+                }
+                return null;
+              },
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _showForgotPasswordDialog,
+                child: const Text('Forgot password?'),
+              ),
+            ),
+            const SizedBox(height: 6),
+            AppButton(
+              text: 'Sign in',
+              onPressed: _handleLogin,
+              isLoading: _isLoading,
+              height: 54,
+              backgroundColor: const Color(0xFF1769AA),
+            ),
+            const SizedBox(height: 24),
+            const Row(
+              children: [
+                Expanded(child: Divider(color: fieldBorder)),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 14),
+                  child: Text(
+                    'OR CONTINUE WITH',
+                    style: TextStyle(
+                      color: Color(0xFF8995A7),
+                      fontSize: 10,
+                      letterSpacing: 1,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Expanded(child: Divider(color: fieldBorder)),
+              ],
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              height: 50,
+              child: OutlinedButton.icon(
+                onPressed: _isLoading ? null : _handleGoogleSignIn,
+                icon: Image.asset('assets/images/google.png', width: 19),
+                label: const Text('Continue with Google'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: ink,
+                  side: const BorderSide(color: fieldBorder),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (Platform.isWindows) return _buildWindowsLayout();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final fieldFillColor = isDark
         ? const Color(0xCC1A2230).withOpacity(0.52)
@@ -435,222 +540,237 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         extendBodyBehindAppBar: true,
         body: Stack(
           children: [
-          Positioned.fill(
-            child: Opacity(
-              opacity: isDark ? 0.5 : 0.42,
-              child: Image.asset(
-                'assets/images/chat_bg.gif',
-                fit: BoxFit.cover,
-                alignment: Alignment.center,
-                filterQuality: FilterQuality.low,
-                gaplessPlayback: true,
+            Positioned.fill(
+              child: Opacity(
+                opacity: isDark ? 0.5 : 0.42,
+                child: Image.asset(
+                  'assets/images/chat_bg.gif',
+                  fit: BoxFit.cover,
+                  alignment: Alignment.center,
+                  filterQuality: FilterQuality.low,
+                  gaplessPlayback: true,
+                ),
               ),
             ),
-          ),
-          Positioned.fill(
-            child: Container(
-              color: isDark
-                  ? Colors.black.withOpacity(0.34)
-                  : Colors.black.withOpacity(0.18),
+            Positioned.fill(
+              child: Container(
+                color: isDark
+                    ? Colors.black.withOpacity(0.34)
+                    : Colors.black.withOpacity(0.18),
+              ),
             ),
-          ),
-          SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 60),
-                  // Header
-                  const Center(
-                    child: Text(
-                      'Welcome Back to Spotlight',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black45,
-                            blurRadius: 10,
-                            offset: Offset(0, 2),
-                          ),
-                        ],
+            SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 60),
+                    // Header
+                    const Center(
+                      child: Text(
+                        'Welcome Back to Spotlight',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black45,
+                              blurRadius: 10,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Center(
-                    child: Text(
-                      'Sign in to spotlight your work',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.white70,
+                    const SizedBox(height: 8),
+                    const Center(
+                      child: Text(
+                        'Sign in to spotlight your work',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.white70,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 48),
-                  // Form
-                  Form(
-                    key: _formKey,
-                    child: Column(
-                      children: [
-                        AppTextField(
-                          label: 'Email Address',
-                          hintText: 'Enter your email',
-                          controller: _emailController,
-                          fillColor: fieldFillColor,
-                          textColor: Colors.white,
-                          hintColor: Colors.white60,
-                          borderColor: fieldBorderColor,
-                          errorStyle: const TextStyle(
-                            color: Colors.redAccent,
-                            backgroundColor: Colors.transparent,
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.alternate_email_rounded,
-                            color: Colors.white70,
-                          ),
-                          keyboardType: TextInputType.emailAddress,
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter your email';
-                            }
-                            if (!RegExp(r'^[^@]+@[^@]+\.[^@]+')
-                                .hasMatch(value)) {
-                              return 'Please enter a valid email';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 20),
-                        AppTextField(
-                          label: 'Password',
-                          hintText: 'Enter your password',
-                          controller: _passwordController,
-                          obscureText: true,
-                          fillColor: fieldFillColor,
-                          textColor: Colors.white,
-                          hintColor: Colors.white60,
-                          borderColor: fieldBorderColor,
-                          errorStyle: const TextStyle(
-                            color: Colors.redAccent,
-                            backgroundColor: Colors.transparent,
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.lock_outline_rounded,
-                            color: Colors.white70,
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter your password';
-                            }
-                            if (value.length < AppConstants.minPasswordLength) {
-                              return 'Password must be at least ${AppConstants.minPasswordLength} characters';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 24),
-                        // Login Button
-                        AppButton(
-                          text: 'Sign In',
-                          onPressed: _handleLogin,
-                          isLoading: _isLoading,
-                        ),
-                        const SizedBox(height: 24),
-                        // Forgot Password
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () {
-                              _showForgotPasswordDialog();
+                    const SizedBox(height: 48),
+                    // Form
+                    Form(
+                      key: _formKey,
+                      child: Column(
+                        children: [
+                          AppTextField(
+                            label: 'Email Address',
+                            hintText: 'Enter your email',
+                            controller: _emailController,
+                            fillColor: fieldFillColor,
+                            textColor: Colors.white,
+                            hintColor: Colors.white60,
+                            borderColor: fieldBorderColor,
+                            errorStyle: const TextStyle(
+                              color: Colors.redAccent,
+                              backgroundColor: Colors.transparent,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.alternate_email_rounded,
+                              color: Colors.white70,
+                            ),
+                            keyboardType: TextInputType.emailAddress,
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Please enter your email';
+                              }
+                              if (!RegExp(r'^[^@]+@[^@]+\.[^@]+')
+                                  .hasMatch(value)) {
+                                return 'Please enter a valid email';
+                              }
+                              return null;
                             },
-                            child: const Text(
-                              'Forgot Password?',
-                              style: TextStyle(
-                                color: AppColors.primary,
+                          ),
+                          const SizedBox(height: 20),
+                          AppTextField(
+                            label: 'Password',
+                            hintText: 'Enter your password',
+                            controller: _passwordController,
+                            obscureText: !_showPassword,
+                            fillColor: fieldFillColor,
+                            textColor: Colors.white,
+                            hintColor: Colors.white60,
+                            borderColor: fieldBorderColor,
+                            errorStyle: const TextStyle(
+                              color: Colors.redAccent,
+                              backgroundColor: Colors.transparent,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.lock_outline_rounded,
+                              color: Colors.white70,
+                            ),
+                            suffixIcon: IconButton(
+                              tooltip: _showPassword
+                                  ? 'Hide password'
+                                  : 'Show password',
+                              onPressed: () => setState(
+                                () => _showPassword = !_showPassword,
+                              ),
+                              icon: Icon(
+                                _showPassword
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                color: Colors.white70,
+                              ),
+                            ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Please enter your password';
+                              }
+                              if (value.trim().length <
+                                  AppConstants.minPasswordLength) {
+                                return 'Password must be at least ${AppConstants.minPasswordLength} characters';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 24),
+                          // Login Button
+                          AppButton(
+                            text: 'Sign In',
+                            onPressed: _handleLogin,
+                            isLoading: _isLoading,
+                          ),
+                          const SizedBox(height: 24),
+                          // Forgot Password
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: () {
+                                _showForgotPasswordDialog();
+                              },
+                              child: const Text(
+                                'Forgot Password?',
+                                style: TextStyle(
+                                  color: AppColors.primary,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 32),
-                        // Divider
-                        const Row(
-                          children: [
-                            Expanded(
-                              child: Divider(
-                                color: AppColors.lightGrey,
+                          const SizedBox(height: 32),
+                          // Divider
+                          const Row(
+                            children: [
+                              Expanded(
+                                child: Divider(
+                                  color: AppColors.lightGrey,
+                                ),
                               ),
-                            ),
-                            Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 16),
-                              child: Text(
-                                'Or continue with',
+                              Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 16),
+                                child: Text(
+                                  'Or continue with',
+                                  style: TextStyle(
+                                    color: AppColors.grey,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Divider(
+                                  color: AppColors.lightGrey,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 32),
+                          // Social Login Buttons
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _socialButton(
+                                onPressed: _handleGoogleSignIn,
+                                assetPath: 'assets/images/google.png',
+                                semanticLabel: 'Continue with Google',
+                              ),
+                              const SizedBox(width: 18),
+                              _socialButton(
+                                onPressed: _handlePhoneSignIn,
+                                assetPath: 'assets/images/phone.png',
+                                semanticLabel: 'Continue with phone',
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 48),
+                          // Sign Up Link
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text(
+                                "Don't have an account? ",
                                 style: TextStyle(
                                   color: AppColors.grey,
                                 ),
                               ),
-                            ),
-                            Expanded(
-                              child: Divider(
-                                color: AppColors.lightGrey,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 32),
-                        // Social Login Buttons
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _socialButton(
-                              onPressed: _handleGoogleSignIn,
-                              assetPath: 'assets/images/google.png',
-                              semanticLabel: 'Continue with Google',
-                            ),
-                            const SizedBox(width: 18),
-                            _socialButton(
-                              onPressed: _handlePhoneSignIn,
-                              assetPath: 'assets/images/phone.png',
-                              semanticLabel: 'Continue with phone',
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 48),
-                        // Sign Up Link
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text(
-                              "Don't have an account? ",
-                              style: TextStyle(
-                                color: AppColors.grey,
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () {
-                                context.push(AppRoutes.register);
-                              },
-                              child: const Text(
-                                'Sign Up',
-                                style: TextStyle(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w600,
+                              GestureDetector(
+                                onTap: () {
+                                  context.push(AppRoutes.register);
+                                },
+                                child: const Text(
+                                  'Sign Up',
+                                  style: TextStyle(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
           ],
         ),
       ),

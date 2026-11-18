@@ -880,7 +880,8 @@ EncodableList PigeonUserCredential::ToEncodableList() const {
   list.push_back(user_ ? EncodableValue(user_->ToEncodableList())
                        : EncodableValue());
   list.push_back(additional_user_info_
-                     ? EncodableValue(additional_user_info_->ToEncodableList())
+                     ? EncodableValue(
+                           additional_user_info_->ToEncodableList())
                      : EncodableValue());
   list.push_back(credential_ ? EncodableValue(credential_->ToEncodableList())
                              : EncodableValue());
@@ -1990,18 +1991,42 @@ void FirebaseAuthHostApiCodecSerializer::WriteValue(
       return;
     }
     if (custom_value->type() == typeid(PigeonUserCredential)) {
+      const auto& credential =
+          std::any_cast<const PigeonUserCredential&>(*custom_value);
       stream->WriteByte(141);
-      WriteValue(
-          EncodableValue(std::any_cast<PigeonUserCredential>(*custom_value)
-                             .ToEncodableList()),
-          stream);
+      stream->WriteByte(12);  // EncodedType::kList.
+      WriteSize(3, stream);
+      if (credential.user()) {
+        WriteValue(EncodableValue(CustomEncodableValue(*credential.user())),
+                   stream);
+      } else {
+        WriteValue(EncodableValue(), stream);
+      }
+      if (credential.additional_user_info()) {
+        WriteValue(EncodableValue(CustomEncodableValue(
+                       *credential.additional_user_info())),
+                   stream);
+      } else {
+        WriteValue(EncodableValue(), stream);
+      }
+      if (credential.credential()) {
+        WriteValue(
+            EncodableValue(CustomEncodableValue(*credential.credential())),
+            stream);
+      } else {
+        WriteValue(EncodableValue(), stream);
+      }
       return;
     }
     if (custom_value->type() == typeid(PigeonUserDetails)) {
+      const auto& details =
+          std::any_cast<const PigeonUserDetails&>(*custom_value);
       stream->WriteByte(142);
-      WriteValue(EncodableValue(std::any_cast<PigeonUserDetails>(*custom_value)
-                                    .ToEncodableList()),
+      stream->WriteByte(12);  // EncodedType::kList.
+      WriteSize(2, stream);
+      WriteValue(EncodableValue(CustomEncodableValue(details.user_info())),
                  stream);
+      WriteValue(EncodableValue(details.provider_data()), stream);
       return;
     }
     if (custom_value->type() == typeid(PigeonUserInfo)) {
@@ -3623,10 +3648,14 @@ void FirebaseAuthUserHostApi::SetUp(flutter::BinaryMessenger* binary_messenger,
               const auto& app_arg = std::any_cast<const AuthPigeonFirebaseApp&>(
                   std::get<CustomEncodableValue>(encodable_app_arg));
               const auto& encodable_action_code_settings_arg = args.at(1);
-              const auto* action_code_settings_arg =
-                  &(std::any_cast<const PigeonActionCodeSettings&>(
-                      std::get<CustomEncodableValue>(
-                          encodable_action_code_settings_arg)));
+              const PigeonActionCodeSettings* action_code_settings_arg =
+                  nullptr;
+              if (!encodable_action_code_settings_arg.IsNull()) {
+                action_code_settings_arg =
+                    &std::any_cast<const PigeonActionCodeSettings&>(
+                        std::get<CustomEncodableValue>(
+                            encodable_action_code_settings_arg));
+              }
               api->SendEmailVerification(
                   app_arg, action_code_settings_arg,
                   [reply](std::optional<FlutterError>&& output) {

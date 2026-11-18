@@ -7,7 +7,7 @@ import 'dart:io';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
-import '../../../core/services/supabase_storage_service.dart';
+import '../../../core/services/r2_storage_service.dart';
 
 class BusinessesPage extends StatefulWidget {
   const BusinessesPage({super.key});
@@ -205,7 +205,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
     try {
       final bytes = await _selectedLogo!.readAsBytes();
       final path = '$businessId/logo_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final downloadUrl = await SupabaseStorageService.instance.uploadImage(
+      final downloadUrl = await R2StorageService.instance.uploadImage(
         bucket: 'profile-images',
         path: path,
         bytes: bytes,

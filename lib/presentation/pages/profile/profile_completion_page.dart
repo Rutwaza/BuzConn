@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,7 +12,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_text_field.dart';
-import '../../../core/services/supabase_storage_service.dart';
+import '../../../core/services/r2_storage_service.dart';
 
 class ProfileCompletionPage extends ConsumerStatefulWidget {
   const ProfileCompletionPage({super.key});
@@ -45,6 +47,8 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
           .collection('users')
           .doc(user.uid)
           .get();
+
+      if (!mounted) return;
 
       if (userDoc.exists) {
         final data = userDoc.data()!;
@@ -93,9 +97,18 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
 
   String _normalizedPhone() {
     final raw = _phoneController.text.trim();
-    if (raw.isEmpty) return '';
-    if (raw.startsWith('+')) return raw;
-    return '$_dialCode$raw';
+    if (raw.isEmpty) {
+      return FirebaseAuth.instance.currentUser?.phoneNumber ?? '';
+    }
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    final dialDigits = _dialCode.replaceAll(RegExp(r'\D'), '');
+    if (raw.startsWith('+') ||
+        (digits.startsWith(dialDigits) &&
+            digits.length > dialDigits.length + 6)) {
+      return '+$digits';
+    }
+    final nationalNumber = digits.startsWith('0') ? digits.substring(1) : digits;
+    return '$_dialCode$nationalNumber';
   }
 
   Future<void> _pickProfileImage() async {
@@ -111,7 +124,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
     try {
       final bytes = await picked.readAsBytes();
       final path = '${user.uid}/${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final url = await SupabaseStorageService.instance.uploadImage(
+      final url = await R2StorageService.instance.uploadImage(
         bucket: 'profile-images',
         path: path,
         bytes: bytes,
@@ -153,15 +166,26 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
           throw FirebaseAuthException(code: 'no-current-user');
         }
 
+        final email = _emailController.text.trim();
+
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
           'userType': 'client',
           'name': _nameController.text.trim(),
-          'email': _emailController.text.trim(),
+          'displayName': _nameController.text.trim(),
+          if (email.isNotEmpty) 'email': email,
+          if (email.isNotEmpty) 'emailLower': email.toLowerCase(),
           'phone': _normalizedPhone(),
           'bio': _bioController.text.trim(),
           'profileCompleted': true,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
+        if (!Platform.isWindows) {
+          try {
+            await user.updateDisplayName(_nameController.text.trim());
+          } on FirebaseAuthException {
+            // The Firestore profile remains the source of truth for the app UI.
+          }
+        }
 
         if (!mounted) return;
         setState(() {
@@ -177,8 +201,8 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to save profile. Please try again.'),
+          SnackBar(
+            content: Text('Failed to save profile: $e'),
           ),
         );
       }
@@ -352,13 +376,12 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
               ),
               const SizedBox(height: 12),
 
-              // Name
               AppTextField(
                 controller: _nameController,
                 label: 'Display Name',
                 hintText: 'How people see you',
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
+                  if (value == null || value.trim().isEmpty) {
                     return 'Please enter your name';
                   }
                   return null;
@@ -370,14 +393,13 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
               // Email
               AppTextField(
                 controller: _emailController,
-                label: 'Email',
-                hintText: 'Email address',
+                label: 'Email (optional)',
+                hintText: 'Email address, if you want to add one',
                 keyboardType: TextInputType.emailAddress,
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your email';
-                  }
-                  if (!value.contains('@')) {
+                  if (value == null || value.trim().isEmpty) return null;
+                  if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$')
+                      .hasMatch(value.trim())) {
                     return 'Please enter a valid email';
                   }
                   return null;
@@ -387,67 +409,48 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
               const SizedBox(height: 24),
 
               // Phone Number
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Phone',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      CountryCodePicker(
-                        initialSelection: _dialCode,
-                        favorite: const ['RW', 'KE', 'UG', 'TZ'],
-                        showFlag: true,
-                        showCountryOnly: false,
-                        showOnlyCountryWhenClosed: false,
-                        textStyle: TextStyle(color: pickerTextColor),
-                        dialogBackgroundColor: pickerBg,
-                        dialogTextStyle: TextStyle(color: pickerTextColor),
-                        searchDecoration: InputDecoration(
-                          hintText: 'Search country',
-                          hintStyle: TextStyle(
-                            color: pickerTextColor.withOpacity(0.6),
-                          ),
-                          enabledBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(
-                              color: pickerTextColor.withOpacity(0.3),
-                            ),
-                          ),
-                          focusedBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(
-                              color: pickerTextColor.withOpacity(0.6),
-                            ),
-                          ),
-                        ),
-                        onChanged: (code) {
-                          setState(() {
-                            _dialCode = code.dialCode ?? _dialCode;
-                          });
-                        },
+              AppTextField(
+                controller: _phoneController,
+                label: 'Phone (optional)',
+                hintText: 'Phone number',
+                keyboardType: TextInputType.phone,
+                prefixIcon: CountryCodePicker(
+                  initialSelection: _dialCode,
+                  favorite: const ['RW', 'KE', 'UG', 'TZ'],
+                  showFlag: true,
+                  showCountryOnly: false,
+                  showOnlyCountryWhenClosed: false,
+                  textStyle: TextStyle(color: pickerTextColor),
+                  dialogBackgroundColor: pickerBg,
+                  dialogTextStyle: TextStyle(color: pickerTextColor),
+                  searchDecoration: InputDecoration(
+                    hintText: 'Search country',
+                    hintStyle: TextStyle(
+                      color: pickerTextColor.withOpacity(0.6),
+                    ),
+                    enabledBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: pickerTextColor.withOpacity(0.3),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: AppTextField(
-                          controller: _phoneController,
-                          label: '',
-                          hintText: 'Phone number',
-                          keyboardType: TextInputType.phone,
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter your phone number';
-                            }
-                            return null;
-                          },
-                        ),
+                    ),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(
+                        color: pickerTextColor.withOpacity(0.6),
                       ),
-                    ],
+                    ),
                   ),
-                ],
+                  onChanged: (code) {
+                    setState(() {
+                      _dialCode = code.dialCode ?? _dialCode;
+                    });
+                  },
+                ),
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 112,
+                  maxWidth: 132,
+                  minHeight: 56,
+                  maxHeight: 56,
+                ),
               ),
 
               const SizedBox(height: 24),

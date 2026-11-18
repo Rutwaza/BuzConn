@@ -25,6 +25,34 @@ service cloud.firestore {
         && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
     }
 
+    function canUpdateChatRequest() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return !changed.hasAny(['requestStatus', 'requesterId', 'requestRecipientId'])
+        || (
+          resource.data.get('requestStatus', 'none') == 'none'
+          && resource.data.chatType == 'direct'
+          && request.resource.data.requestStatus == 'pending'
+          && request.resource.data.requesterId == request.auth.uid
+          && request.resource.data.requestRecipientId in resource.data.participants
+          && request.resource.data.requestRecipientId != request.auth.uid
+        )
+        || (
+          resource.data.requestStatus == 'pending'
+          && resource.data.requestRecipientId == request.auth.uid
+          && request.resource.data.requestStatus in ['accepted', 'rejected']
+          && request.resource.data.requesterId == resource.data.requesterId
+          && request.resource.data.requestRecipientId == resource.data.requestRecipientId
+        );
+    }
+
+    function canCreateChatMessage(chatId) {
+      let chat = get(/databases/$(database)/documents/chats/$(chatId)).data;
+      return isChatParticipant(chatId)
+        && chat.get('requestStatus', 'none') != 'rejected'
+        && (chat.get('requestStatus', 'none') != 'pending'
+          || chat.get('requesterId', '') == request.auth.uid);
+    }
+
     function isSuperAdmin() {
       return isSignedIn()
         && request.auth.token.email == "nelsonjembe99@gmail.com";
@@ -97,11 +125,14 @@ service cloud.firestore {
             && request.resource.data.businessOwnerId is string
             && request.resource.data.businessId is string)
         );
-      allow update: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow update: if isSignedIn()
+        && request.auth.uid in resource.data.participants
+        && request.resource.data.participants == resource.data.participants
+        && canUpdateChatRequest();
 
       match /messages/{messageId} {
         allow read: if isChatParticipant(chatId);
-        allow create: if isChatParticipant(chatId);
+        allow create: if canCreateChatMessage(chatId);
         allow update: if isChatParticipant(chatId) && request.resource.data.senderId == request.auth.uid;
         allow delete: if isChatParticipant(chatId);
       }

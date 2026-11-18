@@ -1,14 +1,66 @@
 const admin = require("firebase-admin");
 const crypto = require("crypto");
+const {S3Client, PutObjectCommand, GetObjectCommand} = require("@aws-sdk/client-s3");
+const {getSignedUrl} = require("@aws-sdk/s3-request-presigner");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {onCall, onRequest, HttpsError} = require("firebase-functions/v2/https");
 const functionsV1 = require("firebase-functions/v1");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {onValueCreated} = require("firebase-functions/v2/database");
+const {defineSecret, defineString} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 
 admin.initializeApp();
 const db = admin.firestore();
+
+const R2_ACCOUNT_ID = defineString("R2_ACCOUNT_ID");
+const R2_PUBLIC_BUCKET_NAME = defineString("R2_PUBLIC_BUCKET_NAME");
+const R2_PRIVATE_BUCKET_NAME = defineString("R2_PRIVATE_BUCKET_NAME");
+const R2_PUBLIC_BASE_URL = defineString("R2_PUBLIC_BASE_URL");
+const R2_ACCESS_KEY_ID = defineSecret("R2_ACCESS_KEY_ID");
+const R2_SECRET_ACCESS_KEY = defineSecret("R2_SECRET_ACCESS_KEY");
+
+const R2_ALLOWED_PUBLIC_CATEGORIES = new Set([
+  "profile-images",
+  "post-images",
+  "post-videos",
+]);
+const R2_MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
+
+function r2Encode(value) {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (char) =>
+    `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+async function createR2PresignedUrl({method, bucket, key, contentType = "", expiresIn = 600}) {
+  const client = new S3Client({
+    region: "auto",
+    endpoint: `https://${R2_ACCOUNT_ID.value()}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: R2_ACCESS_KEY_ID.value(),
+      secretAccessKey: R2_SECRET_ACCESS_KEY.value(),
+    },
+  });
+  try {
+    const command = method === "PUT" ?
+      new PutObjectCommand({Bucket: bucket, Key: key, ContentType: contentType}) :
+      new GetObjectCommand({Bucket: bucket, Key: key});
+    const url = await getSignedUrl(client, command, {expiresIn});
+    return method === "PUT" ? {url, headers: {"Content-Type": contentType}} : {url};
+  } finally {
+    client.destroy();
+  }
+}
+
+function normalizeR2ContentType(value) {
+  const contentType = String(value || "application/octet-stream").trim().toLowerCase();
+  const allowed = /^(image\/(jpeg|png|webp)|video\/(mp4|quicktime|webm)|audio\/(mp4|mpeg|wav|webm)|application\/(pdf|msword|vnd\.[a-z0-9.+-]+|zip|x-zip-compressed|octet-stream)|text\/(plain|csv))$/;
+  if (!allowed.test(contentType)) {
+    throw new HttpsError("invalid-argument", "This file type is not supported.");
+  }
+  return contentType;
+}
 
 const BOOKING_STATUS = {
   BOOKED: "booked",
@@ -211,7 +263,7 @@ function isValidUsername(username) {
   return /^[a-z0-9._]{3,20}$/.test(normalizeUsername(username));
 }
 
-exports.sendNotificationPush = onDocumentCreated(
+exports.sendNotificationDocumentPush = onDocumentCreated(
   "notifications/{notificationId}",
   async (event) => {
     const notification = event.data?.data();
@@ -255,7 +307,9 @@ exports.sendNotificationPush = onDocumentCreated(
       android: {
         priority: "high",
         notification: {
-          channelId: type === "message" ? "spotlight_chat" : "spotlight_activity",
+          channelId: type === "call" ? "spotlight_calls" :
+            (type === "message" || type === "message_request" ?
+              "spotlight_chat" : "spotlight_activity"),
         },
       },
       apns: {
@@ -289,6 +343,35 @@ exports.sendNotificationPush = onDocumentCreated(
         },
         {merge: true},
       );
+    }
+  },
+);
+
+exports.sendIncomingCallPush = onDocumentCreated(
+  "chats/{chatId}/calls/active",
+  async (event) => {
+    const call = event.data?.data();
+    if (!call?.callerId) return;
+    const chatSnap = await db.collection("chats").doc(event.params.chatId).get();
+    const participants = chatSnap.data()?.participants || [];
+    const recipientIds = participants.filter((id) => id !== call.callerId);
+    const callerSnap = await db.collection("users").doc(call.callerId).get();
+    const callerName = String(callerSnap.data()?.name || "Someone");
+    const kind = call.callType === "audio" ? "voice" : "video";
+
+    for (const recipientId of recipientIds) {
+      await db.collection("notifications").add({
+        toUserId: recipientId,
+        fromUserId: call.callerId,
+        fromUserName: callerName,
+        type: "call",
+        chatId: event.params.chatId,
+        callType: String(call.callType || "video"),
+        preview: `${callerName} is calling you by ${kind}`,
+        readAt: null,
+        hidden: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
     }
   },
 );
@@ -366,6 +449,114 @@ exports.syncDiscoveredBus = onValueCreated(
     await upsertDiscoveredBusRecord({busId, payload: after});
   },
 );
+
+exports.createR2UploadUrl = onCall({
+  region: "us-central1",
+  secrets: [R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY],
+}, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in before uploading media.");
+  }
+
+  const uid = request.auth.uid;
+  const category = String(request.data?.category || "");
+  const contentType = normalizeR2ContentType(request.data?.contentType);
+  const sizeBytes = Number(request.data?.sizeBytes);
+  const fileName = String(request.data?.fileName || "file");
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > R2_MAX_UPLOAD_BYTES) {
+    throw new HttpsError("invalid-argument", "File is too large (maximum 250 MB).");
+  }
+
+  const extension = fileName.split(".").pop().toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 10);
+  const suffix = extension ? `.${extension}` : "";
+  const objectId = crypto.randomUUID();
+  let objectKey;
+  let privateChat = false;
+
+  if (category === "chat-media") {
+    const chatId = String(request.data?.chatId || "").trim();
+    if (!chatId || chatId.includes("/")) {
+      throw new HttpsError("invalid-argument", "A valid chat is required for private media.");
+    }
+    const chatSnapshot = await db.collection("chats").doc(chatId).get();
+    if (!chatSnapshot.exists) {
+      throw new HttpsError("not-found", "Chat not found.");
+    }
+    const chat = chatSnapshot.data() || {};
+    const participants = Array.isArray(chat.participants) ? chat.participants : [];
+    const requestStatus = String(chat.requestStatus || "none");
+    const canSend = requestStatus !== "rejected" &&
+      (requestStatus !== "pending" || chat.requesterId === uid);
+    if (!participants.includes(uid) || !canSend) {
+      throw new HttpsError("permission-denied", "You cannot upload media to this chat.");
+    }
+    objectKey = `private/chats/${chatId}/${uid}/${objectId}${suffix}`;
+    privateChat = true;
+  } else {
+    if (!R2_ALLOWED_PUBLIC_CATEGORIES.has(category)) {
+      throw new HttpsError("invalid-argument", "Unknown media category.");
+    }
+    if (category === "post-videos" && !contentType.startsWith("video/")) {
+      throw new HttpsError("invalid-argument", "Post videos must be video files.");
+    }
+    if (category !== "post-videos" && !contentType.startsWith("image/")) {
+      throw new HttpsError("invalid-argument", "This upload category only accepts images.");
+    }
+    objectKey = `public/${category}/${uid}/${objectId}${suffix}`;
+  }
+
+  const storageBucket = privateChat ?
+    R2_PRIVATE_BUCKET_NAME.value() : R2_PUBLIC_BUCKET_NAME.value();
+  const signed = await createR2PresignedUrl({
+    method: "PUT",
+    bucket: storageBucket,
+    key: objectKey,
+    contentType,
+    expiresIn: 600,
+  });
+  const result = {
+    uploadUrl: signed.url,
+    headers: signed.headers,
+    objectKey,
+    mediaRef: privateChat ? `r2://${objectKey}` : null,
+  };
+  if (!privateChat) {
+    const publicBaseUrl = R2_PUBLIC_BASE_URL.value().replace(/\/+$/, "");
+    result.publicUrl = `${publicBaseUrl}/${objectKey.split("/").map(r2Encode).join("/")}`;
+  }
+  return result;
+});
+
+exports.createR2DownloadUrl = onCall({
+  region: "us-central1",
+  secrets: [R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY],
+}, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in to view this attachment.");
+  }
+  const uid = request.auth.uid;
+  const chatId = String(request.data?.chatId || "").trim();
+  const objectKey = String(request.data?.objectKey || "");
+  if (!chatId || chatId.includes("/") ||
+      !objectKey.startsWith(`private/chats/${chatId}/`)) {
+    throw new HttpsError("invalid-argument", "Invalid private media reference.");
+  }
+  const chatSnapshot = await db.collection("chats").doc(chatId).get();
+  const participants = chatSnapshot.exists && Array.isArray(chatSnapshot.data()?.participants) ?
+    chatSnapshot.data().participants : [];
+  if (!participants.includes(uid)) {
+    throw new HttpsError("permission-denied", "You cannot view this chat attachment.");
+  }
+  return {
+    url: (await createR2PresignedUrl({
+      method: "GET",
+      bucket: R2_PRIVATE_BUCKET_NAME.value(),
+      key: objectKey,
+      expiresIn: 900,
+    })).url,
+    expiresIn: 900,
+  };
+});
 
 exports.backfillDiscoveredBuses = onCall({region: "us-central1"}, async (request) => {
   if (!request.auth) {
@@ -2860,6 +3051,10 @@ function buildTitle(type, fromName) {
   switch (type) {
     case "message":
       return fromName;
+    case "message_request":
+      return "Message request";
+    case "call":
+      return "Incoming call";
     case "follow":
       return "New follower";
     case "comment":
@@ -2875,6 +3070,10 @@ function buildBody(type, fromName, preview) {
   switch (type) {
     case "message":
       return preview || `${fromName} sent you a message`;
+    case "message_request":
+      return `${fromName} wants to message you`;
+    case "call":
+      return preview || `${fromName} is calling you`;
     case "follow":
       return `${fromName} followed you`;
     case "comment":

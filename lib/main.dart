@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:media_kit/media_kit.dart';
@@ -40,14 +39,9 @@ void main() async {
 
   // Initialize Firebase
   await FirebaseService.instance.initialize();
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-  // Initialize Supabase
-  await Supabase.initialize(
-    url: 'https://zzisdifibmelvozmoybv.supabase.co',
-    anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6aXNkaWZpYm1lbHZvem1veWJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAzODUwNDQsImV4cCI6MjA4NTk2MTA0NH0.kiCExd0zlXFmZ_iSg2MB2-MAdJGkXRbVyhGGW4Vuq34',
-  );
+  if (Platform.isAndroid) {
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  }
 
   runApp(
     const ProviderScope(
@@ -75,6 +69,7 @@ class MyApp extends ConsumerWidget {
             mode == AppThemeMode.dark ? ThemeMode.dark : ThemeMode.light;
         return MaterialApp.router(
           title: 'Spotlight',
+          scaffoldMessengerKey: AppRouter.scaffoldMessengerKey,
           debugShowCheckedModeBanner: false,
           theme: isCyber ? AppTheme.cyberpunkTheme : AppTheme.lightTheme,
           darkTheme: isCyber ? AppTheme.cyberpunkTheme : AppTheme.darkTheme,

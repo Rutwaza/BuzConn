@@ -56,7 +56,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Future<void> _deleteSelected() async {
     final batch = FirebaseFirestore.instance.batch();
     for (final id in _selectedIds) {
-      final ref = FirebaseFirestore.instance.collection('notifications').doc(id);
+      final ref =
+          FirebaseFirestore.instance.collection('notifications').doc(id);
       batch.delete(ref);
     }
     await batch.commit();
@@ -66,9 +67,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Future<void> _openNotificationTarget(_GroupedNotification item) async {
-    if (item.type == 'message') {
+    if (item.type == 'message' || item.type == 'message_request') {
       if (item.chatId == null || !context.mounted) return;
-      context.push(AppRoutes.chatDetailPath(item.chatId!));
+      if (item.type == 'message_request') {
+        context.push('${AppRoutes.chats}?filter=requests');
+      } else {
+        context.push(AppRoutes.chatDetailPath(item.chatId!));
+      }
       return;
     }
     if (item.type == 'follow') {
@@ -100,8 +105,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title:
-            Text(_selectionMode ? 'Selected ${_selectedIds.length}' : 'Notifications'),
+        title: Text(_selectionMode
+            ? 'Selected ${_selectedIds.length}'
+            : 'Notifications'),
         actions: _selectionMode
             ? [
                 IconButton(
@@ -143,8 +149,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
               child: Text('Error: ${snapshot.error}'),
             );
           }
-          final docs = (snapshot.data?.docs ?? [])
-              .toList()
+          final docs = (snapshot.data?.docs ?? []).toList()
             ..sort((a, b) {
               final aData = a.data() as Map<String, dynamic>;
               final bData = b.data() as Map<String, dynamic>;
@@ -241,7 +246,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case _NotificationFilter.all:
         return true;
       case _NotificationFilter.messages:
-        return item.type == 'message';
+        return item.type == 'message' || item.type == 'message_request';
       case _NotificationFilter.activity:
         return item.type == 'like' || item.type == 'comment';
       case _NotificationFilter.follows:
@@ -266,11 +271,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
     return map;
   }
 
-  List<_GroupedNotification> _groupNotifications(List<QueryDocumentSnapshot> docs) {
+  List<_GroupedNotification> _groupNotifications(
+      List<QueryDocumentSnapshot> docs) {
     final grouped = <_GroupedNotification>[];
     for (final doc in docs) {
       final data = doc.data() as Map<String, dynamic>;
-      final createdAt = (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+      final createdAt =
+          (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
       final type = (data['type'] ?? 'activity').toString();
       final fromUserId = (data['fromUserId'] ?? '').toString();
       final postId = data['postId'] as String?;
@@ -317,7 +324,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
     required Color selectedColor,
     required bool isDark,
   }) {
-    final selected = item.ids.every(_selectedIds.contains) && item.ids.isNotEmpty;
+    final selected =
+        item.ids.every(_selectedIds.contains) && item.ids.isNotEmpty;
     final spec = _notificationSpec(item.type);
     final currentUser = FirebaseAuth.instance.currentUser;
 
@@ -380,8 +388,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   CircleAvatar(
                     radius: 26,
                     backgroundColor: AppColors.primary,
-                    backgroundImage:
-                        item.fromImage != null ? NetworkImage(item.fromImage!) : null,
+                    backgroundImage: item.fromImage != null
+                        ? NetworkImage(item.fromImage!)
+                        : null,
                     child: item.fromImage == null
                         ? Text(
                             item.fromName.isNotEmpty
@@ -508,7 +517,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                   HapticFeedback.lightImpact();
                                   await FirebaseFirestore.instance
                                       .collection('user_follows')
-                                      .doc('${currentUser.uid}_${item.fromUserId}')
+                                      .doc(
+                                          '${currentUser.uid}_${item.fromUserId}')
                                       .set({
                                     'followerId': currentUser.uid,
                                     'followingId': item.fromUserId,
@@ -572,7 +582,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
                           PopupMenuButton<String>(
                             onSelected: (value) async {
                               if (value == 'delete') {
-                                final batch = FirebaseFirestore.instance.batch();
+                                final batch =
+                                    FirebaseFirestore.instance.batch();
                                 for (final id in item.ids) {
                                   batch.delete(
                                     FirebaseFirestore.instance
@@ -616,6 +627,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
           label: 'Message',
           color: Color(0xFF4DA3FF),
         );
+      case 'message_request':
+        return const _NotificationSpec(
+          icon: Icons.mark_chat_unread_rounded,
+          emoji: '\u{1F4E8}',
+          label: 'Request',
+          color: Color(0xFF9B6BFF),
+        );
       case 'comment':
         return const _NotificationSpec(
           icon: Icons.mode_comment_rounded,
@@ -644,8 +662,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
     switch (item.type) {
       case 'message':
         return item.count > 1
-            ? ' sent you ${item.count} new messages'
-            : ' sent you a new message';
+            ? ' sent you ${item.count} new messages [Inbox]'
+            : ' sent you a new message [Inbox]';
+      case 'message_request':
+        return item.count > 1
+            ? ' sent you ${item.count} messages in a message request [Requests]'
+            : ' sent you a message request [Requests]';
       case 'comment':
         return item.count > 1
             ? ' left ${item.count} new comments on your post'
@@ -710,10 +732,7 @@ class _PostNotificationThumbnail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      future: FirebaseFirestore.instance
-          .collection('posts')
-          .doc(postId)
-          .get(),
+      future: FirebaseFirestore.instance.collection('posts').doc(postId).get(),
       builder: (context, snapshot) {
         final data = snapshot.data?.data();
         final imageUrl = _resolvePreviewImage(data);

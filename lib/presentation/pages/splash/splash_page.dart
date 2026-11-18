@@ -70,10 +70,12 @@ class _SplashPageState extends ConsumerState<SplashPage> {
                   ),
                 ],
               ),
-              child: const Icon(
-                Icons.auto_awesome,
-                size: 60,
-                color: AppColors.primary,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Image.asset(
+                  'assets/images/spotlight_logo.png',
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
             const SizedBox(height: 32),

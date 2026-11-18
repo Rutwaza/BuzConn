@@ -23,7 +23,7 @@ class AppConstants {
   static const int maxImageSize = 5 * 1024 * 1024; // 5MB
   
   // Validation
-  static const int minPasswordLength = 8;
+  static const int minPasswordLength = 6;
   static const int maxBusinessNameLength = 100;
   static const int maxDescriptionLength = 1000;
 }

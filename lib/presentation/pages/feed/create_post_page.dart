@@ -11,7 +11,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../data/models/post_model.dart';
 import '../../../data/repositories/posts_repository.dart';
-import '../../../core/services/supabase_storage_service.dart';
+import '../../../core/services/r2_storage_service.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 class CreatePostPage extends ConsumerStatefulWidget {
@@ -260,7 +260,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
       final bytes = await imageFile.readAsBytes();
       final path =
           '${user?.uid ?? 'anon'}/${DateTime.now().millisecondsSinceEpoch}.jpg';
-      return await SupabaseStorageService.instance.uploadImage(
+      return await R2StorageService.instance.uploadImage(
         bucket: 'post-images',
         path: path,
         bytes: bytes,
@@ -284,7 +284,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
       final bytes = await videoFile.readAsBytes();
       final path =
           '${user?.uid ?? 'anon'}/${DateTime.now().millisecondsSinceEpoch}.mp4';
-      return await SupabaseStorageService.instance.uploadVideo(
+      return await R2StorageService.instance.uploadVideo(
         bucket: 'post-videos',
         path: path,
         bytes: bytes,
@@ -300,7 +300,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
       final user = FirebaseAuth.instance.currentUser;
       final path =
           '${user?.uid ?? 'anon'}/${DateTime.now().millisecondsSinceEpoch}_cover.jpg';
-      return await SupabaseStorageService.instance.uploadImage(
+      return await R2StorageService.instance.uploadImage(
         bucket: 'post-images',
         path: path,
         bytes: bytes,
@@ -363,6 +363,11 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
   Future<void> _pickVideoCover(_LocalMedia media) async {
     final options = await _ensureVideoCoverOptions(media.file);
     if (!mounted || options.isEmpty) return;
+    final currentCover = _selectedVideoCover[media.file.path];
+    final coverOptions = List<Uint8List>.from(options);
+    if (currentCover != null && !coverOptions.contains(currentCover)) {
+      coverOptions.insert(0, currentCover);
+    }
     final selected = await showModalBottomSheet<Uint8List>(
       context: context,
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -387,14 +392,29 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                   style: TextStyle(color: AppColors.grey),
                 ),
                 const SizedBox(height: 14),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final result = await FilePicker.platform.pickFiles(
+                      type: FileType.image,
+                    );
+                    if (result == null || result.files.isEmpty) return;
+                    final path = result.files.single.path;
+                    if (path == null || !context.mounted) return;
+                    final bytes = await File(path).readAsBytes();
+                    if (context.mounted) Navigator.pop(context, bytes);
+                  },
+                  icon: const Icon(Icons.folder_open_rounded),
+                  label: const Text('Browse a cover image'),
+                ),
+                const SizedBox(height: 10),
                 SizedBox(
                   height: 92,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
-                    itemCount: options.length,
+                    itemCount: coverOptions.length,
                     separatorBuilder: (_, __) => const SizedBox(width: 10),
                     itemBuilder: (context, index) {
-                      final bytes = options[index];
+                      final bytes = coverOptions[index];
                       final isSelected =
                           _selectedVideoCover[media.file.path] == bytes;
                       return GestureDetector(

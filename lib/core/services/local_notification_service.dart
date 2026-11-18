@@ -31,6 +31,14 @@ class LocalNotificationService {
     description: 'Follows, likes, comments, and Spotlight activity.',
     importance: Importance.high,
   );
+  static const AndroidNotificationChannel _callsChannel =
+      AndroidNotificationChannel(
+    'spotlight_calls',
+    'SpotLight Calls',
+    description: 'Incoming voice and video call alerts.',
+    importance: Importance.max,
+    playSound: true,
+  );
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -55,6 +63,10 @@ class LocalNotificationService {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_activityChannel);
+    await _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(
+          _callsChannel,
+        );
   }
 
   Future<void> show({
@@ -64,8 +76,9 @@ class LocalNotificationService {
   }) async {
     await initialize();
     final type = (payload?['type'] ?? '').toString();
-    final isChat = type == 'message';
-    final channel = isChat ? _chatChannel : _activityChannel;
+    final isChat = type == 'message' || type == 'message_request';
+    final isCall = type == 'call';
+    final channel = isCall ? _callsChannel : (isChat ? _chatChannel : _activityChannel);
     await _plugin.show(
       DateTime.now().millisecondsSinceEpoch ~/ 1000,
       title,
@@ -82,7 +95,7 @@ class LocalNotificationService {
           presentAlert: true,
           presentBadge: true,
           presentSound: true,
-          threadIdentifier: isChat ? 'spotlight_chat' : 'spotlight_activity',
+          threadIdentifier: isCall ? 'spotlight_calls' : (isChat ? 'spotlight_chat' : 'spotlight_activity'),
         ),
       ),
       payload: payload == null ? null : jsonEncode(payload),
@@ -103,7 +116,7 @@ class LocalNotificationService {
       final postId = (payload['postId'] ?? '').toString();
       final userId = (payload['userId'] ?? '').toString();
 
-      if (type == 'message' && chatId.isNotEmpty) {
+      if ((type == 'message' || type == 'message_request' || type == 'call') && chatId.isNotEmpty) {
         AppRouter.router.push(AppRoutes.chatDetailPath(chatId));
         return;
       }

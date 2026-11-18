@@ -11,6 +11,8 @@ class AppTextField extends StatelessWidget {
   final bool readOnly;
   final Widget? suffixIcon;
   final Widget? prefixIcon;
+  final BoxConstraints? prefixIconConstraints;
+  final BoxConstraints? suffixIconConstraints;
   final String? Function(String?)? validator;
   final void Function(String)? onChanged;
   final void Function()? onTap;
@@ -37,6 +39,8 @@ class AppTextField extends StatelessWidget {
     this.readOnly = false,
     this.suffixIcon,
     this.prefixIcon,
+    this.prefixIconConstraints,
+    this.suffixIconConstraints,
     this.validator,
     this.onChanged,
     this.onTap,
@@ -123,7 +127,9 @@ class AppTextField extends StatelessWidget {
               vertical: 14,
             ),
             prefixIcon: prefixIcon,
+            prefixIconConstraints: prefixIconConstraints,
             suffixIcon: suffixIcon,
+            suffixIconConstraints: suffixIconConstraints,
             errorMaxLines: 2,
           ),
           style: textStyle,

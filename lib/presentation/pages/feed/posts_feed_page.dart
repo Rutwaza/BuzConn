@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
+import 'dart:async';
 import 'dart:io';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -20,7 +21,7 @@ import '../../../core/widgets/spotlight_loader.dart';
 import '../../../data/models/post_model.dart';
 import '../../../data/repositories/posts_repository.dart';
 import '../../../data/repositories/chat_repository.dart';
-import '../../../core/services/supabase_storage_service.dart';
+import '../../../core/services/r2_storage_service.dart';
 import '../business/post_detail_page.dart' as business_post;
 import 'package:visibility_detector/visibility_detector.dart';
 
@@ -46,13 +47,11 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   bool _isBootstrapping = true;
   bool _isRefreshing = false;
   bool _hasMore = true;
-  String _feedMode =
-      'forYou'; // Default, will be updated based on profile completion
+  String _feedMode = 'reels';
   bool _showModeTabs = false;
   List<String> _followingPageIds = [];
   List<String> _followingUserIds = [];
   DocumentSnapshot? _followingFallbackLastDoc;
-  bool _markingNotifications = false;
   final ValueNotifier<Timestamp?> _badgeClearedAt =
       ValueNotifier<Timestamp?>(null);
   bool _didJumpToPost = false;
@@ -151,14 +150,14 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
 
       if (mounted) {
         setState(() {
-          _feedMode = 'forYou';
+          _feedMode = 'reels';
         });
       }
       return true;
     } catch (_) {
       if (mounted) {
         setState(() {
-          _feedMode = 'forYou';
+          _feedMode = 'reels';
         });
       }
       return true;
@@ -884,40 +883,6 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     );
   }
 
-  Future<void> _markNotificationsRead() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null || _markingNotifications) return;
-    _markingNotifications = true;
-    _badgeClearedAt.value = Timestamp.now();
-    try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .update({'lastSeenNotificationsAt': Timestamp.now()});
-
-      final snap = await FirebaseFirestore.instance
-          .collection('notifications')
-          .where('toUserId', isEqualTo: user.uid)
-          .where('readAt', isEqualTo: null)
-          .get();
-      if (snap.docs.isEmpty) return;
-      final batch = FirebaseFirestore.instance.batch();
-      for (final doc in snap.docs) {
-        batch.update(doc.reference, {'readAt': Timestamp.now()});
-      }
-      await batch.commit();
-    } catch (e) {
-      debugPrint('Failed to mark notifications read: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to mark notifications read')),
-        );
-      }
-    } finally {
-      _markingNotifications = false;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
@@ -927,7 +892,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
         titleSpacing: 12,
         title: const Padding(
           padding: EdgeInsets.only(left: 6),
-          child: Text('Spotlight'),
+          child: _AnimatedSpotlightWordmark(),
         ),
         actions: [
           ValueListenableBuilder<Timestamp?>(
@@ -965,8 +930,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                         return createdAt.compareTo(effectiveClearedAt) > 0;
                       }).length;
                       return IconButton(
-                        onPressed: () async {
-                          await _markNotificationsRead();
+                        onPressed: () {
+                          _badgeClearedAt.value = Timestamp.now();
                           context.push(AppRoutes.notifications);
                         },
                         icon: Stack(
@@ -1852,7 +1817,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 const SizedBox(width: 18),
                 SizedBox(
                   width: 300,
-                  child: _DesktopSpotlightRail(
+                  child: SingleChildScrollView(
+                    child: _DesktopSpotlightRail(
                     feedMode: _feedMode,
                     followingCount:
                         _followingPageIds.length + _followingUserIds.length,
@@ -1886,6 +1852,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     onOpenDiscover: () => context.push(AppRoutes.search),
                     onCreatePost: _showCreateOptions,
                     onOpenMessages: () => context.push(AppRoutes.chats),
+                    ),
                   ),
                 ),
               ],
@@ -2756,7 +2723,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       final bytes = await imageFile.readAsBytes();
       final path =
           '${user?.uid ?? 'anon'}/${DateTime.now().millisecondsSinceEpoch}.jpg';
-      return await SupabaseStorageService.instance.uploadImage(
+      return await R2StorageService.instance.uploadImage(
         bucket: 'post-images',
         path: path,
         bytes: bytes,
@@ -2773,7 +2740,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       final bytes = await videoFile.readAsBytes();
       final path =
           '${user?.uid ?? 'anon'}/${DateTime.now().millisecondsSinceEpoch}.mp4';
-      return await SupabaseStorageService.instance.uploadVideo(
+      return await R2StorageService.instance.uploadVideo(
         bucket: 'post-videos',
         path: path,
         bytes: bytes,
@@ -2839,18 +2806,17 @@ class _AutoPlayVideoPreview extends StatefulWidget {
 }
 
 class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview>
-    with AutomaticKeepAliveClientMixin {
+    {
   static final ValueNotifier<bool> _globalMuted = ValueNotifier<bool>(true);
+  static _AutoPlayVideoPreviewState? _activePreview;
 
   VideoPlayerController? _controller;
   Player? _mediaKitPlayer;
   VideoController? _mediaKitController;
   bool _initialized = false;
+  bool _isVisible = false;
   bool _isMuted = true;
   bool _didNotifyActivePlayback = false;
-
-  @override
-  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -2871,6 +2837,7 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview>
           setState(() => _initialized = true);
           _controller?.setLooping(true);
           _controller?.setVolume(_globalMuted.value ? 0 : 1);
+          if (_isVisible) _activatePlayback();
         }
       });
   }
@@ -2879,11 +2846,12 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview>
     _mediaKitPlayer = Player();
     _mediaKitController = VideoController(_mediaKitPlayer!);
     try {
-      await _mediaKitPlayer!.open(Media(widget.url));
+      await _mediaKitPlayer!.open(Media(widget.url), play: false);
       _mediaKitPlayer!.setPlaylistMode(PlaylistMode.loop);
       if (mounted) {
         setState(() => _initialized = true);
         _mediaKitPlayer!.setVolume(_globalMuted.value ? 0 : 100);
+        if (_isVisible) _activatePlayback();
       }
     } catch (e) {
       // Handle error silently
@@ -2892,6 +2860,8 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview>
 
   @override
   void dispose() {
+    if (identical(_activePreview, this)) _activePreview = null;
+    unawaited(_pausePlayback());
     if (Platform.isWindows) {
       _mediaKitPlayer?.dispose();
     } else {
@@ -2899,6 +2869,56 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview>
     }
     _globalMuted.removeListener(_handleGlobalMuteChanged);
     super.dispose();
+  }
+
+  void _activatePlayback() {
+    if (!mounted || !_initialized) return;
+    if (!identical(_activePreview, this)) {
+      final previous = _activePreview;
+      _activePreview = this;
+      if (previous != null) unawaited(previous._pausePlayback());
+    }
+    unawaited(_playback());
+  }
+
+  void _deactivatePlayback() {
+    _isVisible = false;
+    if (identical(_activePreview, this)) _activePreview = null;
+    unawaited(_pausePlayback());
+  }
+
+  Future<void> _playback() async {
+    if (!mounted || !identical(_activePreview, this)) return;
+    if (Platform.isWindows) {
+      final player = _mediaKitPlayer;
+      if (player == null) return;
+      await player.play();
+      if (!mounted || !identical(_activePreview, this)) {
+        await player.pause();
+        return;
+      }
+      await player.setVolume(_globalMuted.value ? 0 : 100);
+      return;
+    }
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    await controller.play();
+    if (!mounted || !identical(_activePreview, this)) {
+      await controller.pause();
+      return;
+    }
+    await controller.setVolume(_globalMuted.value ? 0 : 1);
+  }
+
+  Future<void> _pausePlayback() async {
+    if (Platform.isWindows) {
+      await _mediaKitPlayer?.pause();
+      return;
+    }
+    final controller = _controller;
+    if (controller?.value.isInitialized ?? false) {
+      await controller!.pause();
+    }
   }
 
   void _handleGlobalMuteChanged() {
@@ -2919,36 +2939,19 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final controller = _controller;
     return VisibilityDetector(
-      key: ValueKey('video_${widget.url}'),
+      key: ObjectKey(this),
       onVisibilityChanged: (info) {
-        if (Platform.isWindows) {
-          if (_mediaKitPlayer == null) return;
-          if (info.visibleFraction >= 0.8) {
-            if (!_didNotifyActivePlayback) {
-              _didNotifyActivePlayback = true;
-              widget.onActivePlayback?.call();
-            }
-            _mediaKitPlayer!.play();
-            _mediaKitPlayer!.setVolume(_globalMuted.value ? 0 : 100);
-          } else {
-            _mediaKitPlayer!.pause();
+        _isVisible = info.visibleFraction >= 0.8;
+        if (_isVisible) {
+          if (!_didNotifyActivePlayback) {
+            _didNotifyActivePlayback = true;
+            widget.onActivePlayback?.call();
           }
+          _activatePlayback();
         } else {
-          if (_controller == null) return;
-          if (!_controller!.value.isInitialized) return;
-          if (info.visibleFraction >= 0.8) {
-            if (!_didNotifyActivePlayback) {
-              _didNotifyActivePlayback = true;
-              widget.onActivePlayback?.call();
-            }
-            _controller!.play();
-            _controller!.setVolume(_globalMuted.value ? 0 : 1);
-          } else {
-            _controller!.pause();
-          }
+          _deactivatePlayback();
         }
       },
       child: GestureDetector(
@@ -2956,27 +2959,13 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview>
         onTap: widget.onTap,
         onDoubleTap: widget.onDoubleTap,
         onLongPressStart: (_) {
-          if (Platform.isWindows) {
-            _mediaKitPlayer?.pause();
-          } else {
-            if (_controller == null || !_controller!.value.isInitialized) {
-              return;
-            }
-            _controller!.pause();
-          }
+          unawaited(_pausePlayback());
           if (mounted) {
             setState(() {});
           }
         },
         onLongPressEnd: (_) {
-          if (Platform.isWindows) {
-            _mediaKitPlayer?.play();
-          } else {
-            if (_controller == null || !_controller!.value.isInitialized) {
-              return;
-            }
-            _controller!.play();
-          }
+          if (_isVisible) _activatePlayback();
           if (mounted) {
             setState(() {});
           }
@@ -4346,6 +4335,60 @@ class _ShareSheetPreview extends StatelessWidget {
   }
 }
 
+class _AnimatedSpotlightWordmark extends StatefulWidget {
+  const _AnimatedSpotlightWordmark();
+
+  @override
+  State<_AnimatedSpotlightWordmark> createState() =>
+      _AnimatedSpotlightWordmarkState();
+}
+
+class _AnimatedSpotlightWordmarkState extends State<_AnimatedSpotlightWordmark>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shineController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _shineController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _shineController,
+      builder: (context, _) {
+        final offset = -1.5 + (_shineController.value * 3);
+        return ShaderMask(
+          blendMode: BlendMode.srcIn,
+          shaderCallback: (bounds) => LinearGradient(
+            begin: Alignment(offset, 0),
+            end: Alignment(offset + 1.4, 0),
+            colors: const [
+              Colors.white70,
+              Colors.white,
+              Color(0xFF61D1ED),
+              Colors.white,
+            ],
+            stops: const [0, 0.38, 0.56, 1],
+          ).createShader(bounds),
+          child: const Text(
+            'SpotLight',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.35,
+              fontSize: 21,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _DesktopSpotlightRail extends StatelessWidget {
   const _DesktopSpotlightRail({
     required this.feedMode,
@@ -4571,19 +4614,15 @@ class _DesktopSpotlightDock extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Container(
+          SizedBox(
             width: 54,
             height: 54,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.primary, Color(0xFF61D1ED)],
-              ),
+            child: ClipRRect(
               borderRadius: BorderRadius.circular(18),
-            ),
-            child: const Icon(
-              Icons.auto_awesome_rounded,
-              color: Colors.white,
-              size: 28,
+              child: Image.asset(
+                'assets/images/spotlight_logo.png',
+                fit: BoxFit.cover,
+              ),
             ),
           ),
           const SizedBox(height: 16),

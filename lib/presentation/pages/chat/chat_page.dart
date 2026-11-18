@@ -24,7 +24,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'video_call_page.dart';
 
 import '../../../core/theme/colors.dart';
-import '../../../core/services/supabase_storage_service.dart';
+import '../../../core/services/r2_storage_service.dart';
 import '../../../data/repositories/chat_repository.dart';
 import '../../../core/constants/app_constants.dart';
 
@@ -51,6 +51,7 @@ class _ChatPageState extends State<ChatPage> {
   final Map<String, int> _messageIndex = {};
   Map<String, dynamic>? _replyingTo;
   bool _sendingMedia = false;
+  bool _isGhostMode = true;
   String? _lastReadMessageId;
   bool _isTyping = false;
   Timer? _typingTimer;
@@ -66,10 +67,13 @@ class _ChatPageState extends State<ChatPage> {
   List<_ChatMediaItem> _latestMediaItems = const [];
   StreamSubscription<DocumentSnapshot>? _callSub;
   bool _hasIncomingCall = false;
+  String _incomingCallType = 'video';
   bool _hasActiveCall = false;
   bool _incomingDialogShown = false;
+  bool _ringingIncomingCall = false;
   static const MethodChannel _privacyChannel =
       MethodChannel('spotlight/privacy');
+  static const MethodChannel _callsChannel = MethodChannel('spotlight/calls');
 
   @override
   void initState() {
@@ -78,6 +82,7 @@ class _ChatPageState extends State<ChatPage> {
     _scrollController.addListener(_handleScroll);
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
+      unawaited(_loadGhostModeDefault(user.uid));
       _repo.setLastRead(chatId: widget.chatId, userId: user.uid);
       _repo.setUserLastSeen(user.uid);
       _callSub = FirebaseFirestore.instance
@@ -88,6 +93,10 @@ class _ChatPageState extends State<ChatPage> {
           .snapshots()
           .listen((snap) {
         if (!snap.exists || snap.data() == null) {
+          if (_ringingIncomingCall) {
+            _ringingIncomingCall = false;
+            unawaited(_setCallRinging(false));
+          }
           if (mounted) {
             setState(() {
               _hasIncomingCall = false;
@@ -101,18 +110,78 @@ class _ChatPageState extends State<ChatPage> {
         final callerId = data['callerId'] as String?;
         final offer = data['offer'];
         final status = data['status'] as String?;
-        final isIncoming =
-            callerId != null && callerId != user.uid && offer != null;
+        final isIncoming = callerId != null &&
+            callerId != user.uid &&
+            offer != null &&
+            status == 'calling';
         if (mounted) {
           setState(() {
             _hasIncomingCall = isIncoming;
+            _incomingCallType = (data['callType'] ?? 'video').toString();
             _hasActiveCall = status != 'ended';
             if (!isIncoming) {
               _incomingDialogShown = false;
             }
           });
         }
+        if (isIncoming && !_ringingIncomingCall) {
+          _ringingIncomingCall = true;
+          unawaited(_setCallRinging(true));
+        } else if (!isIncoming && _ringingIncomingCall) {
+          _ringingIncomingCall = false;
+          unawaited(_setCallRinging(false));
+        }
       });
+    }
+  }
+
+  Future<void> _loadGhostModeDefault(String userId) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+      if (!mounted) return;
+      setState(() {
+        _isGhostMode = snapshot.data()?['ghostModeDefault'] != false;
+      });
+    } catch (_) {
+      // Keep the safe default when preferences are unavailable.
+    }
+  }
+
+  Future<void> _setGhostMode(bool enabled) async {
+    setState(() => _isGhostMode = enabled);
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return;
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(userId).set({
+        'ghostModeDefault': enabled,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save ghost mode preference: $error')),
+      );
+    }
+  }
+
+  Future<void> _respondToIncomingRequest({
+    required String userId,
+    required bool accept,
+  }) async {
+    try {
+      await _repo.respondToMessageRequest(
+        chatId: widget.chatId,
+        userId: userId,
+        accept: accept,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update request: $error')),
+      );
     }
   }
 
@@ -127,6 +196,9 @@ class _ChatPageState extends State<ChatPage> {
     _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     _callSub?.cancel();
+    if (_ringingIncomingCall) {
+      unawaited(_setCallRinging(false));
+    }
     super.dispose();
   }
 
@@ -142,6 +214,24 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  Future<void> _setCallRinging(bool enabled) async {
+    if (Platform.isWindows) {
+      try {
+        await _callsChannel.invokeMethod<void>(
+          'setRinging',
+          {'enabled': enabled},
+        );
+      } catch (_) {}
+      return;
+    }
+    if (!Platform.isAndroid) return;
+    try {
+      await _callsChannel.invokeMethod<void>(
+        enabled ? 'startRinging' : 'stopRinging',
+      );
+    } catch (_) {}
+  }
+
   Future<void> _sendText() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _isSendingText || _sendingMedia || _isRecording) {
@@ -152,13 +242,15 @@ class _ChatPageState extends State<ChatPage> {
     if (text.isEmpty) return;
 
     final replyTo = _replyingTo;
-    final ghostNonce = _ghostNonce();
-    final ghostCipherText = _encodeGhostText(
-      text,
-      chatId: widget.chatId,
-      senderId: user.uid,
-      nonce: ghostNonce,
-    );
+    final ghostNonce = _isGhostMode ? _ghostNonce() : null;
+    final ghostCipherText = _isGhostMode
+        ? _encodeGhostText(
+            text,
+            chatId: widget.chatId,
+            senderId: user.uid,
+            nonce: ghostNonce!,
+          )
+        : null;
     _typingTimer?.cancel();
     _isTyping = false;
 
@@ -173,9 +265,9 @@ class _ChatPageState extends State<ChatPage> {
       await _repo.sendMessage(
         chatId: widget.chatId,
         senderId: user.uid,
-        text: ghostCipherText,
+        text: ghostCipherText ?? text,
         replyTo: replyTo,
-        isGhost: true,
+        isGhost: _isGhostMode,
         ghostCipherText: ghostCipherText,
         ghostNonce: ghostNonce,
       );
@@ -238,10 +330,16 @@ class _ChatPageState extends State<ChatPage> {
         final ext = mediaType == 'video' ? 'mp4' : 'jpg';
         final path = '$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
         final url = mediaType == 'video'
-            ? await SupabaseStorageService.instance
-                .uploadVideo(bucket: 'chat-media', path: path, bytes: bytes)
-            : await SupabaseStorageService.instance
-                .uploadImage(bucket: 'chat-media', path: path, bytes: bytes);
+            ? await R2StorageService.instance.uploadVideo(
+                bucket: 'chat-media',
+                path: path,
+                bytes: bytes,
+                chatId: widget.chatId)
+            : await R2StorageService.instance.uploadImage(
+                bucket: 'chat-media',
+                path: path,
+                bytes: bytes,
+                chatId: widget.chatId);
 
         if (url == null) {
           if (mounted) {
@@ -311,6 +409,10 @@ class _ChatPageState extends State<ChatPage> {
       builder: (context, chatSnap) {
         final chatData = chatSnap.data?.data() as Map<String, dynamic>? ?? {};
         final chatType = (chatData['chatType'] ?? '').toString();
+        final requestStatus = (chatData['requestStatus'] ?? 'none').toString();
+        final isIncomingMessageRequest = requestStatus == 'pending' &&
+            chatData['requestRecipientId'] == user.uid;
+        final isRejectedMessageRequest = requestStatus == 'rejected';
         final isBusinessOwner = chatData['businessOwnerId'] == user.uid;
         String title;
         String? avatarUrl;
@@ -433,18 +535,32 @@ class _ChatPageState extends State<ChatPage> {
                   ],
                 ),
               ),
+              IconButton(
+                tooltip: _isGhostMode ? 'Ghost mode on' : 'Ghost mode off',
+                onPressed: () => _setGhostMode(!_isGhostMode),
+                icon: Icon(
+                  _isGhostMode ? Icons.visibility_off : Icons.visibility,
+                  color: _isGhostMode ? AppColors.primary : Colors.grey,
+                ),
+              ),
             ],
           ),
           actions: [
             _ChatActionButton(
               icon: Icons.call_rounded,
-              onPressed: () => _showComingSoon('Audio calls'),
+              onPressed:
+                  isIncomingMessageRequest || isRejectedMessageRequest
+                      ? null
+                      : _startAudioCall,
               tooltip: 'Audio call',
             ),
             const SizedBox(width: 6),
             _ChatActionButton(
               icon: Icons.videocam_rounded,
-              onPressed: _startVideoCall,
+              onPressed:
+                  isIncomingMessageRequest || isRejectedMessageRequest
+                      ? null
+                      : _startVideoCall,
               tooltip: 'Video call',
             ),
             PopupMenuButton<String>(
@@ -666,7 +782,72 @@ class _ChatPageState extends State<ChatPage> {
                       ),
                     ),
                   ),
-                SafeArea(
+                if (isIncomingMessageRequest)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'Message request',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Approve this request before replying or calling.',
+                            style: TextStyle(color: AppColors.grey),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () =>
+                                      _respondToIncomingRequest(
+                                    userId: user.uid,
+                                    accept: false,
+                                  ),
+                                  icon: const Icon(Icons.close_rounded),
+                                  label: const Text('Reject'),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: FilledButton.icon(
+                                  onPressed: () =>
+                                      _respondToIncomingRequest(
+                                    userId: user.uid,
+                                    accept: true,
+                                  ),
+                                  icon: const Icon(Icons.check_rounded),
+                                  label: const Text('Approve'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else if (isRejectedMessageRequest)
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(12, 0, 12, 10),
+                    child: Center(
+                      child: Text('This message request was declined.'),
+                    ),
+                  )
+                else
+                  SafeArea(
                   top: false,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
@@ -998,7 +1179,10 @@ class _ChatPageState extends State<ChatPage> {
             final senderName = data['senderName'] ?? 'User';
             final senderAvatar = data['senderAvatar'] as String?;
             final createdAt = data['createdAt'] as Timestamp?;
-            final replyTo = data['replyTo'] as Map<String, dynamic>?;
+            final rawReplyTo = data['replyTo'];
+            final replyTo = rawReplyTo is Map
+                ? Map<String, dynamic>.from(rawReplyTo)
+                : null;
             final deleted = data['deleted'] == true;
             final messageId = (data['id'] ?? doc.id).toString();
             _messageKeys.putIfAbsent(messageId, () => GlobalKey());
@@ -1051,48 +1235,78 @@ class _ChatPageState extends State<ChatPage> {
                       items: mediaItems,
                       initialIndex: index < 0 ? 0 : index,
                     ),
-                    child: Image.network(mediaUrl, width: 200),
+                    child: FutureBuilder<String>(
+                      future: _resolveChatMediaUrl(mediaUrl),
+                      builder: (context, snapshot) {
+                        final url = snapshot.data;
+                        if (url == null) {
+                          return const SizedBox(
+                            width: 200,
+                            height: 120,
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+                        return Image.network(url, width: 200);
+                      },
+                    ),
                   ),
                 ],
               );
             } else if (mediaUrl != null && mediaType == 'audio') {
-              content = _AudioMessageTile(url: mediaUrl, isMe: isMe);
+              content = _AudioMessageTile(
+                url: mediaUrl,
+                chatId: widget.chatId,
+                isMe: isMe,
+              );
             } else if (mediaUrl != null && mediaType == 'document') {
               final name = data['mediaName'] ?? 'Document';
               final size = data['mediaSize'] as int?;
               content = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: replyBarColor,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.lock_outline_rounded),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              Text(
-                                size == null
-                                    ? 'Download disabled'
-                                    : '${_formatBytes(size)} - download disabled',
-                                style: const TextStyle(fontSize: 11),
-                              ),
-                            ],
+                  InkWell(
+                    onTap: () async {
+                      try {
+                        await _openLink(await _resolveChatMediaUrl(mediaUrl));
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Could not open file: $e')),
+                          );
+                        }
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: replyBarColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.lock_outline_rounded),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  size == null
+                                      ? 'Tap to open private file'
+                                      : '${_formatBytes(size)} · Tap to open',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -1104,36 +1318,50 @@ class _ChatPageState extends State<ChatPage> {
               content = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  FutureBuilder<Uint8List?>(
-                    future: _getVideoThumbnail(mediaUrl),
-                    builder: (context, snap) {
-                      final bytes = snap.data;
-                      return InkWell(
-                        onTap: () {
-                          _openMediaViewer(
-                            items: mediaItems,
-                            initialIndex: index < 0 ? 0 : index,
-                          );
-                        },
-                        child: Container(
+                  FutureBuilder<String>(
+                    future: _resolveChatMediaUrl(mediaUrl),
+                    builder: (context, urlSnapshot) {
+                      final url = urlSnapshot.data;
+                      if (url == null) {
+                        return const SizedBox(
                           width: 200,
                           height: 120,
-                          color: replyBarColor,
-                          child: bytes == null
-                              ? const Center(
-                                  child: Icon(Icons.play_circle_fill, size: 36),
-                                )
-                              : Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    Image.memory(bytes, fit: BoxFit.cover),
-                                    const Center(
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      return FutureBuilder<Uint8List?>(
+                        future: _getVideoThumbnail(url),
+                        builder: (context, snap) {
+                          final bytes = snap.data;
+                          return InkWell(
+                            onTap: () {
+                              _openMediaViewer(
+                                items: mediaItems,
+                                initialIndex: index < 0 ? 0 : index,
+                              );
+                            },
+                            child: Container(
+                              width: 200,
+                              height: 120,
+                              color: replyBarColor,
+                              child: bytes == null
+                                  ? const Center(
                                       child: Icon(Icons.play_circle_fill,
                                           size: 36),
+                                    )
+                                  : Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        Image.memory(bytes, fit: BoxFit.cover),
+                                        const Center(
+                                          child: Icon(Icons.play_circle_fill,
+                                              size: 36),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                        ),
+                            ),
+                          );
+                        },
                       );
                     },
                   ),
@@ -1325,7 +1553,7 @@ class _ChatPageState extends State<ChatPage> {
                                       InkWell(
                                         onTap: () {
                                           final replyId =
-                                              replyTo['messageId'] as String?;
+                                              replyTo['messageId']?.toString();
                                           if (replyId != null) {
                                             _scrollToMessage(replyId);
                                           }
@@ -1520,10 +1748,11 @@ class _ChatPageState extends State<ChatPage> {
       final bytes = await File(path).readAsBytes();
       final fileName =
           '${user.uid}/${DateTime.now().millisecondsSinceEpoch}.m4a';
-      final url = await SupabaseStorageService.instance.uploadAudio(
+      final url = await R2StorageService.instance.uploadAudio(
         bucket: 'chat-media',
         path: fileName,
         bytes: bytes,
+        chatId: widget.chatId,
       );
 
       if (url == null) {
@@ -1598,10 +1827,12 @@ class _ChatPageState extends State<ChatPage> {
         final ext = file.extension ?? 'bin';
         final path =
             '${user.uid}/${DateTime.now().millisecondsSinceEpoch}.$ext';
-        final url = await SupabaseStorageService.instance.uploadFile(
+        final url = await R2StorageService.instance.uploadFile(
           bucket: 'chat-media',
           path: path,
           bytes: bytes,
+          contentType: _contentTypeForFile(file.name),
+          chatId: widget.chatId,
         );
         if (url == null) {
           if (mounted) {
@@ -1638,6 +1869,40 @@ class _ChatPageState extends State<ChatPage> {
         });
       }
     }
+  }
+
+  String _contentTypeForFile(String fileName) {
+    switch (fileName.split('.').last.toLowerCase()) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xls':
+        return 'application/vnd.ms-excel';
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'ppt':
+        return 'application/vnd.ms-powerpoint';
+      case 'pptx':
+        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      case 'txt':
+        return 'text/plain';
+      case 'csv':
+        return 'text/csv';
+      case 'zip':
+        return 'application/zip';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
+  Future<String> _resolveChatMediaUrl(String mediaRef) {
+    return R2StorageService.instance.downloadPrivateMediaUrl(
+      mediaRef: mediaRef,
+      chatId: widget.chatId,
+    );
   }
 
   Future<Map<String, String>> _loadRecipientProfileSummary({
@@ -2011,46 +2276,55 @@ class _ChatPageState extends State<ChatPage> {
         final item = items[index];
         final url = item['url'] as String;
         final isVideo = item['type'] == 'video';
-        return InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () => _scrollToMessage(item['messageId'] as String),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (!isVideo)
-                  Image.network(url, fit: BoxFit.cover)
-                else
-                  FutureBuilder<Uint8List?>(
-                    future: _getVideoThumbnail(url),
-                    builder: (context, snapshot) {
-                      final bytes = snapshot.data;
-                      if (bytes == null) {
-                        return Container(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.06)
-                              : Colors.black.withValues(alpha: 0.05),
-                          child: const Icon(Icons.videocam_rounded),
-                        );
-                      }
-                      return Image.memory(bytes, fit: BoxFit.cover);
-                    },
-                  ),
-                if (isVideo)
-                  Container(
-                    color: Colors.black.withValues(alpha: 0.18),
-                    child: const Center(
-                      child: Icon(
-                        Icons.play_circle_fill_rounded,
-                        color: Colors.white,
-                        size: 28,
+        return FutureBuilder<String>(
+          future: _resolveChatMediaUrl(url),
+          builder: (context, resolvedSnapshot) {
+            final resolvedUrl = resolvedSnapshot.data;
+            if (resolvedUrl == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            return InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => _scrollToMessage(item['messageId'] as String),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (!isVideo)
+                      Image.network(resolvedUrl, fit: BoxFit.cover)
+                    else
+                      FutureBuilder<Uint8List?>(
+                        future: _getVideoThumbnail(resolvedUrl),
+                        builder: (context, snapshot) {
+                          final bytes = snapshot.data;
+                          if (bytes == null) {
+                            return Container(
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.06)
+                                  : Colors.black.withValues(alpha: 0.05),
+                              child: const Icon(Icons.videocam_rounded),
+                            );
+                          }
+                          return Image.memory(bytes, fit: BoxFit.cover);
+                        },
                       ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
+                    if (isVideo)
+                      Container(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        child: const Center(
+                          child: Icon(
+                            Icons.play_circle_fill_rounded,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -2152,9 +2426,20 @@ class _ChatPageState extends State<ChatPage> {
       itemBuilder: (context, index) {
         final item = items[index];
         final size = item['size'] as int?;
+        final mediaRef = item['url'] as String;
         return InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () => _scrollToMessage(item['messageId'] as String),
+          onTap: () async {
+            try {
+              await _openLink(await _resolveChatMediaUrl(mediaRef));
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Could not open file: $e')),
+                );
+              }
+            }
+          },
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -2200,7 +2485,7 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ),
                 Tooltip(
-                  message: 'Downloads disabled',
+                  message: 'Private link expires after 15 minutes',
                   child: Icon(
                     Icons.lock_outline_rounded,
                     size: 18,
@@ -2541,6 +2826,8 @@ class _ChatPageState extends State<ChatPage> {
       },
     );
 
+    if (!mounted) return;
+
     if (action == 'reply') {
       setState(() {
         _replyingTo = {
@@ -2644,19 +2931,37 @@ class _ChatPageState extends State<ChatPage> {
     return content;
   }
 
-  void _openMediaViewer({
+  Future<void> _openMediaViewer({
     required List<_ChatMediaItem> items,
     required int initialIndex,
-  }) {
+  }) async {
     if (items.isEmpty) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _ChatMediaViewerPage(
-          items: items,
-          initialIndex: initialIndex,
+    try {
+      final resolvedItems = <_ChatMediaItem>[];
+      for (final item in items) {
+        resolvedItems.add(
+          _ChatMediaItem(
+            url: await _resolveChatMediaUrl(item.url),
+            type: item.type,
+          ),
+        );
+      }
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => _ChatMediaViewerPage(
+            items: resolvedItems,
+            initialIndex: initialIndex,
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open chat media: $e')),
+        );
+      }
+    }
   }
 
   void _handleTyping(String value) {
@@ -2696,15 +3001,38 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  void _joinVideoCall() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => VideoCallPage(
-          chatId: widget.chatId,
-          isCaller: false,
-        ),
+  void _startAudioCall() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => VideoCallPage(
+        chatId: widget.chatId,
+        isCaller: true,
+        audioOnly: true,
       ),
-    );
+    ));
+  }
+
+  void _joinVideoCall() {
+    if (_ringingIncomingCall) {
+      _ringingIncomingCall = false;
+      unawaited(_setCallRinging(false));
+    }
+    final call = FirebaseFirestore.instance
+        .collection('chats')
+        .doc(widget.chatId)
+        .collection('calls')
+        .doc('active');
+    call.get().then((snapshot) {
+      final audioOnly = snapshot.data()?['callType'] == 'audio';
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => VideoCallPage(
+            chatId: widget.chatId,
+            isCaller: false,
+            audioOnly: audioOnly,
+          ),
+        ),
+      );
+    });
   }
 
   Future<void> _declineCall() async {
@@ -2761,9 +3089,9 @@ class _ChatPageState extends State<ChatPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Incoming video call',
-                style: TextStyle(
+              Text(
+                'Incoming ${_incomingCallType == 'audio' ? 'voice' : 'video'} call',
+                style: const TextStyle(
                   color: Colors.white70,
                   fontSize: 12,
                   letterSpacing: 0.5,
@@ -2817,7 +3145,9 @@ class _ChatPageState extends State<ChatPage> {
                         Navigator.of(context).pop();
                         _joinVideoCall();
                       },
-                      icon: const Icon(Icons.videocam),
+                      icon: Icon(_incomingCallType == 'audio'
+                          ? Icons.call
+                          : Icons.videocam),
                       label: const Text('Answer'),
                     ),
                   ),
@@ -3316,8 +3646,7 @@ class _FloatingGhostLettersState extends State<_FloatingGhostLetters>
                 return Positioned(
                   left: (constraints.maxWidth * particle.x) +
                       (particle.drift * eased),
-                  top: (constraints.maxHeight * 0.48) -
-                      (particle.rise * eased),
+                  top: (constraints.maxHeight * 0.48) - (particle.rise * eased),
                   child: Opacity(
                     opacity: (1 - eased).clamp(0.0, 1.0),
                     child: Transform.scale(
@@ -3482,9 +3811,14 @@ class _ChatStatusLabel extends StatelessWidget {
 }
 
 class _AudioMessageTile extends StatefulWidget {
-  const _AudioMessageTile({required this.url, required this.isMe});
+  const _AudioMessageTile({
+    required this.url,
+    required this.chatId,
+    required this.isMe,
+  });
 
   final String url;
+  final String chatId;
   final bool isMe;
 
   @override
@@ -3558,7 +3892,11 @@ class _AudioMessageTileState extends State<_AudioMessageTile> {
       }
       return;
     }
-    await _player.play(UrlSource(widget.url));
+    final url = await R2StorageService.instance.downloadPrivateMediaUrl(
+      mediaRef: widget.url,
+      chatId: widget.chatId,
+    );
+    await _player.play(UrlSource(url));
     if (mounted) {
       setState(() => _isPlaying = true);
     }

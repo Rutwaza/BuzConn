@@ -101,6 +101,11 @@ analysis_benchmark.json
 **/Pods/
 
 # Windows
+windows_google_oauth.json
+client_secret_*.json
+functions/.env*
+!functions/.env.example
+functions/node_modules/
 **/windows/flutter/generated_plugin_registrant.cc
 **/windows/flutter/generated_plugin_registrant.h
 **/windows/flutter/generated_plugins.cmake

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/night_sky_background.dart';
 
 class OnboardingPage extends ConsumerStatefulWidget {
   const OnboardingPage({super.key});
@@ -41,16 +42,20 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     return Scaffold(
       body: Stack(
         children: [
+          const Positioned.fill(child: NightSkyBackground()),
           Positioned.fill(
-            child: Image.asset(
-              'assets/images/onboard.jpg',
-              fit: BoxFit.cover,
-              alignment: Alignment.center,
-            ),
-          ),
-          Positioned.fill(
-            child: Container(
-              color: Colors.black.withOpacity(0.45),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.16),
+                    Colors.black.withOpacity(0.28),
+                    Colors.black.withOpacity(0.56),
+                  ],
+                ),
+              ),
             ),
           ),
           PageView.builder(

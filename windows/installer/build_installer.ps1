@@ -1,5 +1,6 @@
 param(
-    [string]$InnoSetupCompiler
+    [string]$InnoSetupCompiler,
+    [switch]$SkipBuild
 )
 
 $ErrorActionPreference = 'Stop'
@@ -7,12 +8,19 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $releaseDir = Join-Path $repoRoot 'build\windows\x64\runner\Release'
 $payloadDir = Join-Path $repoRoot 'build\windows\x64\installer-payload'
 $scriptPath = Join-Path $PSScriptRoot 'Spotlight.iss'
+$oauthConfig = Join-Path $repoRoot 'windows_google_oauth.json'
 
 Push-Location $repoRoot
 try {
-    flutter build windows --release
-    if ($LASTEXITCODE -ne 0) {
-        throw "Flutter Windows release build failed with exit code $LASTEXITCODE."
+    if (-not $SkipBuild) {
+        $flutterArgs = @('build', 'windows', '--release')
+        if (Test-Path -LiteralPath $oauthConfig) {
+            $flutterArgs += "--dart-define-from-file=$oauthConfig"
+        }
+        & flutter @flutterArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "Flutter Windows release build failed with exit code $LASTEXITCODE."
+        }
     }
 
     $appExecutable = Join-Path $releaseDir 'SpotLight.exe'
@@ -75,7 +83,7 @@ try {
         throw "Inno Setup compilation failed with exit code $LASTEXITCODE."
     }
 
-    $installer = Join-Path $repoRoot 'build\windows\installer-output\SpotlightSetup-1.0.0-x64.exe'
+    $installer = Join-Path $repoRoot 'build\windows\installer-output\SpotLight-Setup-1.0.0-x64.exe'
     if (-not (Test-Path $installer)) {
         throw "Installer compilation reported success but did not create $installer."
     }

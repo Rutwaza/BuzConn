@@ -17,7 +17,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_text_field.dart';
-import '../../../core/services/supabase_storage_service.dart';
+import '../../../core/services/r2_storage_service.dart';
 
 class BusinessSetupPage extends ConsumerStatefulWidget {
   const BusinessSetupPage({super.key, this.editBusinessId});
@@ -416,7 +416,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
     try {
       final bytes = await imageFile.readAsBytes();
       final path = '$businessId/logo_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      return await SupabaseStorageService.instance.uploadImage(
+      return await R2StorageService.instance.uploadImage(
         bucket: 'profile-images',
         path: path,
         bytes: bytes,

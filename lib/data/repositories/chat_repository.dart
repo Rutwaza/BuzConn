@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -27,8 +29,7 @@ class ChatRepository {
     final businessName = business['name'] ?? 'Business';
     final businessImageUrl = business['imageUrl'];
 
-    final clientSnap =
-        await _firestore.collection('users').doc(clientId).get();
+    final clientSnap = await _firestore.collection('users').doc(clientId).get();
     final client = clientSnap.data() ?? {};
     final clientName = client['name'] ?? 'Client';
     final clientImageUrl = client['imageUrl'];
@@ -112,51 +113,99 @@ class ChatRepository {
     String? ghostCipherText,
     String? ghostNonce,
   }) async {
-    final messageRef = _firestore
-        .collection('chats')
-        .doc(chatId)
-        .collection('messages')
-        .doc();
-    final senderSnap = await _firestore.collection('users').doc(senderId).get();
-    final sender = senderSnap.data() ?? {};
-    final senderName = sender['name'] ?? 'User';
-    final senderAvatar = sender['imageUrl'];
-    await messageRef.set({
-      'id': messageRef.id,
-      'senderId': senderId,
-      'senderName': senderName,
-      'senderAvatar': senderAvatar,
-      'text': text,
-      'isGhost': isGhost,
-      'ghostCipherText': ghostCipherText,
-      'ghostNonce': ghostNonce,
-      'mediaUrl': mediaUrl,
-      'mediaType': mediaType,
-      'mediaName': mediaName,
-      'mediaSize': mediaSize,
-      'replyTo': replyTo,
-      'createdAt': FieldValue.serverTimestamp(),
+    final chatRef = _firestore.collection('chats').doc(chatId);
+    final messageRef =
+        _firestore.collection('chats').doc(chatId).collection('messages').doc();
+    var senderName = _auth.currentUser?.displayName ?? 'User';
+    String? senderAvatar = _auth.currentUser?.photoURL;
+    var isRequest = false;
+    await _firestore.runTransaction((transaction) async {
+      final chatSnap = await transaction.get(chatRef);
+      final chat = chatSnap.data() ?? <String, dynamic>{};
+      final participants = (chat['participants'] as List? ?? [])
+          .map((id) => id.toString())
+          .toList();
+      final status = (chat['requestStatus'] ?? 'none').toString();
+      final requesterId = chat['requesterId']?.toString();
+      final chatUpdates = <String, dynamic>{
+        'lastMessage': mediaUrl != null
+            ? '[media]'
+            : isGhost
+                ? 'Ghost message'
+                : text,
+        'lastMessageAt': FieldValue.serverTimestamp(),
+        'lastMessageSenderId': senderId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (status == 'pending' && requesterId != senderId) {
+        throw StateError('This message request is waiting for approval.');
+      }
+      if (status == 'rejected') {
+        throw StateError('This message request was declined.');
+      }
+
+      if (chat['chatType'] == 'direct') {
+        final isUserA = chat['userAId'] == senderId;
+        senderName = (isUserA ? chat['userAName'] : chat['userBName'])
+                ?.toString() ??
+            senderName;
+        senderAvatar = (isUserA ? chat['userAImageUrl'] : chat['userBImageUrl'])
+            as String?;
+      } else if (chat['businessOwnerId'] == senderId) {
+        senderName = (chat['businessName'] ?? senderName).toString();
+        senderAvatar = chat['businessImageUrl'] as String?;
+      } else {
+        senderName = (chat['clientName'] ?? senderName).toString();
+        senderAvatar = chat['clientImageUrl'] as String?;
+      }
+
+      isRequest = status == 'pending' && requesterId == senderId;
+      if (chat['chatType'] == 'direct' && status == 'none') {
+        if (chat['lastMessageAt'] == null) {
+          final recipientId = participants.firstWhere(
+            (id) => id != senderId,
+            orElse: () => '',
+          );
+          if (recipientId.isNotEmpty) {
+            isRequest = true;
+            chatUpdates.addAll({
+              'requestStatus': 'pending',
+              'requesterId': senderId,
+              'requestRecipientId': recipientId,
+            });
+          }
+        }
+      }
+      transaction.set(messageRef, {
+        'id': messageRef.id,
+        'senderId': senderId,
+        'senderName': senderName,
+        'senderAvatar': senderAvatar,
+        'text': text,
+        'isGhost': isGhost,
+        'ghostCipherText': ghostCipherText,
+        'ghostNonce': ghostNonce,
+        'mediaUrl': mediaUrl,
+        'mediaType': mediaType,
+        'mediaName': mediaName,
+        'mediaSize': mediaSize,
+        'replyTo': replyTo,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      transaction.update(chatRef, chatUpdates);
     });
 
-    await _firestore.collection('chats').doc(chatId).update({
-      'lastMessage': mediaUrl != null ? '[media]' : text,
-      'lastMessageAt': FieldValue.serverTimestamp(),
-      'lastMessageSenderId': senderId,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-
-    if (!isGhost) {
-      try {
-        await _createMessageNotifications(
+    if (!isGhost || isRequest) {
+      unawaited(
+        _createMessageNotifications(
           chatId: chatId,
           senderId: senderId,
           senderName: senderName,
           senderAvatar: senderAvatar,
           previewText: mediaUrl != null ? '[media]' : text,
-        );
-      } catch (_) {
-        // Notification failures should not block sending messages.
-      }
+          type: isRequest ? 'message_request' : 'message',
+        ).catchError((_) {}),
+      );
     }
   }
 
@@ -166,6 +215,7 @@ class ChatRepository {
     required String senderName,
     String? senderAvatar,
     required String previewText,
+    String type = 'message',
   }) async {
     final chatSnap = await _firestore.collection('chats').doc(chatId).get();
     final chatData = chatSnap.data() ?? {};
@@ -179,7 +229,7 @@ class ChatRepository {
         'fromUserId': senderId,
         'fromUserName': senderName,
         'fromUserImageUrl': senderAvatar,
-        'type': 'message',
+        'type': type,
         'chatId': chatId,
         'preview': previewText,
         'readAt': null,
@@ -187,6 +237,27 @@ class ChatRepository {
         'createdAt': FieldValue.serverTimestamp(),
       });
     }
+  }
+
+  Future<void> respondToMessageRequest({
+    required String chatId,
+    required String userId,
+    required bool accept,
+  }) async {
+    final ref = _firestore.collection('chats').doc(chatId);
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(ref);
+      final data = snapshot.data() ?? {};
+      if (data['requestRecipientId'] != userId ||
+          data['requestStatus'] != 'pending') {
+        throw StateError('This message request is no longer available.');
+      }
+      transaction.update(ref, {
+        'requestStatus': accept ? 'accepted' : 'rejected',
+        'requestRespondedAt': FieldValue.serverTimestamp(),
+        if (!accept) 'hiddenFor': FieldValue.arrayUnion([userId]),
+      });
+    });
   }
 
   Future<void> setLastRead({
@@ -246,10 +317,8 @@ class ChatRepository {
     final messagesRef = chatRef.collection('messages');
     await messagesRef.doc(messageId).delete();
 
-    final latestSnap = await messagesRef
-        .orderBy('createdAt', descending: true)
-        .limit(1)
-        .get();
+    final latestSnap =
+        await messagesRef.orderBy('createdAt', descending: true).limit(1).get();
 
     if (latestSnap.docs.isEmpty) {
       await chatRef.update({
@@ -273,10 +342,8 @@ class ChatRepository {
   }
 
   Future<void> clearChatMessages(String chatId) async {
-    final messagesRef = _firestore
-        .collection('chats')
-        .doc(chatId)
-        .collection('messages');
+    final messagesRef =
+        _firestore.collection('chats').doc(chatId).collection('messages');
     while (true) {
       final snap = await messagesRef.limit(200).get();
       if (snap.docs.isEmpty) break;

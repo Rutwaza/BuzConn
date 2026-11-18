@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../routes/router.dart';
 import 'local_notification_service.dart';
 
 class PushNotificationService {
@@ -18,11 +22,21 @@ class PushNotificationService {
 
   StreamSubscription<User?>? _authSub;
   StreamSubscription<String>? _tokenSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+      _windowsNotificationsSub;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _windowsCallSub;
+  static const MethodChannel _windowsCallChannel =
+      MethodChannel('spotlight/calls');
   bool _initialized = false;
 
   Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
+
+    if (Platform.isWindows) {
+      _authSub = _auth.authStateChanges().listen(_handleWindowsAuthChange);
+      return;
+    }
 
     await LocalNotificationService.instance.initialize();
     await _requestPermission();
@@ -80,6 +94,91 @@ class PushNotificationService {
     }
   }
 
+  Future<void> _handleWindowsAuthChange(User? user) async {
+    await _windowsNotificationsSub?.cancel();
+    _windowsNotificationsSub = null;
+    await _windowsCallSub?.cancel();
+    _windowsCallSub = null;
+    await _setWindowsRinging(false);
+    if (user == null) return;
+
+    var isInitialSnapshot = true;
+    _windowsNotificationsSub = _firestore
+        .collection('notifications')
+        .where('toUserId', isEqualTo: user.uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (isInitialSnapshot) {
+        isInitialSnapshot = false;
+        return;
+      }
+      for (final change in snapshot.docChanges) {
+        if (change.type != DocumentChangeType.added) continue;
+        final data = change.doc.data();
+        if (data == null) continue;
+        _showWindowsNotification(data);
+      }
+    }, onError: (Object error) {
+      if (kDebugMode) debugPrint('Windows notification listener failed: $error');
+    });
+  }
+
+  void _showWindowsNotification(Map<String, dynamic> data) {
+    final type = (data['type'] ?? '').toString();
+    final chatId = (data['chatId'] ?? '').toString();
+    final title = _titleFromData(data);
+    final body = _bodyFromData(data);
+    if (type == 'call' && chatId.isNotEmpty) {
+      _watchWindowsCall(chatId);
+    }
+
+    final messenger = AppRouter.scaffoldMessengerKey.currentState;
+    messenger?.showSnackBar(
+      SnackBar(
+        content: Text('$title\n$body'),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: type == 'call' ? 'Answer' : 'Open',
+          onPressed: () {
+            if (type == 'call') unawaited(_setWindowsRinging(false));
+            LocalNotificationService.instance.handlePayload({
+              'type': type,
+              'chatId': chatId,
+              'postId': data['postId'],
+              'userId': data['fromUserId'],
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  void _watchWindowsCall(String chatId) {
+    unawaited(_windowsCallSub?.cancel());
+    _windowsCallSub = _firestore
+        .collection('chats')
+        .doc(chatId)
+        .collection('calls')
+        .doc('active')
+        .snapshots()
+        .listen((snapshot) {
+      final data = snapshot.data();
+      final isIncoming = snapshot.exists &&
+          data?['status'] == 'calling' &&
+          data?['callerId'] != _auth.currentUser?.uid;
+      unawaited(_setWindowsRinging(isIncoming));
+    });
+  }
+
+  Future<void> _setWindowsRinging(bool enabled) async {
+    try {
+      await _windowsCallChannel.invokeMethod<void>(
+        'setRinging',
+        {'enabled': enabled},
+      );
+    } catch (_) {}
+  }
+
   Future<void> _requestPermission() async {
     await _messaging.requestPermission(
       alert: true,
@@ -114,6 +213,9 @@ class PushNotificationService {
   Future<void> dispose() async {
     await _authSub?.cancel();
     await _tokenSub?.cancel();
+    await _windowsNotificationsSub?.cancel();
+    await _windowsCallSub?.cancel();
+    await _setWindowsRinging(false);
   }
 
   String _titleFromData(Map<String, dynamic> data) {
@@ -122,6 +224,10 @@ class PushNotificationService {
     switch (type) {
       case 'message':
         return fromName;
+      case 'message_request':
+        return 'Message request';
+      case 'call':
+        return 'Incoming call';
       case 'follow':
         return 'New follower';
       case 'comment':
@@ -140,6 +246,10 @@ class PushNotificationService {
     switch (type) {
       case 'message':
         return preview.isEmpty ? '$fromName sent you a message' : preview;
+      case 'message_request':
+        return '$fromName wants to message you';
+      case 'call':
+        return '$fromName is calling you';
       case 'follow':
         return '$fromName followed you';
       case 'comment':

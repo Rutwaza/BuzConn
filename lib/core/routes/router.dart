@@ -28,6 +28,9 @@ import 'package:businessfinder/data/models/post_model.dart';
 import 'package:businessfinder/presentation/pages/business/post_detail_page.dart';
 
 class AppRouter {
+  static final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+
   static final GoRouter router = GoRouter(
     initialLocation: AppRoutes.splash,
     routes: [
@@ -86,7 +89,10 @@ class AppRouter {
         builder: (context, state) {
           final postId = state.pathParameters['id']!;
           return FutureBuilder<DocumentSnapshot>(
-            future: FirebaseFirestore.instance.collection('posts').doc(postId).get(),
+            future: FirebaseFirestore.instance
+                .collection('posts')
+                .doc(postId)
+                .get(),
             builder: (context, snapshot) {
               if (!snapshot.hasData) {
                 return const Scaffold(
@@ -118,7 +124,9 @@ class AppRouter {
       ),
       GoRoute(
         path: AppRoutes.chats,
-        builder: (context, state) => const ChatListPage(),
+        builder: (context, state) => ChatListPage(
+          initialFilter: state.uri.queryParameters['filter'],
+        ),
       ),
       GoRoute(
         path: AppRoutes.chatDetail,

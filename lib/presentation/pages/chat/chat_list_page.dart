@@ -10,7 +10,9 @@ import '../../../data/repositories/chat_repository.dart';
 import 'chat_page.dart';
 
 class ChatListPage extends StatefulWidget {
-  const ChatListPage({super.key});
+  const ChatListPage({super.key, this.initialFilter});
+
+  final String? initialFilter;
 
   @override
   State<ChatListPage> createState() => _ChatListPageState();
@@ -22,6 +24,36 @@ class _ChatListPageState extends State<ChatListPage> {
   _InboxFilter _filter = _InboxFilter.all;
   String? _selectedDesktopChatId;
   Map<String, dynamic>? _selectedDesktopMeta;
+
+  Future<bool> _respondToMessageRequest({
+    required String chatId,
+    required String userId,
+    required bool accept,
+  }) async {
+    try {
+      await ChatRepository().respondToMessageRequest(
+        chatId: chatId,
+        userId: userId,
+        accept: accept,
+      );
+      return true;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update request: $error')),
+        );
+      }
+      return false;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialFilter == 'requests') {
+      _filter = _InboxFilter.requests;
+    }
+  }
 
   Future<Map<String, dynamic>> _resolveChatMeta(
     Map<String, dynamic> data,
@@ -290,6 +322,7 @@ class _ChatListPageState extends State<ChatListPage> {
                       child: Row(
                         children: [
                           _buildFilterChip(_InboxFilter.all, 'All'),
+                          _buildFilterChip(_InboxFilter.requests, 'Requests'),
                           _buildFilterChip(_InboxFilter.unread, 'Unread'),
                           _buildFilterChip(_InboxFilter.creators, 'Creators'),
                           _buildFilterChip(_InboxFilter.archived, 'Archived'),
@@ -323,6 +356,14 @@ class _ChatListPageState extends State<ChatListPage> {
                       final isArchived = hiddenFor.contains(user.uid);
                       final isCreatorChat =
                           (data['chatType'] ?? '').toString() == 'business';
+                      final isIncomingRequest =
+                          data['requestStatus'] == 'pending' &&
+                              data['requestRecipientId'] == user.uid;
+                      if (_filter == _InboxFilter.requests) {
+                        if (!isIncomingRequest) return false;
+                      } else if (isIncomingRequest) {
+                        return false;
+                      }
                       final lastMessageAt = data['lastMessageAt'] as Timestamp?;
                       final lastReadAt =
                           data['lastReadAt'] as Map<String, dynamic>? ?? {};
@@ -425,6 +466,9 @@ class _ChatListPageState extends State<ChatListPage> {
                         ],
                         ...sortedDocs.map((doc) {
                           final data = doc.data() as Map<String, dynamic>;
+                          final isIncomingRequest =
+                              data['requestStatus'] == 'pending' &&
+                                  data['requestRecipientId'] == user.uid;
                           final chatId = doc.id;
                           final lastMessage =
                               (data['lastMessage'] ?? '').toString();
@@ -514,10 +558,51 @@ class _ChatListPageState extends State<ChatListPage> {
                                     sentByMe: sentByMe,
                                     isDeliveredToOther: isDeliveredToOther,
                                     isReadByOther: isReadByOther,
+                                    isMessageRequest: isIncomingRequest,
+                                    onApproveRequest: isIncomingRequest
+                                        ? () async {
+                                            final accepted =
+                                                await _respondToMessageRequest(
+                                              chatId: chatId,
+                                              userId: user.uid,
+                                              accept: true,
+                                            );
+                                            if (!accepted || !mounted) return;
+                                            if (isDesktopWide) {
+                                              _filter = _InboxFilter.all;
+                                              _selectDesktopChat(
+                                                chatId: chatId,
+                                                meta: meta,
+                                              );
+                                            } else {
+                                              context.push(AppRoutes
+                                                  .chatDetailPath(chatId));
+                                            }
+                                          }
+                                        : null,
+                                    onRejectRequest: isIncomingRequest
+                                        ? () => _respondToMessageRequest(
+                                              chatId: chatId,
+                                              userId: user.uid,
+                                              accept: false,
+                                            )
+                                        : null,
                                     isSelected: isDesktopWide &&
                                         _selectedDesktopChatId == chatId,
-                                    onTap: () {
+                                    onTap: () async {
                                       HapticFeedback.selectionClick();
+                                      if (isIncomingRequest) {
+                                        if (isDesktopWide) {
+                                          _selectDesktopChat(
+                                            chatId: chatId,
+                                            meta: meta,
+                                          );
+                                        } else {
+                                          context.push(AppRoutes
+                                              .chatDetailPath(chatId));
+                                        }
+                                        return;
+                                      }
                                       if (isDesktopWide) {
                                         _selectDesktopChat(
                                           chatId: chatId,
@@ -607,6 +692,8 @@ class _ChatListPageState extends State<ChatListPage> {
         return 'Archived';
       case _InboxFilter.all:
         return 'All';
+      case _InboxFilter.requests:
+        return 'Requests';
     }
   }
 
@@ -622,6 +709,49 @@ class _ChatListPageState extends State<ChatListPage> {
 
   Widget _buildFilterChip(_InboxFilter filter, String label) {
     final selected = _filter == filter;
+    final user = FirebaseAuth.instance.currentUser;
+    if (filter == _InboxFilter.requests && user != null) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('chats')
+              .where('participants', arrayContains: user.uid)
+              .snapshots(),
+          builder: (context, snapshot) {
+            final hasRequests = (snapshot.data?.docs ?? []).any((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return data['requestStatus'] == 'pending' &&
+                  data['requestRecipientId'] == user.uid;
+            });
+            return ChoiceChip(
+              selected: selected,
+              label: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(label),
+                  if (hasRequests) ...[
+                    const SizedBox(width: 7),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              onSelected: (_) {
+                HapticFeedback.selectionClick();
+                setState(() => _filter = filter);
+              },
+            );
+          },
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: ChoiceChip(
@@ -788,7 +918,7 @@ class _ChatListPageState extends State<ChatListPage> {
   }
 }
 
-enum _InboxFilter { all, unread, creators, archived }
+enum _InboxFilter { all, unread, creators, archived, requests }
 
 class _DesktopChatShell extends StatelessWidget {
   const _DesktopChatShell({
@@ -1220,6 +1350,9 @@ class _ChatPreviewCard extends StatelessWidget {
     required this.sentByMe,
     required this.isDeliveredToOther,
     required this.isReadByOther,
+    this.isMessageRequest = false,
+    this.onApproveRequest,
+    this.onRejectRequest,
     this.isSelected = false,
     required this.onTap,
     required this.onLongPress,
@@ -1236,6 +1369,9 @@ class _ChatPreviewCard extends StatelessWidget {
   final bool sentByMe;
   final bool isDeliveredToOther;
   final bool isReadByOther;
+  final bool isMessageRequest;
+  final VoidCallback? onApproveRequest;
+  final VoidCallback? onRejectRequest;
   final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
@@ -1413,7 +1549,20 @@ class _ChatPreviewCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              if (isUnread)
+              if (isMessageRequest) ...[
+                _requestAction(
+                  tooltip: 'Approve request',
+                  icon: Icons.check_rounded,
+                  color: const Color(0xFF198754),
+                  onPressed: onApproveRequest,
+                ),
+                _requestAction(
+                  tooltip: 'Reject request',
+                  icon: Icons.close_rounded,
+                  color: const Color(0xFFB3261E),
+                  onPressed: onRejectRequest,
+                ),
+              ] else if (isUnread)
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
@@ -1434,6 +1583,22 @@ class _ChatPreviewCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _requestAction({
+    required String tooltip,
+    required IconData icon,
+    required Color color,
+    required VoidCallback? onPressed,
+  }) {
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints.tightFor(width: 38, height: 42),
+      padding: EdgeInsets.zero,
+      icon: Icon(icon, color: color, size: 21),
     );
   }
 }

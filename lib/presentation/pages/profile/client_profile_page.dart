@@ -11,7 +11,7 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/services/social_notification_service.dart';
-import '../../../core/services/supabase_storage_service.dart';
+import '../../../core/services/r2_storage_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
 import '../../../data/repositories/chat_repository.dart';
@@ -233,7 +233,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
     if (picked == null) return;
     setState(() => _selectedLogo = File(picked.path));
     try {
-      final url = await SupabaseStorageService.instance.uploadImage(
+      final url = await R2StorageService.instance.uploadImage(
         bucket: 'profile-images',
         path: '$businessId/logo_${DateTime.now().millisecondsSinceEpoch}.jpg',
         bytes: await _selectedLogo!.readAsBytes(),

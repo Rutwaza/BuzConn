@@ -4,6 +4,7 @@
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 #include <windows.h>
+#include <mmsystem.h>
 
 #include <optional>
 
@@ -42,6 +43,7 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   RegisterPrivacyChannel();
+  RegisterCallChannel();
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -91,7 +93,44 @@ void FlutterWindow::RegisterPrivacyChannel() {
   privacy_channel_ = std::move(channel);
 }
 
+void FlutterWindow::RegisterCallChannel() {
+  auto channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "spotlight/calls",
+      &flutter::StandardMethodCodec::GetInstance());
+
+  channel->SetMethodCallHandler(
+      [](const flutter::MethodCall<flutter::EncodableValue>& call,
+         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+        if (call.method_name() != "setRinging") {
+          result->NotImplemented();
+          return;
+        }
+
+        bool enabled = false;
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        if (args) {
+          const auto value = args->find(flutter::EncodableValue("enabled"));
+          if (value != args->end()) {
+            if (const auto* bool_value = std::get_if<bool>(&value->second)) {
+              enabled = *bool_value;
+            }
+          }
+        }
+
+        if (enabled) {
+          PlaySoundW(L"SystemExclamation", nullptr,
+                     SND_ALIAS | SND_ASYNC | SND_LOOP);
+        } else {
+          PlaySoundW(nullptr, nullptr, 0);
+        }
+        result->Success();
+      });
+
+  call_channel_ = std::move(channel);
+}
+
 void FlutterWindow::OnDestroy() {
+  PlaySoundW(nullptr, nullptr, 0);
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

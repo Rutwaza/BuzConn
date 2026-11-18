@@ -1,18 +1,22 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:country_code_picker/country_code_picker.dart';
-import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/spotlight_toast.dart';
+import '../../../core/services/windows_google_auth_service.dart';
+import 'email_verification_notice.dart';
+import 'phone_sign_in_sheet.dart';
+import 'windows_auth_layout.dart';
 
 class RegisterPage extends ConsumerStatefulWidget {
   const RegisterPage({super.key});
@@ -23,15 +27,15 @@ class RegisterPage extends ConsumerStatefulWidget {
 
 class _RegisterPageState extends ConsumerState<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
-  final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
+  bool _showPassword = false;
+  bool _showConfirmPassword = false;
 
   @override
   void dispose() {
-    _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -46,7 +50,6 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
       try {
         final email = _emailController.text.trim().toLowerCase();
-        final username = _usernameController.text.trim().toLowerCase();
         final existingMethods =
             await FirebaseAuth.instance.fetchSignInMethodsForEmail(email);
         if (existingMethods.isNotEmpty) {
@@ -62,27 +65,21 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           password: _passwordController.text.trim(),
         );
 
-        if (userCredential.user != null) {
-          await FirebaseFunctions.instance
-              .httpsCallable('claimUsername')
-              .call({'username': username});
-          await _ensureUserDocument(
-            userCredential.user!,
-            username: username,
-            email: email,
-          );
-        }
-
+        var verificationSent = false;
         try {
           await userCredential.user?.sendEmailVerification();
+          verificationSent = true;
         } catch (_) {}
 
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-          context.go(AppRoutes.profile);
-        }
+        await FirebaseAuth.instance.signOut();
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        await showEmailVerificationNotice(
+          context,
+          email: email,
+          emailSent: verificationSent,
+        );
+        if (mounted) context.go(AppRoutes.login);
       } on FirebaseAuthException catch (e) {
         if (mounted) {
           setState(() {
@@ -95,9 +92,6 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           errorMessage = 'The password provided is too weak.';
         } else if (e.code == 'email-already-in-use') {
           errorMessage = 'An account already exists with this email.';
-        } else if (e.code == 'already-exists' ||
-            (e.message ?? '').toLowerCase().contains('username')) {
-          errorMessage = 'That username is already taken.';
         } else if (e.code == 'invalid-email') {
           errorMessage = 'Invalid email address.';
         }
@@ -118,13 +112,11 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     }
   }
 
-  Future<void> _ensureUserDocument(
+  Future<bool> _ensureUserDocument(
     User user, {
     String? name,
-    String? username,
     String? email,
     String? phone,
-    bool isNewAccount = false,
   }) async {
     final doc = FirebaseFirestore.instance.collection('users').doc(user.uid);
     final snapshot = await doc.get();
@@ -133,22 +125,22 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       await doc.set({
         if (normalizedEmail.isNotEmpty) 'emailLower': normalizedEmail,
       }, SetOptions(merge: true));
-      return;
+      final data = snapshot.data() ?? <String, dynamic>{};
+      return data['profileCompleted'] == true;
     }
     await doc.set({
       'name': name ?? user.displayName ?? 'User',
       'displayName': name ?? user.displayName ?? 'User',
-      'username': username,
-      'usernameLower': username?.toLowerCase(),
       'email': email ?? user.email,
       'emailLower': normalizedEmail,
       'phone': phone ?? user.phoneNumber,
       'createdAt': FieldValue.serverTimestamp(),
       'userType': 'client',
-      'profileCompleted': !isNewAccount, // If new, they need to complete profile
+      'profileCompleted': false,
       'fcmTokens': [],
       'themeMode': 'dark',
     });
+    return false;
   }
 
   Future<void> _handleGoogleSignIn() async {
@@ -156,6 +148,26 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       _isLoading = true;
     });
     try {
+      if (Platform.isWindows) {
+        final googleTokens = await WindowsGoogleAuthService.signIn();
+        if (googleTokens?.accessToken == null) return;
+        final credential = GoogleAuthProvider.credential(
+          accessToken: googleTokens!.accessToken,
+          idToken: googleTokens.idToken,
+        );
+        final result = await FirebaseAuth.instance.signInWithCredential(
+          credential,
+        );
+        final user = result.user;
+        final isProfileComplete =
+            user == null ? false : await _ensureUserDocument(user);
+        if (mounted && user != null) {
+          context.go(
+            isProfileComplete ? AppRoutes.dashboard : AppRoutes.profile,
+          );
+        }
+        return;
+      }
       final googleUser = await GoogleSignIn().signIn();
       if (googleUser == null) {
         setState(() {
@@ -172,15 +184,14 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           await FirebaseAuth.instance.signInWithCredential(credential);
       final user = userCredential.user;
       if (user != null) {
-        final isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
-        await _ensureUserDocument(
+        final isProfileComplete = await _ensureUserDocument(
           user,
           name: user.displayName ?? googleUser.displayName,
           email: user.email ?? googleUser.email,
-          isNewAccount: isNewUser,
         );
         if (mounted) {
-          context.go(isNewUser ? AppRoutes.profile : AppRoutes.dashboard);
+          context
+              .go(isProfileComplete ? AppRoutes.dashboard : AppRoutes.profile);
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -189,8 +200,13 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         e.message ?? 'Google sign-in failed',
         success: false,
       );
-    } catch (_) {
-      showSpotlightToast(context, 'Google sign-in failed', success: false);
+    } catch (error, stackTrace) {
+      debugPrint('Google sign-in failed: $error\n$stackTrace');
+      showSpotlightToast(
+        context,
+        'Google sign-in failed: $error',
+        success: false,
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -201,252 +217,198 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   }
 
   Future<void> _handlePhoneSignIn() async {
-    final phoneController = TextEditingController();
-    final codeController = TextEditingController();
-    String? verificationId;
-    bool isSending = false;
-    bool isVerifying = false;
-    bool codeSent = false;
-    String dialCode = '+250';
-    String fullPhone = '';
+    if (Platform.isWindows) {
+      showSpotlightToast(
+        context,
+        'Phone verification is currently available in the Android app only.',
+        success: false,
+      );
+      return;
+    }
+    final credential = await showPhoneSignInSheet(context);
+    final user = credential?.user;
+    if (user == null || !mounted) return;
 
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            final viewInsets = MediaQuery.of(context).viewInsets.bottom;
-            return Container(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 16,
-                bottom: viewInsets + 20,
-              ),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
+    setState(() => _isLoading = true);
+    try {
+      final isProfileComplete = await _ensureUserDocument(
+        user,
+        phone: user.phoneNumber,
+      );
+      if (mounted) {
+        context.go(
+          isProfileComplete ? AppRoutes.dashboard : AppRoutes.profile,
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        showSpotlightToast(
+          context,
+          'Signed in, but we could not load your profile. Please try again.',
+          success: false,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Widget _buildWindowsLayout() {
+    const fieldFill = Color(0xFFF5F7FB);
+    const fieldBorder = Color(0xFFDCE3ED);
+    const ink = Color(0xFF172235);
+    return WindowsAuthLayout(
+      eyebrow: 'Get started',
+      title: 'Create your account',
+      subtitle: 'Set up your Spotlight account and start building connections.',
+      footerPrompt: 'Already have an account?',
+      footerAction: 'Sign in',
+      onFooterTap: () => context.go(AppRoutes.login),
+      form: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppTextField(
+              controller: _emailController,
+              label: 'Email address',
+              hintText: 'you@example.com',
+              keyboardType: TextInputType.emailAddress,
+              fillColor: fieldFill,
+              textColor: ink,
+              hintColor: const Color(0xFF8995A7),
+              borderColor: fieldBorder,
+              prefixIcon: const Icon(Icons.alternate_email_rounded,
+                  color: Color(0xFF77849A)),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your email';
+                }
+                if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
+                  return 'Please enter a valid email';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 15),
+            AppTextField(
+              controller: _passwordController,
+              label: 'Password',
+              hintText: 'At least ${AppConstants.minPasswordLength} characters',
+              obscureText: !_showPassword,
+              fillColor: fieldFill,
+              textColor: ink,
+              hintColor: const Color(0xFF8995A7),
+              borderColor: fieldBorder,
+              prefixIcon: const Icon(Icons.lock_outline_rounded,
+                  color: Color(0xFF77849A)),
+              suffixIcon: IconButton(
+                tooltip: _showPassword ? 'Hide password' : 'Show password',
+                onPressed: () => setState(() => _showPassword = !_showPassword),
+                icon: Icon(
+                  _showPassword
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  color: const Color(0xFF77849A),
                 ),
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          codeSent
-                              ? 'Verify your number'
-                              : 'Continue with phone',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: isSending || isVerifying
-                            ? null
-                            : () => Navigator.pop(context),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    codeSent
-                        ? 'Enter the code we sent to $fullPhone'
-                        : 'We’ll send a one-time code to verify your number.',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(color: AppColors.grey),
-                  ),
-                  const SizedBox(height: 16),
-                  if (!codeSent) ...[
-                    Row(
-                      children: [
-                        CountryCodePicker(
-                          initialSelection: 'RW',
-                          favorite: const ['RW', 'KE', 'UG', 'TZ'],
-                          showFlag: true,
-                          showCountryOnly: false,
-                          showOnlyCountryWhenClosed: false,
-                          onChanged: (code) {
-                            dialCode = code.dialCode ?? '+250';
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: phoneController,
-                            keyboardType: TextInputType.phone,
-                            decoration: const InputDecoration(
-                              hintText: '7XXXXXXXX',
-                              labelText: 'Phone number',
-                              prefixIcon: Icon(Icons.phone),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  if (codeSent) ...[
-                    TextField(
-                      controller: codeController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        hintText: '123456',
-                        labelText: 'Verification code',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        onPressed: isVerifying
-                            ? null
-                            : () {
-                                setState(() {
-                                  codeSent = false;
-                                  isSending = false;
-                                  isVerifying = false;
-                                  verificationId = null;
-                                });
-                              },
-                        child: const Text('Edit phone number'),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: isSending || isVerifying
-                          ? null
-                          : () async {
-                              if (!codeSent) {
-                                final phone = phoneController.text.trim();
-                                if (phone.isEmpty) return;
-                                fullPhone = '$dialCode$phone';
-                                setState(() {
-                                  isSending = true;
-                                });
-                                await FirebaseAuth.instance.verifyPhoneNumber(
-                                  phoneNumber: fullPhone,
-                                  verificationCompleted:
-                                      (PhoneAuthCredential credential) async {
-                                    final userCredential = await FirebaseAuth
-                                        .instance
-                                        .signInWithCredential(credential);
-                                    final user = userCredential.user;
-                                    if (user != null) {
-                                      final isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
-                                      await _ensureUserDocument(
-                                        user,
-                                        phone: user.phoneNumber ?? fullPhone,
-                                        isNewAccount: isNewUser,
-                                      );
-                                      if (mounted) {
-                                        if (!context.mounted) return;
-                                        Navigator.pop(context);
-                                        context.go(isNewUser ? AppRoutes.profile : AppRoutes.dashboard);
-                                      }
-                                    }
-                                  },
-                                  verificationFailed:
-                                      (FirebaseAuthException e) {
-                                    showSpotlightToast(
-                                      context,
-                                      e.message ?? 'Phone verification failed',
-                                      success: false,
-                                    );
-                                    if (context.mounted) {
-                                      setState(() {
-                                      isSending = false;
-                                    });
-                                    }
-                                  },
-                                  codeSent: (String id, int? resendToken) {
-                                    verificationId = id;
-                                    setState(() {
-                                      codeSent = true;
-                                      isSending = false;
-                                    });
-                                  },
-                                  codeAutoRetrievalTimeout: (String id) {
-                                    verificationId = id;
-                                  },
-                                );
-                              } else {
-                                final code = codeController.text.trim();
-                                if (code.isEmpty || verificationId == null) {
-                                  return;
-                                }
-                                setState(() {
-                                  isVerifying = true;
-                                });
-                                try {
-                                  final credential =
-                                      PhoneAuthProvider.credential(
-                                    verificationId: verificationId!,
-                                    smsCode: code,
-                                  );
-                                  final userCredential = await FirebaseAuth
-                                      .instance
-                                      .signInWithCredential(credential);
-                                  final user = userCredential.user;
-                                  if (user != null) {
-                                    final isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
-                                    await _ensureUserDocument(
-                                      user,
-                                      phone: user.phoneNumber ?? fullPhone,
-                                      isNewAccount: isNewUser,
-                                    );
-                                    if (mounted) {
-                                      Navigator.pop(context);
-                                      context.go(isNewUser ? AppRoutes.profile : AppRoutes.dashboard);
-                                    }
-                                  }
-                                } on FirebaseAuthException catch (e) {
-                                  showSpotlightToast(
-                                    context,
-                                    e.message ?? 'Invalid verification code',
-                                    success: false,
-                                  );
-                                } finally {
-                                  if (mounted) {
-                                    setState(() {
-                                      isVerifying = false;
-                                    });
-                                  }
-                                }
-                              }
-                            },
-                      child: (isSending || isVerifying)
-                          ? const SizedBox(
-                              height: 16,
-                              width: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(codeSent ? 'Verify' : 'Send code'),
-                    ),
-                  ),
-                ],
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your password';
+                }
+                if (value.trim().length < AppConstants.minPasswordLength) {
+                  return 'Password must be at least ${AppConstants.minPasswordLength} characters';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 15),
+            AppTextField(
+              controller: _confirmPasswordController,
+              label: 'Confirm password',
+              hintText: 'Re-enter your password',
+              obscureText: !_showConfirmPassword,
+              fillColor: fieldFill,
+              textColor: ink,
+              hintColor: const Color(0xFF8995A7),
+              borderColor: fieldBorder,
+              prefixIcon: const Icon(Icons.verified_user_outlined,
+                  color: Color(0xFF77849A)),
+              suffixIcon: IconButton(
+                tooltip:
+                    _showConfirmPassword ? 'Hide password' : 'Show password',
+                onPressed: () => setState(
+                  () => _showConfirmPassword = !_showConfirmPassword,
+                ),
+                icon: Icon(
+                  _showConfirmPassword
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  color: const Color(0xFF77849A),
+                ),
               ),
-            );
-          },
-        );
-      },
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please confirm your password';
+                }
+                if (value.trim() != _passwordController.text.trim()) {
+                  return 'Passwords do not match';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 22),
+            AppButton(
+              text: 'Create account',
+              onPressed: _handleRegister,
+              isLoading: _isLoading,
+              height: 54,
+              backgroundColor: const Color(0xFF1769AA),
+            ),
+            const SizedBox(height: 22),
+            const Row(
+              children: [
+                Expanded(child: Divider(color: fieldBorder)),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 14),
+                  child: Text(
+                    'OR SIGN UP WITH',
+                    style: TextStyle(
+                      color: Color(0xFF8995A7),
+                      fontSize: 10,
+                      letterSpacing: 1,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Expanded(child: Divider(color: fieldBorder)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 50,
+              child: OutlinedButton.icon(
+                onPressed: _isLoading ? null : _handleGoogleSignIn,
+                icon: Image.asset('assets/images/google.png', width: 19),
+                label: const Text('Continue with Google'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: ink,
+                  side: const BorderSide(color: fieldBorder),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (Platform.isWindows) return _buildWindowsLayout();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final fieldFillColor = isDark
         ? const Color(0xCC1A2230).withOpacity(0.52)
@@ -525,38 +487,6 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     ),
                     const SizedBox(height: 48),
                     AppTextField(
-                      controller: _usernameController,
-                      label: 'Username',
-                      hintText: 'lowercase, numbers, . or _',
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9._]')),
-                      ],
-                      fillColor: fieldFillColor,
-                      textColor: Colors.white,
-                      hintColor: Colors.white60,
-                      borderColor: fieldBorderColor,
-                      errorStyle: const TextStyle(
-                        color: Colors.redAccent,
-                        backgroundColor: Colors.transparent,
-                      ),
-                      prefixIcon: const Icon(
-                        Icons.alternate_email_rounded,
-                        color: Colors.white70,
-                      ),
-                      validator: (value) {
-                        final v = (value ?? '').trim().toLowerCase();
-                        if (v.isEmpty) {
-                          return 'Please choose a username';
-                        }
-                        final ok = RegExp(r'^[a-z0-9._]{3,20}$').hasMatch(v);
-                        if (!ok) {
-                          return 'Use 3-20 chars: a-z, 0-9, dot, underscore';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    AppTextField(
                       controller: _emailController,
                       label: 'Email',
                       hintText: 'Enter your email',
@@ -587,8 +517,9 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     AppTextField(
                       controller: _passwordController,
                       label: 'Password',
-                      hintText: 'Enter your password',
-                      obscureText: true,
+                      hintText:
+                          'At least ${AppConstants.minPasswordLength} characters',
+                      obscureText: !_showPassword,
                       fillColor: fieldFillColor,
                       textColor: Colors.white,
                       hintColor: Colors.white60,
@@ -601,12 +532,26 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                         Icons.lock_outline_rounded,
                         color: Colors.white70,
                       ),
+                      suffixIcon: IconButton(
+                        tooltip:
+                            _showPassword ? 'Hide password' : 'Show password',
+                        onPressed: () => setState(
+                          () => _showPassword = !_showPassword,
+                        ),
+                        icon: Icon(
+                          _showPassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: Colors.white70,
+                        ),
+                      ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
                           return 'Please enter your password';
                         }
-                        if (value.length < 6) {
-                          return 'Password must be at least 6 characters';
+                        if (value.trim().length <
+                            AppConstants.minPasswordLength) {
+                          return 'Password must be at least ${AppConstants.minPasswordLength} characters';
                         }
                         return null;
                       },
@@ -616,7 +561,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                       controller: _confirmPasswordController,
                       label: 'Confirm Password',
                       hintText: 'Confirm your password',
-                      obscureText: true,
+                      obscureText: !_showConfirmPassword,
                       fillColor: fieldFillColor,
                       textColor: Colors.white,
                       hintColor: Colors.white60,
@@ -629,11 +574,25 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                         Icons.verified_user_outlined,
                         color: Colors.white70,
                       ),
+                      suffixIcon: IconButton(
+                        tooltip: _showConfirmPassword
+                            ? 'Hide password'
+                            : 'Show password',
+                        onPressed: () => setState(
+                          () => _showConfirmPassword = !_showConfirmPassword,
+                        ),
+                        icon: Icon(
+                          _showConfirmPassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: Colors.white70,
+                        ),
+                      ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
                           return 'Please confirm your password';
                         }
-                        if (value != _passwordController.text) {
+                        if (value.trim() != _passwordController.text.trim()) {
                           return 'Passwords do not match';
                         }
                         return null;

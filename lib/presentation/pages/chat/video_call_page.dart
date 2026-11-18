@@ -10,10 +10,12 @@ class VideoCallPage extends StatefulWidget {
     super.key,
     required this.chatId,
     required this.isCaller,
+    this.audioOnly = false,
   });
 
   final String chatId;
   final bool isCaller;
+  final bool audioOnly;
 
   @override
   State<VideoCallPage> createState() => _VideoCallPageState();
@@ -78,7 +80,7 @@ class _VideoCallPageState extends State<VideoCallPage> {
   Future<void> _openUserMedia() async {
     final stream = await navigator.mediaDevices.getUserMedia({
       'audio': true,
-      'video': {
+      'video': widget.audioOnly ? false : {
         'facingMode': 'user',
       },
     });
@@ -128,6 +130,7 @@ class _VideoCallPageState extends State<VideoCallPage> {
     await _callDoc.set({
       'callerId': user.uid,
       'status': 'calling',
+      'callType': widget.audioOnly ? 'audio' : 'video',
       'createdAt': FieldValue.serverTimestamp(),
     });
 
@@ -294,13 +297,13 @@ class _VideoCallPageState extends State<VideoCallPage> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          Positioned.fill(
+          if (!widget.audioOnly) Positioned.fill(
             child: RTCVideoView(
               _remoteRenderer,
               objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
             ),
           ),
-          Positioned(
+          if (!widget.audioOnly) Positioned(
             right: 16,
             top: 48,
             width: 120,
@@ -338,14 +341,13 @@ class _VideoCallPageState extends State<VideoCallPage> {
                   onTap: _hangUp,
                   color: Colors.red,
                 ),
-                const SizedBox(width: 16),
-                _roundButton(
+                if (!widget.audioOnly) _roundButton(
                   icon: _cameraOff ? Icons.videocam_off : Icons.videocam,
                   onTap: _toggleCamera,
                   color: Colors.white24,
                 ),
-                const SizedBox(width: 16),
-                _roundButton(
+                if (!widget.audioOnly) const SizedBox(width: 16),
+                if (!widget.audioOnly) _roundButton(
                   icon: Icons.cameraswitch,
                   onTap: _switchCamera,
                   color: Colors.white24,
