@@ -65,7 +65,7 @@ Ghost messages disappear from the chat after the receiver reads them, but the se
 
 ```powershell
 cd functions
-gcloud auth application-default login     # once
+gcloud auth application-default login     # once (install gcloud first: see "PC tools for owner scripts")
 firebase login                            # the script reads the key with the CLI
 node scripts/open-ghost-archive.js --users alice@example.com bob@example.com --reason "report #12"
 # or, if you know the chat id (Firestore -> chats):
@@ -104,11 +104,20 @@ Order states (rules allow only these moves): `pending_payment → paid_claimed �
 
 ### Admin panel: who is admin and how to moderate
 
+> **PC tools for owner scripts (once per PC).** `set-admin.js` and
+> `open-ghost-archive.js` sign in to Google with the **Google Cloud CLI**:
+> ```powershell
+> winget install --id Google.CloudSDK -e      # then open a NEW PowerShell window
+> gcloud auth application-default login        # browser: pick the owner account, Allow
+> gcloud auth application-default set-quota-project bussinessfinder-327f5
+> ```
+> Without this the scripts fail with `getaddrinfo ENOTFOUND metadata.google.internal`.
+
 **Who is who**
 
 | Role | Who | Can do | How you become it |
 | --- | --- | --- | --- |
-| **Admin** | The owner, `nelsonjembe99@gmail.com` | Everything below, plus add or remove moderators, open the ghost archive (from the PC), see `admin_events` | `cd functions; node scripts/set-admin.js <email>` (from the PC, signed in with `gcloud auth application-default login`) |
+| **Admin** | The owner, `nelsonjembe99@gmail.com` | Everything below, plus add or remove moderators, open the ghost archive (from the PC), see `admin_events` | `cd functions; node scripts/set-admin.js <email>` (from the PC, after the one-time gcloud setup above) |
 | **Moderator** | Trusted helpers you choose | Read and handle reports, suspend and restore users | The admin adds them in the app: Admin panel → **Team** → *Add moderator* |
 | Everyone else | Normal users | Report and block | Nothing |
 
