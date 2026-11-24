@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/features/status/ui/status_bar.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:businessfinder/core/services/video_compressor.dart';
 import 'package:businessfinder/features/posts/logic/reel_prefetcher.dart';
@@ -1217,117 +1218,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
           final postKeys = <String, GlobalObjectKey>{};
           final feedContent = Column(
             children: [
-              if (_showModeTabs)
-                _buildFeedModeTabs()
-              else if (highlightList.isNotEmpty)
-                SizedBox(
-                  height: 105,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: highlightList.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 14),
-                    itemBuilder: (context, index) {
-                      final post = highlightList[index];
-                      final creatorKey = _creatorKeyForPost(post);
-                      final viewed =
-                          _viewedHighlightPosts[creatorKey] == post.id;
-                      return InkWell(
-                        mouseCursor: SystemMouseCursors.click,
-                        onTap: () {
-                          HapticFeedback.selectionClick();
-                          setState(() {
-                            _viewedHighlightPosts[creatorKey] = post.id;
-                          });
-                          _markHighlightViewed(creatorKey, post.id);
-                          _scrollToPost(
-                            post.id,
-                            filtered,
-                            postKeys,
-                          );
-                        },
-                        borderRadius: BorderRadius.circular(22),
-                        child: SizedBox(
-                          width: 84,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              AnimatedContainer(
-                                duration: const Duration(milliseconds: 260),
-                                curve: Curves.easeOutCubic,
-                                padding: const EdgeInsets.all(2),
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      if (viewed)
-                                        Colors.white.withValues(alpha: 0.22)
-                                      else
-                                        AppColors.primary
-                                            .withValues(alpha: 0.9),
-                                      if (viewed)
-                                        Colors.white.withValues(alpha: 0.12)
-                                      else
-                                        const Color(0xFF61D1ED),
-                                      if (viewed)
-                                        Colors.white.withValues(alpha: 0.08)
-                                      else
-                                        const Color(0xFFFF7A59),
-                                    ],
-                                  ),
-                                ),
-                                child: CircleAvatar(
-                                  radius: 29,
-                                  backgroundColor:
-                                      Theme.of(context).scaffoldBackgroundColor,
-                                  child: CircleAvatar(
-                                    radius: 26,
-                                    backgroundColor: AppColors.primary,
-                                    backgroundImage: post.businessImageUrl !=
-                                                null &&
-                                            post.businessImageUrl!.isNotEmpty
-                                        ? CachedNetworkImageProvider(
-                                            post.businessImageUrl!)
-                                        : null,
-                                    child: (post.businessImageUrl == null ||
-                                            post.businessImageUrl!.isEmpty)
-                                        ? Text(
-                                            post.businessName.isNotEmpty
-                                                ? post.businessName[0]
-                                                    .toUpperCase()
-                                                : '?',
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          )
-                                        : null,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Flexible(
-                                child: Text(
-                                  currentUser != null &&
-                                          post.ownerId == currentUser.uid
-                                      ? 'You'
-                                      : post.businessName,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
+              if (_showModeTabs) _buildFeedModeTabs(),
+              // Phase 4: Status (24h stories) replaces the old highlights row.
+              const StatusBar(),
               Expanded(
                 child: Stack(
                   children: [

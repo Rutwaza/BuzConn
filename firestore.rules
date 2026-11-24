@@ -153,6 +153,31 @@ service cloud.firestore {
       allow delete: if isBusinessOwner(businessId);
     }
 
+    // Status (24h stories). Signed-in users can watch; you post and delete
+    // only your own; it must expire within 24 hours.
+    match /statuses/{statusId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.type in ['image', 'video', 'text']
+        && request.resource.data.viewCount == 0
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt < request.time + duration.value(25, 'h')
+        && request.resource.data.text.size() <= 300;
+      allow update: if false; // viewCount is kept by the server
+      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+
+      // One view per person; only the status owner sees the list.
+      match /views/{viewerId} {
+        allow create: if isSignedIn() && viewerId == request.auth.uid
+          && request.resource.data.viewerId == request.auth.uid;
+        allow read: if isSignedIn() && (viewerId == request.auth.uid
+          || get(/databases/$(database)/documents/statuses/$(statusId)).data.ownerId == request.auth.uid);
+        allow update, delete: if false;
+      }
+    }
+
     // Orders are made by the server (createOrder) with the real prices.
     // Buyer: "I paid" or "Cancel". Shop owner: "Received" or "Not received".
     match /orders/{orderId} {

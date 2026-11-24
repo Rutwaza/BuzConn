@@ -29,6 +29,8 @@ const {_ghostInternals, ...ghostFunctions} = require("./ghost");
 Object.assign(exports, ghostFunctions);
 // Shop: catalogs, orders, MoMo payments. See shop.js and payments/.
 Object.assign(exports, require("./shop"));
+// Status (24h stories): view counter + hourly cleanup. See status.js.
+Object.assign(exports, require("./status"));
 
 const R2_ACCOUNT_ID = defineString("R2_ACCOUNT_ID");
 const R2_PUBLIC_BUCKET_NAME = defineString("R2_PUBLIC_BUCKET_NAME");

@@ -9,7 +9,7 @@ const {
 } = require("@firebase/rules-unit-testing");
 const {
   doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection,
-  arrayUnion, arrayRemove, increment, serverTimestamp,
+  arrayUnion, arrayRemove, increment, serverTimestamp, Timestamp,
 } = require("firebase/firestore");
 
 let env;
@@ -251,4 +251,29 @@ test("orders: shop confirms or says not received; buyer can retry", async () => 
   await assertSucceeds(updateDoc(doc(as(BOB), "orders/o1"), {status: "paid_claimed", txRef: "999"}));
   await assertSucceeds(updateDoc(doc(as(ALICE), "orders/o1"), {status: "confirmed", confirmedAt: serverTimestamp()}));
   await assertFails(updateDoc(doc(as(BOB), "orders/o1"), {status: "cancelled"}));
+});
+
+// Status ----------------------------------------------------------------------
+test("status: post your own, max 24h, nobody edits the view count", async () => {
+  const in24h = Timestamp.fromMillis(Date.now() + 24 * 3600 * 1000);
+  const in3days = Timestamp.fromMillis(Date.now() + 72 * 3600 * 1000);
+  const good = {ownerId: ALICE, type: "text", text: "Muraho", viewCount: 0, expiresAt: in24h};
+  await assertSucceeds(setDoc(doc(as(ALICE), "statuses/s1"), good));
+  await assertFails(setDoc(doc(as(BOB), "statuses/s2"), good));
+  await assertFails(setDoc(doc(as(ALICE), "statuses/s3"), {...good, expiresAt: in3days}));
+  await assertFails(setDoc(doc(as(ALICE), "statuses/s4"), {...good, viewCount: 99}));
+  await assertFails(updateDoc(doc(as(ALICE), "statuses/s1"), {viewCount: 500}));
+  await assertSucceeds(getDoc(doc(as(BOB), "statuses/s1")));
+});
+
+test("status views: one per person, only the owner sees the list", async () => {
+  const in24h = Timestamp.fromMillis(Date.now() + 24 * 3600 * 1000);
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "statuses/s9"), {ownerId: ALICE, type: "text", text: "", viewCount: 0, expiresAt: in24h});
+  });
+  await assertSucceeds(setDoc(doc(as(BOB), "statuses/s9/views/bob"), {viewerId: BOB}));
+  await assertFails(setDoc(doc(as(BOB), "statuses/s9/views/eve"), {viewerId: EVE}));
+  await assertFails(setDoc(doc(as(BOB), "statuses/s9/views/bob"), {viewerId: BOB, again: true}));
+  await assertSucceeds(getDoc(doc(as(ALICE), "statuses/s9/views/bob")));
+  await assertFails(getDoc(doc(as(EVE), "statuses/s9/views/bob")));
 });
