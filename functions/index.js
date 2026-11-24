@@ -6,6 +6,12 @@ const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {defineSecret, defineString} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
+const {setGlobalOptions} = require("firebase-functions/v2");
+
+// Cap every function at 10 instances. Without this each function may reserve
+// up to 100 instances, and together they hit Google's per-region CPU quota
+// ("Quota exceeded for total allowable CPU"). Raise this when traffic grows.
+setGlobalOptions({maxInstances: 10});
 
 admin.initializeApp();
 const db = admin.firestore();
