@@ -101,6 +101,21 @@ if ($targets -contains 'hosting') {
   }
 }
 
+# The website lives on its own Hosting site "duhuze" -> https://duhuze.web.app
+# (firebase.json "site"). Create it the first time.
+if ($targets -contains 'hosting') {
+  $sitesJson = firebase hosting:sites:list --project $project --json | Out-String
+  if ($sitesJson -notmatch 'sites/duhuze"') {
+    Write-Host "Creating Hosting site duhuze (https://duhuze.web.app)..." -ForegroundColor Cyan
+    firebase hosting:sites:create duhuze --project $project
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host "Could not create the site 'duhuze' (name taken?). Pick another in firebase.json and AppConstants.websiteUrl." -ForegroundColor Red
+      $targets = @($targets | Where-Object { $_ -ne 'hosting' })
+      $hostingSkipped = $true
+    }
+  }
+}
+
 # ---- 2. Prepare -------------------------------------------------------------
 firebase login   # says "Already logged in" if you are signed in
 

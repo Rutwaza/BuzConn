@@ -381,7 +381,7 @@ class _SearchPageState extends State<SearchPage> {
       final request = await client.getUrl(uri);
       request.headers.set(
         'User-Agent',
-        'businessfinder/1.0 (desktop-discover-map)',
+        'rw.duhuze.app/1.0 (desktop-discover-map)',
       );
       final response = await request.close();
       if (response.statusCode != 200) return;
@@ -982,7 +982,7 @@ class _SearchPageState extends State<SearchPage> {
                                     TileLayer(
                                       urlTemplate:
                                           'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                      userAgentPackageName: 'businessfinder',
+                                      userAgentPackageName: AppConstants.mapUserAgent,
                                     ),
                                     MarkerLayer(markers: markers),
                                   ],

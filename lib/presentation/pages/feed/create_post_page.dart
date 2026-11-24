@@ -542,7 +542,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
 
   String get _draftEnergyLabel {
     if (_selectedMedia.isNotEmpty && _captionLength > 100) {
-      return 'Ready to spotlight';
+      return 'Ready to post';
     }
     if (_selectedMedia.isNotEmpty) {
       return 'Visual draft';
@@ -775,7 +775,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                               CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              tr('Create your next spotlight'),
+                                              tr('Create your next post'),
                                               style: Theme.of(context)
                                                   .textTheme
                                                   .titleMedium
@@ -925,7 +925,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                               controller: _contentController,
                                               label: tr('Caption'),
                                               hintText:
-                                                  tr('Share your spotlight...'),
+                                                  tr('Share something with Duhuze...'),
                                               textCapitalization:
                                                   TextCapitalization.sentences,
                                               maxLines: 5,
@@ -1028,7 +1028,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                     AppTextField(
                                       controller: _contentController,
                                       label: tr('Caption'),
-                                      hintText: tr('Share your spotlight...'),
+                                      hintText: tr('Share something with Duhuze...'),
                                       textCapitalization:
                                           TextCapitalization.sentences,
                                       maxLines: 3,

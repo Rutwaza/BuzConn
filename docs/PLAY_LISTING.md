@@ -50,8 +50,8 @@ Umutekano: menyesha ikibazo, hagarika uwo ushaka, kandi usibe konti yawe igihe c
 ```
 
 **Category:** Social · **Tags:** Social networking, Messaging, Shopping
-**Contact email:** the support email from `site/` · **Website:** https://bussinessfinder-327f5.web.app
-**Privacy policy URL:** https://bussinessfinder-327f5.web.app/privacy
+**Contact email:** the support email from `site/` · **Website:** https://duhuze.web.app
+**Privacy policy URL:** https://duhuze.web.app/privacy
 
 ### Graphics
 
@@ -66,7 +66,7 @@ Umutekano: menyesha ikibazo, hagarika uwo ushaka, kandi usibe konti yawe igihe c
 ## App content forms (Play Console → Policy → App content)
 
 ### Privacy policy
-`https://bussinessfinder-327f5.web.app/privacy`
+`https://duhuze.web.app/privacy`
 
 ### Ads
 **No**, the app does not contain ads.
@@ -92,7 +92,7 @@ available; use the email account to review."
 ### Data safety
 
 Data is **encrypted in transit**: Yes. Users can **request deletion**: Yes
-(Settings → Delete Account, and https://bussinessfinder-327f5.web.app/delete-account).
+(Settings → Delete Account, and https://duhuze.web.app/delete-account).
 Shared with third parties (in Google's meaning): **No**. Google Firebase and
 Cloudflare are *service providers* processing data for us, which Google does
 not count as sharing.
@@ -118,10 +118,10 @@ info (MoMo happens in MTN's own menu), advertising ID, crash logs/analytics.
 
 ### Account deletion
 - In the app: **Yes**, Settings → Delete Account.
-- Web link: `https://bussinessfinder-327f5.web.app/delete-account`
+- Web link: `https://duhuze.web.app/delete-account`
 
 ### Child safety standards (required for social apps)
-- Standards URL: `https://bussinessfinder-327f5.web.app/child-safety`
+- Standards URL: `https://duhuze.web.app/child-safety`
 - In-app reporting: Yes (Report → "Child safety").
 - Child safety point of contact: your name and the support email.
 

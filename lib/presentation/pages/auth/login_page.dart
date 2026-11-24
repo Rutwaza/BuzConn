@@ -585,7 +585,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     const SizedBox(height: 8),
                     Center(
                       child: Text(
-                        tr('Sign in to spotlight your work'),
+                        tr('Sign in to share your work'),
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           fontSize: 16,

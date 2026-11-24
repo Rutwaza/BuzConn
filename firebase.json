@@ -32,6 +32,7 @@
     "singleProjectMode": true
   },
   "hosting": {
+    "site": "duhuze",
     "public": "site",
     "cleanUrls": true,
     "trailingSlash": false,

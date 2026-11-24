@@ -34,6 +34,25 @@ Release tools (PowerShell, in `tools/`): `create-upload-key.ps1` (once),
 `build-release.ps1` (every release). Public website pages: `site/` (deployed
 by `deploy.ps1` as Firebase Hosting, refuses while `CHANGE_ME` placeholders remain).
 
+### Names: what users see vs. internal names
+
+Everything users and Google Play see is **Duhuze**: app name, icon, app id
+`rw.duhuze.app` (after `tools/register-android-app.ps1`), website
+**https://duhuze.web.app** (Firebase Hosting site `duhuze`), store listing.
+
+These old names stay **on purpose**. They are invisible to users, and changing them would break things:
+
+| Internal name | Why it stays |
+| --- | --- |
+| Firebase project id `bussinessfinder-327f5` | Google never allows renaming a project id. Moving to a new project means moving every user and all data. |
+| Dart package `businessfinder` (imports `package:businessfinder/...`) | Only the code sees it; renaming touches every file for no user benefit. |
+| Kotlin namespace `com.example.bussinessfinder` (MainActivity) | The namespace does not have to match the app id; Play only sees `rw.duhuze.app`. |
+| `spotlight/privacy`, `spotlight/calls` method channels | Names shared between Dart and Kotlin; both sides must change together. |
+| `spotlight-ghost-v2` in the ghost scramble | **Never change**: old ghost messages and the archive would no longer decode. |
+| Notification channel ids `spotlight_chat/_activity/_calls` | Their *names* already say "Duhuze Chats" etc.; the ids are used by the server's push messages. |
+| R2 buckets `bussinessfinder-public/-private` | Bucket names cannot be renamed; media URLs depend on them. |
+| Folder `BussFinder\bussinessfinder` | Only on your PC. Rename the folder any time if you like (close VS Code / Android Studio first). |
+
 ### Deploying (always use the script)
 
 ```powershell

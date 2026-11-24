@@ -1936,7 +1936,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     child: Icon(Icons.post_add_rounded, color: Colors.white),
                   ),
                   title: Text(tr('Create post')),
-                  subtitle: Text(tr('Share your next spotlight post')),
+                  subtitle: Text(tr('Share your next post on Duhuze')),
                   onTap: () => Navigator.of(context).pop('post'),
                 ),
                 ListTile(

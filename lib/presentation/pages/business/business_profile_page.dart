@@ -1217,7 +1217,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                       TileLayer(
                         urlTemplate:
                             'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'businessfinder',
+                        userAgentPackageName: AppConstants.mapUserAgent,
                       ),
                       MarkerLayer(
                         markers: [
@@ -1509,7 +1509,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
       final request = await client.getUrl(uri);
       request.headers.set(
         HttpHeaders.userAgentHeader,
-        'businessfinder/1.0 (desktop-profile-map)',
+        'rw.duhuze.app/1.0 (desktop-profile-map)',
       );
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();

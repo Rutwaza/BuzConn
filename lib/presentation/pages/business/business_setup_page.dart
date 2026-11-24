@@ -698,7 +698,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'businessfinder',
+          userAgentPackageName: AppConstants.mapUserAgent,
         ),
         if (point != null)
           MarkerLayer(
