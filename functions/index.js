@@ -23,6 +23,10 @@ Object.assign(exports, require("./social"));
 // eslint-disable-next-line no-unused-vars
 const {_internals: _feedInternals, ...feedFunctions} = require("./feed");
 Object.assign(exports, feedFunctions);
+// Ghost messages: encrypted server-side archive + admin-only decrypt. See ghost.js.
+// eslint-disable-next-line no-unused-vars
+const {_ghostInternals, ...ghostFunctions} = require("./ghost");
+Object.assign(exports, ghostFunctions);
 
 const R2_ACCOUNT_ID = defineString("R2_ACCOUNT_ID");
 const R2_PUBLIC_BUCKET_NAME = defineString("R2_PUBLIC_BUCKET_NAME");

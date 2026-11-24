@@ -16,6 +16,21 @@ Pop-Location
 Write-Host "`n== Firebase sign-in ==" -ForegroundColor Cyan
 firebase login   # says "Already logged in" if you are signed in
 
+Write-Host "`n== Ghost archive key ==" -ForegroundColor Cyan
+firebase functions:secrets:access GHOST_ARCHIVE_KEY --project $project *> $null
+if ($LASTEXITCODE -ne 0) {
+  # First time only: make a random 32-byte key and store it in Secret Manager.
+  $bytes = New-Object byte[] 32
+  [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+  $tmp = New-TemporaryFile
+  [IO.File]::WriteAllText($tmp, [Convert]::ToBase64String($bytes))
+  firebase functions:secrets:set GHOST_ARCHIVE_KEY --data-file $tmp --project $project
+  Remove-Item $tmp
+  Write-Host "Ghost archive key created (kept safely in Google Secret Manager)." -ForegroundColor Green
+} else {
+  Write-Host "Ghost archive key already exists - keeping it."
+}
+
 Write-Host "`n== Rules and indexes ==" -ForegroundColor Cyan
 firebase deploy --only firestore:rules,firestore:indexes,database --project $project
 
@@ -27,7 +42,8 @@ $groups = @(
   @('onUserFollowTimeline','onPageFollowTimeline','userSearchKeywords','pageSearchKeywords'),
   @('countNotificationCreated','countNotificationUpdated','countNotificationDeleted'),
   @('setEntityActive','exportEntityData','exportChatBetweenUsers'),
-  @('phase2Maintenance','phase3Maintenance')
+  @('phase2Maintenance','phase3Maintenance'),
+  @('archiveGhostMessage','decryptGhostArchive')
 )
 $failed = @()
 $i = 0

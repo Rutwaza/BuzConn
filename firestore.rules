@@ -276,6 +276,11 @@ service cloud.firestore {
     }
 
     // Admin activity log (written by Cloud Functions only).
+    // Encrypted copies of ghost messages. Only Cloud Functions touch these.
+    match /ghost_archive/{id} {
+      allow read, write: if false;
+    }
+
     match /admin_events/{eventId} {
       allow read: if isSuperAdmin();
       allow create, update, delete: if false;
