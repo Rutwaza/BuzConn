@@ -15,10 +15,24 @@ The short version of everything important. Details are further down.
 | 1 | Security rules, rename to Duhuze, admin claim | Live |
 | 2 | Fast chat (no transactions, offline cache, paging), likes/comments as subcollections, RTDB presence/typing | Live |
 | 3 | Video compression, reel preloading, server feeds (Reels, Following timelines, trending), keyword search, unread badge | Live |
-| 4 | Location in chat (live + background), ghost archive, Shop + MoMo Pay | Code done, **deploy + test on phones** |
-| 4 (next) | Status, Kinyarwanda, lite mode | Not started |
+| 4 | Location in chat (live + background), ghost archive, Shop + MoMo Pay, **Status** (24h), **Kinyarwanda**, **Lite mode** | Code done; deploy + phone test |
+| 5 | Release readiness: account deletion (server), report & block, legal website, app id `rw.duhuze.app`, release signing, API 36, store assets, docs | Code done; follow **docs/RELEASE.md** |
 
 Work happens on the Git branch `phase-1`; `main` is the old app.
+
+**Release documentation** (start here when you get a phone):
+
+| Doc | Use |
+| --- | --- |
+| [docs/TESTING.md](docs/TESTING.md) | Phone test checklist, feature by feature |
+| [docs/RELEASE.md](docs/RELEASE.md) | From this repo to Google Play, first time and every update |
+| [docs/PLAY_LISTING.md](docs/PLAY_LISTING.md) | Store texts, images and every Play Console form answer |
+| [docs/MODERATION.md](docs/MODERATION.md) | Reports, blocks, child safety, ghost archive use |
+
+Release tools (PowerShell, in `tools/`): `create-upload-key.ps1` (once),
+`register-android-app.ps1` (once, and again with the Play signing SHA-1),
+`build-release.ps1` (every release). Public website pages: `site/` (deployed
+by `deploy.ps1` as Firebase Hosting, refuses while `CHANGE_ME` placeholders remain).
 
 ### Deploying (always use the script)
 
@@ -94,10 +108,15 @@ Order states (rules allow only these moves): `pending_payment → paid_claimed �
 - [ ] **One-time jobs:** when Firestore `_maintenance/phase2` and `_maintenance/phase3` both show `done: true`, delete `phase2Maintenance` (social.js) and `phase3Maintenance` (feed.js), then deploy.
 - [ ] **Map tiles:** chat maps use OpenStreetMap's free server (`AppConstants.mapTileUrl`). Switch to a paid provider (MapTiler, Stadia, …) before a big launch.
 - [ ] **Live location:** works in the background through an Android foreground service (`lib/features/chat/data/live_location_service.dart`). It stops if the user swipes the app away, and resumes when that chat is opened again. Google Play will ask why the app uses `FOREGROUND_SERVICE_LOCATION`; the answer is "live location sharing in chat".
-- [ ] **App id:** still `com.example.bussinessfinder`. Planned `rw.duhuze.app`, which needs a new Android app registered in Firebase and a new `google-services.json`.
+- [ ] **App id:** run `tools/register-android-app.ps1` (docs/RELEASE.md step 4). Until then builds keep `com.example.bussinessfinder`.
 - [ ] **Separate dev and production Firebase projects** before real users arrive.
 - [ ] **Firebase Functions SDK:** `firebase-functions` is on v5 (deploy warns "outdated"). Upgrade it with care, because it has breaking changes.
 - [ ] **Rules tests:** run them after every change to `firestore.rules` (`cd rules-tests; npm test`, needs Java).
+- [ ] **Website placeholders:** replace `CHANGE_ME_EMAIL` / `CHANGE_ME_OWNER` in `site/*.html`, then `deploy.ps1` publishes them.
+- [ ] **Kinyarwanda review:** a native speaker reads `lib/core/i18n/rw_strings.dart` (drafted with AI help). Server notification texts (functions) are still English only.
+- [ ] **NCSA registration:** Rwanda's data protection law requires registering as a data controller; storing data with Google/Cloudflare outside Rwanda needs their authorization.
+- [ ] **Admin emails** for report alerts: `ADMIN_EMAILS` in `functions/moderation.js`.
+- [ ] **R2 media of expired statuses** is not deleted yet (only the Firestore docs). Add an R2 lifecycle rule for `public/post-*/…/status/` or a cleanup job when storage grows.
 
 ### Where the data lives
 
@@ -110,6 +129,9 @@ Order states (rules allow only these moves): `pending_payment → paid_claimed �
 | `timelines/{uid}/items` | Following feed | Server only |
 | `chats/{id}/messages` | Messages (incl. `location`, live location fields) | Participants |
 | `ghost_archive` | Encrypted ghost copies | Server only, nobody reads from the app |
+| `statuses`, `statuses/{id}/views` | 24h statuses and who viewed them | Owner creates/deletes; viewer adds own view; server counts + cleans up hourly |
+| `users/{uid}/blocked/{otherUid}` | People I blocked | Only me |
+| `reports` | Reports of posts/users/chats/statuses | Anyone creates; admins read |
 | `notifications` | In-app + push notifications | Server only |
 | `admin_events` | Admin actions log | Server only |
 | Realtime DB `status/{uid}`, `typing/{chatId}/{uid}` | Online + typing | Each user for themselves |
@@ -130,7 +152,9 @@ These are account identifiers only. Passwords, recovery codes, API secrets, serv
 - Firebase client options: `lib/firebase_options.dart`
 - Firestore rules: `firestore.rules`
 - Realtime Database rules: `database.rules.json`
-- Cloud Functions (Node.js 22): `functions/` (`index.js` media/push/admin, `social.js` likes/comments/notifications, `feed.js` feeds/search, `ghost.js` ghost archive, `shop.js` + `payments/` shop and payments, `scripts/` owner tools)
+- Cloud Functions (Node.js 22): `functions/` (`index.js` media/push/admin, `social.js` likes/comments/notifications, `feed.js` feeds/search, `ghost.js` ghost archive, `shop.js` + `payments/` shop and payments, `status.js` 24h statuses, `account.js` account deletion, `moderation.js` report alerts, `scripts/` owner tools)
+- Translations: `lib/core/i18n/` (`tr()` + `rw_strings.dart`); test: `test/translations_test.dart`
+- Release: `docs/`, `tools/`, `site/` (public legal pages), `store-assets/` (Play icon + feature graphic)
 - Deploy script: `deploy.ps1`; security-rules tests: `rules-tests/`
 - Android app: `android/`
 - Windows desktop runner and Inno Setup installer: `windows/`
@@ -289,23 +313,18 @@ Avoid `firebase deploy --only functions` with no names: it updates all ~32 funct
 
 ## Build artifacts
 
-### Android development APK
+### Android (Google Play): see docs/RELEASE.md
+
+Everything for Android releases is in **[docs/RELEASE.md](docs/RELEASE.md)**:
+upload key, app id `rw.duhuze.app`, `tools/build-release.ps1` (App Bundle +
+APKs + debug symbols), Play Console, closed testing and production rollout.
+Store texts and form answers: [docs/PLAY_LISTING.md](docs/PLAY_LISTING.md).
+
+Quick development APK (debug-signed, for your own phone only):
 
 ```powershell
-flutter build apk --debug --no-pub
+flutter build apk --release
 ```
-
-Output: `build/app/outputs/flutter-apk/app-debug.apk`.
-
-### Android release App Bundle
-
-```powershell
-flutter build appbundle --release
-```
-
-Output: `build/app/outputs/bundle/release/app-release.aab`.
-
-**Do not upload a release artifact from this checkout yet.** `android/app/build.gradle.kts` currently assigns the debug signing config to release builds, and the application ID is the development ID `com.example.bussinessfinder`. Set up a dedicated upload keystore and release signing configuration first (instructions below).
 
 ### Windows release and installer
 
@@ -321,86 +340,8 @@ Build the installer with Inno Setup 6 installed:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\installer\build_installer.ps1
 ```
 
-The installer script runs a Windows release build and produces `build/windows/installer-output/SpotLight-Setup-1.0.0-x64.exe`. If `windows_google_oauth.json` exists, it supplies the Windows OAuth Dart defines to that build. Update the version in `windows/installer/Spotlight.iss` when making a new installer. This is a Windows x64 setup executable containing the app and runtime files; it installs multiple files on the friend's PC. Sign the app and installer with a trusted code-signing certificate before broad distribution to reduce SmartScreen warnings. Windows OAuth review still applies.
+The installer script runs a Windows release build and produces `build/windows/installer-output/Duhuze-Setup-<version>-x64.exe`. If `windows_google_oauth.json` exists, it supplies the Windows OAuth Dart defines to that build. Update the version in `windows/installer/Duhuze.iss` when making a new installer. This is a Windows x64 setup executable containing the app and runtime files; it installs multiple files on the friend's PC. Sign the app and installer with a trusted code-signing certificate before broad distribution to reduce SmartScreen warnings. Windows OAuth review still applies.
 
-## Production readiness checklist
-
-The following items are **not all complete in the current checkout**. Finish and verify them on a staging project and release-signed builds before production:
-
-### 1. Create a production identity
-
-- Choose the final, globally unique Android application ID (for example, a domain you control in reverse-DNS form). Current value is `com.example.bussinessfinder` and is a placeholder.
-- Update `applicationId`, `namespace`, the Kotlin package declaration/path for `MainActivity`, and any Android manifest/provider references together.
-- Register a new Android app under the production Firebase project using that exact ID. Add the final package/SHA certificates to Firebase Auth/Google Sign-In and Maps key restrictions; download the matching `google-services.json`.
-- The app ID can change before first Play publication. Once published, changing it creates a different Play app; users cannot update the original listing with a changed ID. Treat the chosen ID as permanent.
-- Keep development, staging and production Firebase projects separate. Do not let debug/dev builds write to production data.
-
-### 2. Configure release signing and versioning
-
-- Generate a dedicated upload keystore and store it outside source control with a secure backup. Never lose it or share its passwords.
-- Create an ignored `android/key.properties` with the keystore path, alias, and passwords. Add a release `signingConfig` that reads this file; remove the current debug signing config from `release`.
-- Register the upload certificate's SHA-1/SHA-256 in Firebase for Google sign-in. Play App Signing has a separate app-signing certificate: add that SHA certificate in Firebase too after Play Console creates it, otherwise Google sign-in can fail for Play-installed builds.
-- Enable Play App Signing and upload an AAB signed with the upload key.
-- Increment `version:` in `pubspec.yaml` for every Play release (`versionName+versionCode`); current value is `1.0.0+1`.
-- Build a signed AAB and install/test the corresponding Play internal/closed-test build. Debug builds do not prove release signing, auth fingerprints, permissions or notification behavior.
-
-### 3. Firebase, Functions and Cloudflare production setup
-
-- Configure Firebase Auth providers, email verification/reset templates, SMS regions/quotas, Google OAuth consent, authorized domains and abuse protections.
-- Deploy and review Firestore/Realtime Database rules. Verify a user cannot read or change another user's private profile, chat, calls, notifications or private media. The rules file is security-critical; have it reviewed and test both allowed and denied cases.
-- Deploy Functions from Node.js 22 sources; verify Functions secrets and R2 environment parameters in the production project. Confirm billing is active and configure budget alerts/monitoring. Budget alerts notify; they do not necessarily cap spending.
-- Verify private chat media downloads require chat membership and the private bucket has no public endpoint. Verify public media domain, CORS behavior if any web clients are later added, limits, deletion/retention and backups.
-- Check FCM on release-signed Android devices while app is foregrounded, backgrounded and force-stopped. Verify call/message notification content and deep links.
-- Restrict the Android Maps API key by final app ID and Play signing certificate. Rotate keys if they have ever been exposed or used without restrictions.
-- Configure logging/alerts and an incident response path. Review Firestore read/write volume, Function invocations, Cloud Build/Artifact Registry, R2 storage/operations and data egress costs.
-
-### 4. Account deletion and user data (release blocker)
-
-The current in-app delete action is incomplete for public release. It reauthenticates with an email/password credential, removes a subset of Firestore documents, then deletes the Firebase Auth user. It does **not** currently provide an external deletion request webpage, support every sign-in provider, or comprehensively remove related chat histories, R2 objects and all linked data. Partial cleanup can occur if deletion fails midway.
-
-Before Play submission, implement and verify a complete deletion workflow that:
-
-- Is discoverable inside the app and through a public web URL entered in Play Console.
-- Reauthenticates appropriately for email, Google and phone accounts.
-- Deletes or safely anonymizes all associated data and R2 files according to the stated retention policy, including shared-data decisions for other chat participants.
-- Handles retries and partial failures safely, and gives the user a clear completion/status message.
-- Is accurately disclosed in the privacy policy and Play Data safety/account deletion forms.
-
-Google Play requires an in-app path and an external web resource for account deletion requests when users can create accounts. It requires deleting associated user data, subject only to clearly disclosed legitimate retention. See the official [account deletion requirement](https://support.google.com/googleplay/android-developer/answer/13327111) and [User Data policy](https://support.google.com/googleplay/android-developer/answer/10144311).
-
-### 5. Privacy, safety and product compliance
-
-- Publish a privacy policy on a stable public URL and link it from both the app and Play Console. It must describe Firebase, Cloudflare R2, authentication, profile content, location use, messages/media, notifications/device tokens, retention, deletion, contact details and any sharing/processors truthfully.
-- Complete the Play Data safety form based on the real production SDKs and data flows; do not guess. Also complete app access instructions, ads declaration (if applicable), target audience/content, content rating, government/financial declarations if applicable, and reviewer credentials for gated parts of the app.
-- SpotLight contains user-generated posts, profile content and chat. Add and operate appropriate reporting/blocking/moderation processes, terms/community rules and a support contact before opening it to the public.
-- Explain and request camera, microphone, media/files, notifications, and location permissions only when the relevant feature is used. Check current Android permission behavior on supported OS versions.
-- Confirm the app meets current target SDK requirements. As of **18 November 2026**, Google Play says new apps and updates must target Android 16 / API 36 or higher from 31 August 2026. Check the live [target API policy](https://support.google.com/googleplay/android-developer/answer/11926878) before each submission because dates and requirements change.
-- Confirm age/content rating and countries where SMS phone authentication, Maps, and R2 access work and are supported.
-
-## Publish on Google Play: end-to-end outline
-
-1. Create/verify the Play Console developer account and complete identity/payment profile requirements.
-2. Pick the permanent Android package ID; create the matching production Firebase Android app and OAuth/Maps setup.
-3. Finish release signing and Play App Signing; safely back up the upload key. Google Play signs user-delivered APKs when Play App Signing is configured. See [Android app signing](https://developer.android.com/studio/publish/app-signing).
-4. Finish the account deletion blocker, privacy policy, terms, moderation/reporting, data retention and production Firebase/R2 setup.
-5. Set final app name, launcher icon, version number, screenshots, feature graphic, short/full description, support email, website and required region listings.
-6. Build and inspect a signed release AAB:
-
-   ```powershell
-   flutter clean
-   flutter pub get
-   flutter build appbundle --release
-   ```
-
-   Confirm `build/app/outputs/bundle/release/app-release.aab` is signed with the upload key, targets the currently required API, has the final application ID, and uses production—not development—services.
-
-7. Create the app in Play Console. Complete App content and Data safety, provide privacy/account-deletion URLs and test access instructions, then upload the AAB to Internal testing.
-8. Test real devices for sign-up/login, email verification/reset, phone OTP, Google sign-in, profile completion, feeds/video, upload/download (including private media), chat requests, calls, push notifications, account deletion, upgrade/install behavior, performance and crash reporting.
-9. Address Play pre-launch report and policy warnings. Run closed testing and collect feedback.
-10. If the Play Console account is a **personal developer account created after 13 November 2023**, the current requirement is at least 12 testers opted into a closed test continuously for 14 days, then an application for production access. Organization accounts and other account histories may differ; check the current [testing requirement](https://support.google.com/googleplay/android-developer/answer/14151465).
-11. Submit the production release for review and roll out gradually. Watch crashes, ANRs, sign-in, Functions/R2 billing and user support after launch.
-
-For a first Play release, the official Android guidance recommends an Android App Bundle and Play App Signing. Read the current [upload bundle guide](https://developer.android.com/studio/publish/upload-bundle) and Play Console instructions at release time.
 
 ## Troubleshooting notes
 
@@ -426,7 +367,7 @@ For a first Play release, the official Android guidance recommends an Android Ap
 | --- | --- |
 | Firebase project ID | `bussinessfinder-327f5` |
 | Cloud Functions region | `us-central1` |
-| Android application ID | `com.example.bussinessfinder` (development placeholder; choose final ID before Play) |
+| Android application ID | `rw.duhuze.app` once `tools/register-android-app.ps1` has run; until then builds use `com.example.bussinessfinder` |
 | Android/Flutter version | `1.0.0+1` |
 | Cloud Functions Node runtime | `22` |
 | Maximum media upload size | `250 MB` |

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:businessfinder/core/widgets/legal_links.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 
 import 'package:flutter/material.dart';
@@ -366,6 +367,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
               height: 54,
               backgroundColor: const Color(0xFF1769AA),
             ),
+            const SizedBox(height: 12),
+            const LegalConsentText(),
             const SizedBox(height: 22),
             Row(
               children: [
@@ -597,6 +600,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                       onPressed: _handleRegister,
                       isLoading: _isLoading,
                     ),
+                    const SizedBox(height: 12),
+                    const LegalConsentText(),
                     const SizedBox(height: 24),
                     Row(
                       children: [

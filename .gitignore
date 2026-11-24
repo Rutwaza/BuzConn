@@ -136,3 +136,7 @@ app.*.map.json
 
 # Decrypted ghost archive exports (scripts/open-ghost-archive.js)
 functions/ghost-exports/
+
+# Release builds (tools/build-release.ps1) and backups
+release/
+android/app/google-services.json.bak

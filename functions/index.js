@@ -31,6 +31,10 @@ Object.assign(exports, ghostFunctions);
 Object.assign(exports, require("./shop"));
 // Status (24h stories): view counter + hourly cleanup. See status.js.
 Object.assign(exports, require("./status"));
+// Account deletion (Google Play requirement). See account.js.
+Object.assign(exports, require("./account"));
+// Moderation: admin alert for each report. See moderation.js.
+Object.assign(exports, require("./moderation"));
 
 const R2_ACCOUNT_ID = defineString("R2_ACCOUNT_ID");
 const R2_PUBLIC_BUCKET_NAME = defineString("R2_PUBLIC_BUCKET_NAME");
@@ -568,6 +572,8 @@ function buildTitle(type, fromName) {
       return "New like";
     case "order":
       return "Duhuze Shop";
+    case "report":
+      return "Duhuze report";
     default:
       return "Duhuze";
   }

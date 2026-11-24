@@ -1,4 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:businessfinder/core/widgets/legal_links.dart';
+import 'package:businessfinder/core/services/r2_storage_service.dart';
 import 'package:businessfinder/core/services/lite_mode_service.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -40,7 +42,7 @@ class _SettingsPageState extends State<SettingsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              tr('This permanently deletes your account, profile, posts, pages, and outgoing follows. Enter your password to confirm.'),
+              tr('This permanently deletes your account, profile, posts, pages, statuses, comments and follows. Enter your password to confirm.'),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -74,107 +76,106 @@ class _SettingsPageState extends State<SettingsPage> {
     return password;
   }
 
-  Future<void> _deleteOwnedDocuments({
-    required String collection,
-    required String field,
-    required String userId,
-  }) async {
-    final firestore = FirebaseFirestore.instance;
-    while (true) {
-      final snapshot = await firestore
-          .collection(collection)
-          .where(field, isEqualTo: userId)
-          .limit(400)
-          .get();
-      if (snapshot.docs.isEmpty) return;
-      final batch = firestore.batch();
-      for (final document in snapshot.docs) {
-        batch.delete(document.reference);
-      }
-      await batch.commit();
-    }
+  Future<bool> _confirmDeleteByTyping() async {
+    final controller = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(tr('Delete your account?')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(tr('This permanently deletes your account, profile, posts, pages, statuses, comments and follows. Type DELETE to confirm.')),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'DELETE',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(tr('Cancel')),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.of(dialogContext)
+                .pop(controller.text.trim().toUpperCase() == 'DELETE'),
+            child: Text(tr('Delete account')),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return ok == true;
   }
 
+  /// Google Play requires that every user can delete their account in the
+  /// app. The server (functions/account.js -> deleteAccount) removes the data;
+  /// it only accepts a sign-in from the last 15 minutes.
   Future<void> _deleteAccount() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final password = await _askForAccountDeletionPassword();
-    if (password == null || !mounted) return;
-    if (password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('Enter your password to continue.'))),
-      );
-      return;
-    }
-
-    final hasPasswordLogin =
+    final messenger = ScaffoldMessenger.of(context);
+    final hasPasswordLogin = user.email != null &&
         user.providerData.any((provider) => provider.providerId == 'password');
-    if (!hasPasswordLogin || user.email == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            tr('This account has no password sign-in. Add an email and password before deleting it.'),
-          ),
-        ),
-      );
-      return;
+
+    if (hasPasswordLogin) {
+      final password = await _askForAccountDeletionPassword();
+      if (password == null || !mounted) return;
+      if (password.isEmpty) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(tr('Enter your password to continue.'))),
+        );
+        return;
+      }
+      setState(() => _isDeletingAccount = true);
+      try {
+        await user.reauthenticateWithCredential(
+          EmailAuthProvider.credential(email: user.email!, password: password),
+        );
+      } on FirebaseAuthException catch (error) {
+        if (mounted) setState(() => _isDeletingAccount = false);
+        messenger.showSnackBar(SnackBar(
+          content: Text(error.code == 'wrong-password' || error.code == 'invalid-credential'
+              ? tr('That password did not match this account.')
+              : (error.message ?? tr('Account deletion failed. Please try again.'))),
+        ));
+        return;
+      }
+    } else {
+      final lastSignIn = user.metadata.lastSignInTime;
+      if (lastSignIn == null ||
+          DateTime.now().difference(lastSignIn) > const Duration(minutes: 14)) {
+        messenger.showSnackBar(SnackBar(
+          content: Text(tr('For your safety, sign out and sign in again, then delete your account within 15 minutes.')),
+          duration: const Duration(seconds: 6),
+        ));
+        return;
+      }
+      if (!await _confirmDeleteByTyping() || !mounted) return;
+      setState(() => _isDeletingAccount = true);
     }
 
-    setState(() => _isDeletingAccount = true);
     try {
-      await user.reauthenticateWithCredential(
-        EmailAuthProvider.credential(email: user.email!, password: password),
-      );
       await user.getIdToken(true);
-
-      await _deleteOwnedDocuments(
-        collection: 'posts',
-        field: 'ownerId',
-        userId: user.uid,
-      );
-      await _deleteOwnedDocuments(
-        collection: 'businesses',
-        field: 'ownerId',
-        userId: user.uid,
-      );
-      await _deleteOwnedDocuments(
-        collection: 'user_follows',
-        field: 'followerId',
-        userId: user.uid,
-      );
-      await _deleteOwnedDocuments(
-        collection: 'page_follows',
-        field: 'followerId',
-        userId: user.uid,
-      );
-      await _deleteOwnedDocuments(
-        collection: 'notifications',
-        field: 'toUserId',
-        userId: user.uid,
-      );
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .delete();
-      await user.delete();
+      await R2StorageService.instance.callFunction('deleteAccount', {});
+      await FirebaseAuth.instance.signOut();
       if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text(tr('Your account was deleted.'))));
       context.go(AppRoutes.login);
-    } on FirebaseAuthException catch (error) {
-      if (!mounted) return;
-      final message = switch (error.code) {
-        'wrong-password' || 'invalid-credential' =>
-          'That password did not match this account.',
-        'requires-recent-login' =>
-          'Sign out, sign in again, then retry account deletion.',
-        _ => error.message ?? 'Account deletion failed. Please try again.',
-      };
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Account deletion failed: $error')),
-      );
+      final text = error.toString().contains('recent-login-required')
+          ? tr('For your safety, sign out and sign in again, then delete your account within 15 minutes.')
+          : '${tr('Account deletion failed. Please try again.')} ($error)';
+      messenger.showSnackBar(SnackBar(content: Text(text)));
     } finally {
       if (mounted) setState(() => _isDeletingAccount = false);
     }
@@ -289,6 +290,24 @@ class _SettingsPageState extends State<SettingsPage> {
             onTap: () => context.push(AppRoutes.profile),
           ),
           _GhostModeSetting(),
+          _SettingsTile(
+            icon: Icons.privacy_tip_outlined,
+            title: tr('Privacy policy'),
+            subtitle: tr('What we collect and your rights'),
+            onTap: () => openLegalPage('privacy'),
+          ),
+          _SettingsTile(
+            icon: Icons.description_outlined,
+            title: tr('Terms of use'),
+            subtitle: tr('Community rules'),
+            onTap: () => openLegalPage('terms'),
+          ),
+          _SettingsTile(
+            icon: Icons.child_care_rounded,
+            title: tr('Child safety standards'),
+            subtitle: tr('How to report harm to children'),
+            onTap: () => openLegalPage('child-safety'),
+          ),
           const SizedBox(height: 18),
           _SettingsTile(
             icon: Icons.delete_forever_outlined,

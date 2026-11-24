@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/features/moderation/moderation.dart';
 import 'package:businessfinder/core/services/lite_mode_service.dart';
 import 'package:businessfinder/features/status/ui/status_bar.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
@@ -1136,7 +1137,10 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
             }
           }
 
-          final filtered = posts;
+          // Hide people I blocked (moderation.dart).
+          final filtered = posts
+              .where((p) => !BlockService.instance.isBlocked(p.ownerId))
+              .toList();
 
           final latestHighlightPosts = <String, Post>{};
           for (final post in filtered) {
@@ -3925,6 +3929,27 @@ class PostCard extends StatelessWidget {
                               value: 'delete',
                               child: Text(tr('Delete')),
                             ),
+                          ],
+                        )
+                      else
+                        PopupMenuButton<String>(
+                          onSelected: (value) {
+                            final name = post.businessName.isNotEmpty
+                                ? post.businessName
+                                : tr('this user');
+                            if (value == 'report') {
+                              showReportSheet(context,
+                                  targetType: 'post',
+                                  targetId: post.id,
+                                  targetOwnerId: post.ownerId,
+                                  preview: post.content);
+                            } else if (value == 'block') {
+                              confirmBlock(context, userId: post.ownerId, name: name);
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            PopupMenuItem(value: 'report', child: Text(tr('Report post'))),
+                            PopupMenuItem(value: 'block', child: Text(tr('Block this person'))),
                           ],
                         ),
                     ],

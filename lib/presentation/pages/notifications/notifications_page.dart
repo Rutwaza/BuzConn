@@ -287,7 +287,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final preview = data['preview'] as String?;
       final key = '$type|$fromUserId|${postId ?? ''}|${chatId ?? ''}'
           // Each order update is its own line.
-          '${type == 'order' ? '|${doc.id}' : ''}';
+          '${type == 'order' || type == 'report' ? '|${doc.id}' : ''}';
 
       final last = grouped.isNotEmpty ? grouped.last : null;
       final canMerge = last != null &&
@@ -679,6 +679,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
             : ' commented on your post';
       case 'order':
         return ': ${item.preview ?? 'order update'}';
+      case 'report':
+        return ': ${item.preview ?? 'new report'} (Firestore > reports)';
       case 'follow':
         return item.count > 1
             ? ' and ${item.count - 1} others followed you'

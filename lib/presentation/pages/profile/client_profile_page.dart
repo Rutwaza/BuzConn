@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:businessfinder/features/moderation/moderation.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'dart:typed_data';
 
@@ -278,7 +279,18 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     return Scaffold(
-      appBar: AppBar(title: Text(tr('Profile'))),
+      appBar: AppBar(
+        title: Text(tr('Profile')),
+        actions: [
+          if (!_isSelf && FirebaseAuth.instance.currentUser != null)
+            IconButton(
+              tooltip: tr('Report or block'),
+              icon: const Icon(Icons.more_vert_rounded),
+              onPressed: () => showUserSafetySheet(context,
+                  userId: widget.userId, name: tr('this user')),
+            ),
+        ],
+      ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('users')

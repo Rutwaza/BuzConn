@@ -10,6 +10,7 @@
 #   firestore.rules         -> Firestore rules
 #   firestore.indexes.json  -> Firestore indexes
 #   database.rules.json     -> Realtime Database rules
+#   site/...                -> website (privacy, terms, delete-account pages)
 #   functions/<file>.js     -> only the functions defined in that file
 #   functions/package*.json, or setGlobalOptions in index.js -> all functions
 # The last deployed Git commit is kept in .deploy-state (not in Git).
@@ -51,7 +52,7 @@ foreach ($p in $map.PSObject.Properties) { $allFns += $p.Value }
 $targets = @()
 $fns = @()
 if ($All) {
-  $targets = @('firestore:rules', 'firestore:indexes', 'database')
+  $targets = @('firestore:rules', 'firestore:indexes', 'database', 'hosting')
   $fns = $allFns
 } elseif ($Functions) {
   $fns = $Functions | ForEach-Object { $_ -split ',' } | Where-Object { $_ }
@@ -59,6 +60,7 @@ if ($All) {
   if ($changed -contains 'firestore.rules') { $targets += 'firestore:rules' }
   if ($changed -contains 'firestore.indexes.json') { $targets += 'firestore:indexes' }
   if ($changed -contains 'database.rules.json') { $targets += 'database' }
+  if ($changed | Where-Object { $_ -like 'site/*' }) { $targets += 'hosting' }
   $everything = ($changed | Where-Object { $_ -match '^functions/package(-lock)?\.json$' }).Count -gt 0
   if ($changed -contains 'functions/index.js') {
     $diff = if ($last) { git diff $last -- functions/index.js } else { '' }
@@ -86,6 +88,17 @@ if (-not $targets -and -not $fns) {
   Write-Host "`nNothing to deploy - Firebase is already up to date." -ForegroundColor Green
   git rev-parse HEAD | Set-Content $stateFile
   exit 0
+}
+
+# The website must not go live with placeholders in the legal pages.
+if ($targets -contains 'hosting') {
+  $left = Select-String -Path 'site\*.html' -Pattern 'CHANGE_ME' -List
+  if ($left) {
+    Write-Host "`nWebsite NOT deployed: replace CHANGE_ME_EMAIL / CHANGE_ME_OWNER in:" -ForegroundColor Yellow
+    $left | ForEach-Object { Write-Host "  $($_.Path)" }
+    $targets = @($targets | Where-Object { $_ -ne 'hosting' })
+    $hostingSkipped = $true
+  }
 }
 
 # ---- 2. Prepare -------------------------------------------------------------
@@ -126,6 +139,10 @@ if ($failed.Count -gt 0) {
   Write-Host "`nThese failed: $($failed -join ', ')" -ForegroundColor Red
   Write-Host "Retry just them:  .\deploy.ps1 -Functions $(($failed | Where-Object { $_ -notmatch ':' }) -join ',')" -ForegroundColor Red
   exit 1
+}
+if ($hostingSkipped) {
+  Write-Host "`nDone, except the website (placeholders). Not saving .deploy-state so it is retried next time." -ForegroundColor Yellow
+  exit 0
 }
 git rev-parse HEAD | Set-Content $stateFile
 Write-Host "`nDone - deployed. Saved this point in .deploy-state." -ForegroundColor Green

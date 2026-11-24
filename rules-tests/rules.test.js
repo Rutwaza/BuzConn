@@ -277,3 +277,21 @@ test("status views: one per person, only the owner sees the list", async () => {
   await assertSucceeds(getDoc(doc(as(ALICE), "statuses/s9/views/bob")));
   await assertFails(getDoc(doc(as(EVE), "statuses/s9/views/bob")));
 });
+
+// Moderation ------------------------------------------------------------------
+test("reports: anyone can report, only admins read", async () => {
+  const r = {reporterId: BOB, targetType: "post", targetId: "p1", reason: "spam", details: "", status: "open"};
+  await assertSucceeds(setDoc(doc(as(BOB), "reports/r1"), r));
+  await assertFails(setDoc(doc(as(BOB), "reports/r2"), {...r, reporterId: ALICE}));
+  await assertFails(getDoc(doc(as(BOB), "reports/r1")));
+  await assertSucceeds(getDoc(doc(as(EVE, {admin: true}), "reports/r1")));
+});
+
+test("block: my list is private, and a blocked person cannot message me", async () => {
+  await assertSucceeds(setDoc(doc(as(ALICE), "users/alice/blocked/bob"), {createdAt: serverTimestamp()}));
+  await assertFails(getDoc(doc(as(BOB), "users/alice/blocked/bob")));
+  await assertFails(setDoc(doc(as(BOB), "chats/alice_bob/messages/b1"), {senderId: BOB, text: "hi"}));
+  await assertSucceeds(setDoc(doc(as(ALICE), "chats/alice_bob/messages/a1"), {senderId: ALICE, text: "hi"}));
+  await assertSucceeds(deleteDoc(doc(as(ALICE), "users/alice/blocked/bob")));
+  await assertSucceeds(setDoc(doc(as(BOB), "chats/alice_bob/messages/b2"), {senderId: BOB, text: "hi again"}));
+});

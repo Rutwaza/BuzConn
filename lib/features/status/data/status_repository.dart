@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../core/services/r2_storage_service.dart';
 import '../../../core/services/video_compressor.dart';
+import '../../moderation/moderation.dart';
 
 /// One status (story). It disappears 24 hours after it was posted: the app
 /// stops showing it at `expiresAt`, and the server deletes it within the hour
@@ -110,6 +111,7 @@ class StatusRepository {
     }
     final byOwner = <String, List<StatusItem>>{};
     for (final s in items) {
+      if (BlockService.instance.isBlocked(s.ownerId)) continue;
       byOwner.putIfAbsent(s.ownerId, () => []).add(s);
     }
     final groups = byOwner.entries.map((e) {

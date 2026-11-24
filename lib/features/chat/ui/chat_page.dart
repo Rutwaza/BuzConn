@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:businessfinder/features/moderation/moderation.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -725,6 +726,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       ),
                     );
                   }
+                } else if (value == 'safety') {
+                  if (otherUserId != null) {
+                    await showUserSafetySheet(context,
+                        userId: otherUserId,
+                        name: tr('this person'),
+                        reportType: 'chat',
+                        reportId: widget.chatId);
+                  }
                 } else if (value == 'join') {
                   _joinVideoCall();
                 } else if (value == 'clear') {
@@ -785,6 +794,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     child: Text(tr('Clear chat')),
                   ),
                 );
+                if (otherUserId != null && otherUserId.isNotEmpty) {
+                  items.add(PopupMenuItem(
+                    value: 'safety',
+                    child: Text(tr('Report or block')),
+                  ));
+                }
                 return items;
               },
             ),

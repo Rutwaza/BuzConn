@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../core/i18n/tr.dart';
+import '../../moderation/moderation.dart';
 import '../data/status_repository.dart';
 
 /// Full-screen status viewer. Tap right = next, tap left = back,
@@ -271,6 +272,20 @@ class _StatusViewerPageState extends State<StatusViewerPage>
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                           ),
                         ),
+                        if (!_isMine)
+                          IconButton(
+                            onPressed: () async {
+                              _pause(true);
+                              await showUserSafetySheet(context,
+                                  userId: _g.ownerId,
+                                  name: _g.name,
+                                  reportType: 'status',
+                                  reportId: s.id,
+                                  preview: s.text);
+                              if (mounted) _pause(false);
+                            },
+                            icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+                          ),
                         if (_isMine)
                           IconButton(
                             onPressed: _delete,
