@@ -12,6 +12,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../core/widgets/night_sky_background.dart';
 import '../../../core/widgets/spotlight_toast.dart';
 import '../../../core/services/windows_google_auth_service.dart';
 import 'email_verification_notice.dart';
@@ -155,7 +156,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       'phone': phone ?? user.phoneNumber,
       'createdAt': FieldValue.serverTimestamp(),
       'userType': 'client',
-      'fcmTokens': [],
       'themeMode': 'dark',
       'profileCompleted': false,
     });
@@ -399,9 +399,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     const ink = Color(0xFF172235);
     return WindowsAuthLayout(
       eyebrow: 'Welcome back',
-      title: 'Sign in to Spotlight',
+      title: 'Sign in to Duhuze',
       subtitle: 'Pick up where you left off and keep your network moving.',
-      footerPrompt: "New to Spotlight?",
+      footerPrompt: "New to Duhuze?",
       footerAction: 'Create account',
       onFooterTap: () => context.go(AppRoutes.register),
       form: Form(
@@ -540,18 +540,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         extendBodyBehindAppBar: true,
         body: Stack(
           children: [
-            Positioned.fill(
-              child: Opacity(
-                opacity: isDark ? 0.5 : 0.42,
-                child: Image.asset(
-                  'assets/images/chat_bg.gif',
-                  fit: BoxFit.cover,
-                  alignment: Alignment.center,
-                  filterQuality: FilterQuality.low,
-                  gaplessPlayback: true,
-                ),
+            if (!isDark)
+              const Positioned.fill(
+                child: IgnorePointer(child: NightSkyBackground()),
               ),
-            ),
             Positioned.fill(
               child: Container(
                 color: isDark
@@ -569,7 +561,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     // Header
                     const Center(
                       child: Text(
-                        'Welcome Back to Spotlight',
+                        'Welcome back to Duhuze',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 32,

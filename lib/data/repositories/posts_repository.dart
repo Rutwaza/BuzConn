@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../features/posts/data/engagement_repository.dart';
 import '../../data/models/post_model.dart';
 
 class PostsRepository {
@@ -117,239 +118,55 @@ class PostsRepository {
     return postRef.id;
   }
 
-  // Like/Unlike a post
+  // Phase 2: likes and comments are their own documents. These methods keep
+  // their old names so the screens did not need to change much.
+  // See lib/features/posts/data/engagement_repository.dart.
+  final CommentsRepository _comments = CommentsRepository();
+
   Future<void> toggleLike(String postId) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    final postRef = _firestore.collection('posts').doc(postId);
-    final postDoc = await postRef.get();
-
-    if (!postDoc.exists) return;
-
-    final post = Post.fromFirestore(postDoc);
-    final likes = List<String>.from(post.likes);
-
-    bool addedLike = false;
-    if (likes.contains(user.uid)) {
-      likes.remove(user.uid);
-    } else {
-      likes.add(user.uid);
-      addedLike = true;
-    }
-
-    await postRef.update({
-      'likes': likes,
-      'updatedAt': Timestamp.now(),
-    });
-
-    if (addedLike && post.ownerId != user.uid) {
-      final profile = await _currentUserProfile();
-      await _firestore.collection('notifications').add({
-        'toUserId': post.ownerId,
-        'fromUserId': user.uid,
-        'fromUserName': profile['name'] ?? 'User',
-        'fromUserImageUrl': profile['imageUrl'],
-        'postId': post.id,
-        'type': 'like',
-        'createdAt': FieldValue.serverTimestamp(),
-        'readAt': null,
-        'hidden': false,
-      });
-    }
+    if (_auth.currentUser == null) return;
+    await LikeStore.instance.toggle(postId);
   }
 
-  // Add comment to post
+  Stream<List<Comment>> watchComments(String postId) =>
+      _comments.watch(postId);
+
   Future<void> addComment(
     String postId,
     String content, {
     Comment? replyTo,
-  }) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    // Get user name
-    final userDoc = await _firestore.collection('users').doc(user.uid).get();
-    final userName = userDoc.data()?['name'] ?? 'Anonymous';
-
-    final comment = Comment(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      userId: user.uid,
-      userName: userName,
-      content: content,
-      createdAt: DateTime.now(),
-      replyToUserId: replyTo?.userId,
-      replyToUserName: replyTo?.userName,
-      replyToCommentId: replyTo?.id,
-    );
-
-    final postRef = _firestore.collection('posts').doc(postId);
-    final postDoc = await postRef.get();
-
-    if (!postDoc.exists) return;
-
-    final post = Post.fromFirestore(postDoc);
-    final comments = List<Comment>.from(post.comments);
-    comments.add(comment);
-
-    await postRef.update({
-      'comments': comments.map((c) => c.toMap()).toList(),
-      'updatedAt': Timestamp.now(),
-    });
-
-    if (post.ownerId != user.uid) {
-      final profile = await _currentUserProfile();
-      await _firestore.collection('notifications').add({
-        'toUserId': post.ownerId,
-        'fromUserId': user.uid,
-        'fromUserName': profile['name'] ?? 'User',
-        'fromUserImageUrl': profile['imageUrl'],
-        'postId': post.id,
-        'type': 'comment',
-        'createdAt': FieldValue.serverTimestamp(),
-        'readAt': null,
-        'hidden': false,
-      });
-      if (replyTo != null &&
-          replyTo.userId.isNotEmpty &&
-          replyTo.userId != user.uid &&
-          replyTo.userId != post.ownerId) {
-        await _firestore.collection('notifications').add({
-          'toUserId': replyTo.userId,
-          'fromUserId': user.uid,
-          'fromUserName': profile['name'] ?? 'User',
-          'fromUserImageUrl': profile['imageUrl'],
-          'postId': post.id,
-          'type': 'comment',
-          'preview': '@${replyTo.userName} $content',
-          'createdAt': FieldValue.serverTimestamp(),
-          'readAt': null,
-          'hidden': false,
-        });
-      }
-    }
-  }
+  }) =>
+      _comments.add(postId, content, replyTo: replyTo);
 
   Future<void> updateComment({
     required String postId,
     required String commentId,
     required String newContent,
-  }) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    final postRef = _firestore.collection('posts').doc(postId);
-    final postDoc = await postRef.get();
-    if (!postDoc.exists) return;
-
-    final post = Post.fromFirestore(postDoc);
-    final comments = List<Comment>.from(post.comments);
-    final index = comments.indexWhere((c) => c.id == commentId);
-    if (index == -1) return;
-    if (comments[index].userId != user.uid) return;
-
-    final updated = Comment(
-      id: comments[index].id,
-      userId: comments[index].userId,
-      userName: comments[index].userName,
-      content: newContent,
-      createdAt: comments[index].createdAt,
-      likes: comments[index].likes,
-      replyToUserId: comments[index].replyToUserId,
-      replyToUserName: comments[index].replyToUserName,
-      replyToCommentId: comments[index].replyToCommentId,
-    );
-    comments[index] = updated;
-
-    await postRef.update({
-      'comments': comments.map((c) => c.toMap()).toList(),
-      'updatedAt': Timestamp.now(),
-    });
-  }
+  }) =>
+      _comments.edit(postId, commentId, newContent);
 
   Future<void> toggleCommentLike({
     required String postId,
     required String commentId,
   }) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    final postRef = _firestore.collection('posts').doc(postId);
-    final postDoc = await postRef.get();
-    if (!postDoc.exists) return;
-
-    final post = Post.fromFirestore(postDoc);
-    final comments = List<Comment>.from(post.comments);
-    final index = comments.indexWhere((c) => c.id == commentId);
-    if (index == -1) return;
-
-    final likes = List<String>.from(comments[index].likes);
-    bool addedLike = false;
-    if (likes.contains(user.uid)) {
-      likes.remove(user.uid);
-    } else {
-      likes.add(user.uid);
-      addedLike = true;
-    }
-
-    comments[index] = Comment(
-      id: comments[index].id,
-      userId: comments[index].userId,
-      userName: comments[index].userName,
-      content: comments[index].content,
-      createdAt: comments[index].createdAt,
-      likes: likes,
-      replyToUserId: comments[index].replyToUserId,
-      replyToUserName: comments[index].replyToUserName,
-      replyToCommentId: comments[index].replyToCommentId,
+    final ref = _firestore
+        .collection('posts')
+        .doc(postId)
+        .collection('comments')
+        .doc(commentId);
+    final snap = await ref.get();
+    if (!snap.exists) return;
+    await _comments.toggleLike(
+      postId,
+      Comment.fromMap({...?snap.data(), 'id': snap.id}),
     );
-
-    await postRef.update({
-      'comments': comments.map((c) => c.toMap()).toList(),
-      'updatedAt': Timestamp.now(),
-    });
-
-    if (addedLike && comments[index].userId != user.uid) {
-      final profile = await _currentUserProfile();
-      await _firestore.collection('notifications').add({
-        'toUserId': comments[index].userId,
-        'fromUserId': user.uid,
-        'fromUserName': profile['name'] ?? 'User',
-        'fromUserImageUrl': profile['imageUrl'],
-        'postId': post.id,
-        'type': 'like',
-        'preview': 'liked your comment',
-        'readAt': null,
-        'hidden': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    }
   }
 
   Future<void> deleteComment({
     required String postId,
     required String commentId,
-  }) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    final postRef = _firestore.collection('posts').doc(postId);
-    final postDoc = await postRef.get();
-    if (!postDoc.exists) return;
-
-    final post = Post.fromFirestore(postDoc);
-    final comments = List<Comment>.from(post.comments);
-    final index = comments.indexWhere((c) => c.id == commentId);
-    if (index == -1) return;
-    if (comments[index].userId != user.uid) return;
-
-    comments.removeAt(index);
-
-    await postRef.update({
-      'comments': comments.map((c) => c.toMap()).toList(),
-      'updatedAt': Timestamp.now(),
-    });
-  }
+  }) =>
+      _comments.delete(postId, commentId);
 
   // Delete post (only by business owner)
   Future<void> deletePost(String postId) async {

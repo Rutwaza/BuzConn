@@ -52,6 +52,12 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
 
       if (userDoc.exists) {
         final data = userDoc.data()!;
+        if (data['profileCompleted'] == true) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) context.go(AppRoutes.dashboard);
+          });
+          return;
+        }
         setState(() {
           _nameController.text =
               (data['name'] ?? user.displayName ?? '').toString();
@@ -182,7 +188,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
         if (!Platform.isWindows) {
           try {
             await user.updateDisplayName(_nameController.text.trim());
-          } on FirebaseAuthException {
+          } catch (_) {
             // The Firestore profile remains the source of truth for the app UI.
           }
         }

@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:businessfinder/features/posts/data/engagement_repository.dart';
 import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
@@ -29,6 +31,9 @@ class PostDetailPage extends StatefulWidget {
 class _PostDetailPageState extends State<PostDetailPage> {
   final _commentController = TextEditingController();
   final _repo = PostsRepository();
+  // Comments are their own documents now (Phase 2): one live listener.
+  List<Comment> _serverComments = const [];
+  StreamSubscription<List<Comment>>? _commentsSub;
   late final PageController _pageController;
   int _mediaIndex = 0;
   VideoPlayerController? _videoController;
@@ -37,9 +42,17 @@ class _PostDetailPageState extends State<PostDetailPage> {
   String? _currentVideoUrl;
   final ValueNotifier<bool> _isMuted = ValueNotifier<bool>(false);
 
+  void _onLikesChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    LikeStore.instance.addListener(_onLikesChanged);
+    _commentsSub = _repo.watchComments(widget.postId).listen((comments) {
+      if (mounted) setState(() => _serverComments = comments);
+    }, onError: (_) {});
     _mediaIndex = widget.initialMediaIndex;
     _pageController = PageController(
       initialPage: _mediaIndex,
@@ -49,6 +62,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
 
   @override
   void dispose() {
+    LikeStore.instance.removeListener(_onLikesChanged);
+    _commentsSub?.cancel();
     _commentController.dispose();
     _pageController.dispose();
     if (Platform.isWindows) {
@@ -291,7 +306,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
             });
           }
 
-          final isLiked = user != null && post.likes.contains(user.uid);
+          final isLiked = user != null && LikeStore.instance.isLiked(post.id);
 
           return Column(
             children: [
@@ -419,11 +434,11 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               ),
                               onPressed: () => _repo.toggleLike(post.id),
                             ),
-                            Text('${post.likes.length}'),
+                            Text('${post.likeCount}'),
                             const SizedBox(width: 16),
                             const Icon(Icons.chat_bubble_outline),
                             const SizedBox(width: 6),
-                            Text('${post.comments.length}'),
+                            Text('${post.commentCount}'),
                             const SizedBox(width: 16),
                             IconButton(
                               icon: const Icon(Icons.forward),
@@ -462,8 +477,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
-                    if (post.comments.isEmpty) const Text('No comments yet'),
-                    ...post.comments.reversed.map(
+                    if (_serverComments.isEmpty) const Text('No comments yet'),
+                    ..._serverComments.reversed.map(
                       (c) => Padding(
                         padding: const EdgeInsets.symmetric(vertical: 6),
                         child: Row(

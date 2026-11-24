@@ -10,7 +10,6 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/constants/app_constants.dart';
-import '../../../core/services/social_notification_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
 
@@ -1398,10 +1397,6 @@ class _SearchPageState extends State<SearchPage> {
                   'followingId': item.targetId,
                   'createdAt': FieldValue.serverTimestamp(),
                 });
-                await SocialNotificationService.createFollowNotification(
-                  followerId: _currentUserId!,
-                  followingId: item.targetId,
-                );
               }
             },
             child: Text(isFollowing ? 'Following' : 'Follow'),

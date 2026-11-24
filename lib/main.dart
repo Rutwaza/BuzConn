@@ -11,6 +11,7 @@ import 'core/services/firebase_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/services/theme_mode_service.dart';
 import 'core/routes/router.dart';
+import 'features/chat/data/presence_service.dart';
 import 'core/widgets/network_status_banner.dart';
 import 'core/widgets/night_sky_background.dart';
 import 'firebase_options.dart';
@@ -51,6 +52,7 @@ void main() async {
 
   // Defer non-critical startup work until after the first frame.
   Future(() async {
+    PresenceService.instance.start();
     await PushNotificationService.instance.initialize();
     await ThemeModeService.instance.loadFromUser();
   });
@@ -64,15 +66,14 @@ class MyApp extends ConsumerWidget {
     return ValueListenableBuilder<AppThemeMode>(
       valueListenable: ThemeModeService.instance.mode,
       builder: (context, mode, _) {
-        final isCyber = mode == AppThemeMode.cyber;
         final themeMode =
             mode == AppThemeMode.dark ? ThemeMode.dark : ThemeMode.light;
         return MaterialApp.router(
-          title: 'Spotlight',
+          title: 'Duhuze',
           scaffoldMessengerKey: AppRouter.scaffoldMessengerKey,
           debugShowCheckedModeBanner: false,
-          theme: isCyber ? AppTheme.cyberpunkTheme : AppTheme.lightTheme,
-          darkTheme: isCyber ? AppTheme.cyberpunkTheme : AppTheme.darkTheme,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
           themeMode: themeMode,
           builder: (context, child) {
             final content = NetworkStatusBanner(

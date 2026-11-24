@@ -25,10 +25,18 @@ import 'video_call_page.dart';
 
 import '../../../core/theme/colors.dart';
 import '../../../core/services/r2_storage_service.dart';
-import '../../../data/repositories/chat_repository.dart';
+import 'package:businessfinder/features/chat/data/chat_repository.dart';
+import 'package:businessfinder/features/chat/data/presence_service.dart';
+import 'package:businessfinder/features/chat/logic/chat_messages_controller.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_constants.dart';
 
-class ChatPage extends StatefulWidget {
+part 'widgets/chat_media_viewer.dart';
+part 'widgets/ghost_message.dart';
+part 'widgets/chat_small_widgets.dart';
+part 'widgets/chat_shared_panel.dart';
+
+class ChatPage extends ConsumerStatefulWidget {
   final String chatId;
   final bool embedded;
 
@@ -39,10 +47,15 @@ class ChatPage extends StatefulWidget {
   });
 
   @override
-  State<ChatPage> createState() => _ChatPageState();
+  ConsumerState<ChatPage> createState() => _ChatPageState();
 }
 
-class _ChatPageState extends State<ChatPage> {
+class _ChatPageState extends ConsumerState<ChatPage> {
+  // "typing…" of the other person, from the Realtime Database.
+  bool _isOtherTyping = false;
+  String? _typingWatchUid;
+  StreamSubscription<bool>? _typingSub;
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>? _sharedItems;
   final _controller = TextEditingController();
   final _repo = ChatRepository();
   final _thumbCache = <String, Future<Uint8List?>>{};
@@ -51,6 +64,8 @@ class _ChatPageState extends State<ChatPage> {
   final Map<String, int> _messageIndex = {};
   Map<String, dynamic>? _replyingTo;
   bool _sendingMedia = false;
+  double _mediaProgress = 0;
+  String _mediaProgressLabel = '';
   bool _isGhostMode = true;
   String? _lastReadMessageId;
   bool _isTyping = false;
@@ -62,7 +77,6 @@ class _ChatPageState extends State<ChatPage> {
   bool _isVoicePlaying = false;
   String? _recordedPath;
   bool _showScrollToBottom = false;
-  bool _isSendingText = false;
   final Set<String> _revealedReceivedGhostMessageIds = <String>{};
   List<_ChatMediaItem> _latestMediaItems = const [];
   StreamSubscription<DocumentSnapshot>? _callSub;
@@ -191,6 +205,7 @@ class _ChatPageState extends State<ChatPage> {
     _controller.dispose();
     _typingTimer?.cancel();
     _setTyping(false);
+    _typingSub?.cancel();
     _recorder.dispose();
     _voicePlayer.dispose();
     _scrollController.removeListener(_handleScroll);
@@ -234,7 +249,7 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _sendText() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null || _isSendingText || _sendingMedia || _isRecording) {
+    if (user == null || _sendingMedia || _isRecording) {
       return;
     }
 
@@ -254,15 +269,20 @@ class _ChatPageState extends State<ChatPage> {
     _typingTimer?.cancel();
     _isTyping = false;
 
-    setState(() {
-      _isSendingText = true;
-      _replyingTo = null;
-    });
+    // Phase 2: the message shows at once (Firestore puts the write in the
+    // list immediately), so we don't wait for the server. The composer is
+    // free for the next message straight away. If the server refuses, we put
+    // the text back and say so.
+    setState(() => _replyingTo = null);
     _controller.clear();
     unawaited(_setTyping(false));
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
 
-    try {
-      await _repo.sendMessage(
+    unawaited(
+      _repo
+          .sendMessage(
         chatId: widget.chatId,
         senderId: user.uid,
         text: ghostCipherText ?? text,
@@ -270,26 +290,71 @@ class _ChatPageState extends State<ChatPage> {
         isGhost: _isGhostMode,
         ghostCipherText: ghostCipherText,
         ghostNonce: ghostNonce,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      _controller.text = text;
-      _controller.selection = TextSelection.collapsed(
-        offset: _controller.text.length,
-      );
-      setState(() {
-        _replyingTo = replyTo;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Message failed to send: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSendingText = false;
-        });
-      }
-    }
+      )
+          .catchError((Object e) {
+        if (!mounted) return;
+        if (_controller.text.isEmpty) {
+          _controller.text = text;
+          _controller.selection = TextSelection.collapsed(
+            offset: _controller.text.length,
+          );
+          setState(() => _replyingTo = replyTo);
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Message not sent: $e')),
+        );
+      }),
+    );
+  }
+
+  Future<void> _showEmojiPicker() async {
+    const emojis = [
+      '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '🥹', '😊', '😍',
+      '🥰', '😘', '😎', '🤩', '🥳', '😢', '😭', '😡', '🤔', '🙌', '👏',
+      '👍', '👎', '🙏', '🤝', '💪', '👋', '❤️', '🧡', '💛', '💚', '💙',
+      '💜', '🖤', '✨', '🔥', '🎉', '💯', '✅', '⭐', '🌟', '🌹', '💐',
+      '☀️', '🌙', '🍀', '☕', '🎂', '🥂', '⚽', '🎵', '🚀', '💡', '📸',
+    ];
+    final emoji = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (context) => SafeArea(
+        child: SizedBox(
+          height: 300,
+          child: GridView.builder(
+            padding: const EdgeInsets.all(14),
+            itemCount: emojis.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 8,
+              mainAxisSpacing: 4,
+              crossAxisSpacing: 4,
+            ),
+            itemBuilder: (context, index) => InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => Navigator.pop(context, emojis[index]),
+              child: Center(
+                child: Text(emojis[index], style: const TextStyle(fontSize: 26)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (emoji == null || !mounted) return;
+    final value = _controller.value;
+    final selection = value.selection.isValid
+        ? value.selection
+        : TextSelection.collapsed(offset: value.text.length);
+    final start = selection.start.clamp(0, value.text.length);
+    final end = selection.end.clamp(0, value.text.length);
+    final newText = value.text.replaceRange(start, end, emoji);
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: start + emoji.length),
+    );
+    _handleTyping(newText);
+    setState(() {});
   }
 
   Future<void> _sendMedia(ImageSource source, {required bool isVideo}) async {
@@ -322,10 +387,19 @@ class _ChatPageState extends State<ChatPage> {
   }) async {
     setState(() {
       _sendingMedia = true;
+      _mediaProgress = 0;
+      _mediaProgressLabel = 'Preparing ${files.length} ${mediaType == 'image' ? 'photo(s)' : 'video'}...';
     });
     try {
       await _setTyping(false);
-      for (final file in files) {
+      for (var fileIndex = 0; fileIndex < files.length; fileIndex++) {
+        final file = files[fileIndex];
+        if (mounted) {
+          setState(() {
+            _mediaProgress = 0;
+            _mediaProgressLabel = 'Sending ${fileIndex + 1} of ${files.length}';
+          });
+        }
         final bytes = await file.readAsBytes();
         final ext = mediaType == 'video' ? 'mp4' : 'jpg';
         final path = '$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
@@ -334,12 +408,22 @@ class _ChatPageState extends State<ChatPage> {
                 bucket: 'chat-media',
                 path: path,
                 bytes: bytes,
-                chatId: widget.chatId)
+                chatId: widget.chatId,
+                onProgress: (progress) {
+                  if (mounted) {
+                    setState(() => _mediaProgress = progress);
+                  }
+                })
             : await R2StorageService.instance.uploadImage(
                 bucket: 'chat-media',
                 path: path,
                 bytes: bytes,
-                chatId: widget.chatId);
+                chatId: widget.chatId,
+                onProgress: (progress) {
+                  if (mounted) {
+                    setState(() => _mediaProgress = progress);
+                  }
+                });
 
         if (url == null) {
           if (mounted) {
@@ -371,8 +455,48 @@ class _ChatPageState extends State<ChatPage> {
       if (mounted) {
         setState(() {
           _sendingMedia = false;
+          _mediaProgress = 0;
+          _mediaProgressLabel = '';
         });
       }
+    }
+  }
+
+  Future<void> _downloadChatMedia({
+    required String mediaRef,
+    required String fileName,
+  }) async {
+    try {
+      final url = await _resolveChatMediaUrl(mediaRef);
+      final client = HttpClient();
+      late List<int> bytes;
+      try {
+        final request = await client.getUrl(Uri.parse(url));
+        final response = await request.close();
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw HttpException('Download failed (${response.statusCode}).');
+        }
+        bytes = await response.fold<List<int>>(
+          <int>[],
+          (result, chunk) => result..addAll(chunk),
+        );
+      } finally {
+        client.close(force: true);
+      }
+      final savedPath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save attachment',
+        fileName: fileName,
+        bytes: Uint8List.fromList(bytes),
+      );
+      if (savedPath == null || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Saved to $savedPath')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not download file: $error')),
+      );
     }
   }
 
@@ -441,10 +565,8 @@ class _ChatPageState extends State<ChatPage> {
         }
         final otherLastRead = (chatData['lastReadAt']
             as Map<String, dynamic>?)?[otherUserId] as Timestamp?;
-        final typingMap =
-            (chatData['typing'] as Map<String, dynamic>?) ?? const {};
-        final isOtherTyping =
-            otherUserId != null && typingMap[otherUserId] == true;
+        _watchOtherTyping(otherUserId);
+        final isOtherTyping = _isOtherTyping;
 
         final isDark = Theme.of(context).brightness == Brightness.dark;
         final backgroundColor =
@@ -604,6 +726,9 @@ class _ChatPageState extends State<ChatPage> {
                   if (confirmed) {
                     try {
                       await _repo.clearChatMessages(widget.chatId);
+                      await ref
+                          .read(chatMessagesProvider(widget.chatId))
+                          .reloadAfterClear();
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -732,6 +857,32 @@ class _ChatPageState extends State<ChatPage> {
                           ],
                         ),
                       ),
+                    ),
+                  ),
+                if (_sendingMedia)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _mediaProgressLabel.isEmpty
+                                    ? 'Sending media...'
+                                    : _mediaProgressLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            Text('${(_mediaProgress * 100).round()}%'),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        LinearProgressIndicator(value: _mediaProgress),
+                      ],
                     ),
                   ),
                 if (_replyingTo != null)
@@ -974,6 +1125,11 @@ class _ChatPageState extends State<ChatPage> {
                                     },
                                   ),
                           ),
+                          if (!_isRecording && _recordedPath == null)
+                            _ComposerIconButton(
+                              icon: Icons.emoji_emotions_outlined,
+                              onPressed: _showEmojiPicker,
+                            ),
                           Container(
                             width: 42,
                             height: 42,
@@ -993,7 +1149,7 @@ class _ChatPageState extends State<ChatPage> {
                                 color: Colors.white,
                                 size: 20,
                               ),
-                              onPressed: (_sendingMedia || _isSendingText)
+                              onPressed: _sendingMedia
                                   ? null
                                   : _isRecording
                                       ? null
@@ -1109,16 +1265,16 @@ class _ChatPageState extends State<ChatPage> {
     required Color replyBarColor,
     String? fallbackAvatarUrl,
   }) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _repo.messagesStream(widget.chatId),
-      builder: (context, snapshot) {
-        final docs = snapshot.data?.docs ?? [];
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            docs.isEmpty) {
+    // One listener per chat, owned by ChatMessagesController (Phase 2).
+    return Consumer(
+      builder: (context, ref, _) {
+        final messages = ref.watch(chatMessagesProvider(widget.chatId));
+        final docs = messages.docs;
+        if (messages.isLoading && docs.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
         if (docs.isNotEmpty) {
-          final latest = docs.first.data() as Map<String, dynamic>;
+          final latest = docs.first.data();
           final latestSender = latest['senderId'] as String?;
           final latestId = latest['id'] ?? docs.first.id;
           if (latestSender != null &&
@@ -1133,7 +1289,7 @@ class _ChatPageState extends State<ChatPage> {
         }
         _messageIndex.clear();
         for (var i = 0; i < docs.length; i++) {
-          final data = docs[i].data() as Map<String, dynamic>;
+          final data = docs[i].data();
           final id = data['id'] ?? docs[i].id;
           if (id != null) {
             _messageIndex[id.toString()] = i;
@@ -1142,7 +1298,7 @@ class _ChatPageState extends State<ChatPage> {
 
         final mediaItems = <_ChatMediaItem>[];
         for (final doc in docs) {
-          final data = doc.data() as Map<String, dynamic>;
+          final data = doc.data();
           final mediaUrl = data['mediaUrl'] as String?;
           final mediaType = data['mediaType'] as String?;
           if (mediaUrl != null &&
@@ -1164,11 +1320,25 @@ class _ChatPageState extends State<ChatPage> {
           controller: _scrollController,
           reverse: true,
           padding: const EdgeInsets.all(12),
-          cacheExtent: 3000,
-          itemCount: docs.length,
+          cacheExtent: 1500,
+          // One extra row at the top for "loading older messages".
+          itemCount: docs.length + (messages.hasMore ? 1 : 0),
           itemBuilder: (context, index) {
+            if (index >= docs.length) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              );
+            }
             final doc = docs[index];
-            final data = doc.data() as Map<String, dynamic>;
+            final isPending = doc.metadata.hasPendingWrites;
+            final data = doc.data();
             final isMe = data['senderId'] == user.uid;
             final text = data['text'] ?? '';
             final isGhost = data['isGhost'] == true;
@@ -1203,11 +1373,15 @@ class _ChatPageState extends State<ChatPage> {
                 ),
               );
             } else if (isGhost) {
-              final decodedText = _decodeGhostText(
-                ghostCipherText ?? '',
-                chatId: widget.chatId,
-                senderId: data['senderId']?.toString() ?? '',
-                nonce: ghostNonce ?? '',
+              // Decoded once per message, then cached by the controller.
+              final decodedText = messages.ghostText(
+                messageId,
+                () => _decodeGhostText(
+                  ghostCipherText ?? '',
+                  chatId: widget.chatId,
+                  senderId: data['senderId']?.toString() ?? '',
+                  nonce: ghostNonce ?? '',
+                ),
               );
               content = _GhostMessageContent(
                 encryptedText: ghostCipherText ?? text.toString(),
@@ -1216,6 +1390,7 @@ class _ChatPageState extends State<ChatPage> {
                     : decodedText,
                 isMe: isMe,
                 isDark: isDark,
+                isEmojiOnly: _isEmojiOnly(decodedText),
                 onReveal: isMe
                     ? null
                     : () {
@@ -1384,6 +1559,17 @@ class _ChatPageState extends State<ChatPage> {
                   Text(text.toString()),
                 ],
               );
+            } else if (isEmojiOnly) {
+              final emojiCount = text.toString().trim().runes.length;
+              final fontSize = emojiCount <= 2
+                  ? 46.0
+                  : emojiCount <= 5
+                      ? 36.0
+                      : 27.0;
+              content = Text(
+                text.toString(),
+                style: TextStyle(fontSize: fontSize, height: 1.2),
+              );
             } else {
               content = _buildLinkifiedText(
                 text.toString(),
@@ -1392,8 +1578,46 @@ class _ChatPageState extends State<ChatPage> {
               );
             }
 
-            final timeLabel =
-                createdAt == null ? '' : _formatTime(createdAt.toDate());
+            if (!deleted &&
+                mediaUrl != null &&
+                mediaType != null &&
+                const {'image', 'video', 'audio', 'document'}
+                    .contains(mediaType)) {
+              final mediaName = (data['mediaName'] ?? '').toString();
+              final extension = switch (mediaType) {
+                'image' => '.jpg',
+                'video' => '.mp4',
+                'audio' => '.m4a',
+                _ => '',
+              };
+              final fileName = mediaName.isNotEmpty
+                  ? mediaName
+                  : 'Duhuze_${mediaType}_${doc.id}$extension';
+              content = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  content,
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () => _downloadChatMedia(
+                        mediaRef: mediaUrl,
+                        fileName: fileName,
+                      ),
+                      icon: const Icon(Icons.download_rounded, size: 16),
+                      label: const Text('Download'),
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            // A just-sent message has no server time yet: show the phone's
+            // time with a clock icon until the server confirms it.
+            final timeLabel = createdAt == null
+                ? (isPending ? _formatTime(DateTime.now()) : '')
+                : _formatTime(createdAt.toDate());
 
             final maxBubbleWidth = MediaQuery.of(context).size.width * 0.7;
 
@@ -1410,7 +1634,7 @@ class _ChatPageState extends State<ChatPage> {
 
             final currentDate = createdAt?.toDate();
             final nextDate = index + 1 < docs.length
-                ? (docs[index + 1].data() as Map<String, dynamic>)['createdAt']
+                ? docs[index + 1].data()['createdAt']
                     as Timestamp?
                 : null;
             final showSeparator = currentDate != null &&
@@ -1604,9 +1828,11 @@ class _ChatPageState extends State<ChatPage> {
                                           if (isMe) ...[
                                             const SizedBox(width: 6),
                                             Icon(
-                                              isSeen
-                                                  ? Icons.done_all
-                                                  : Icons.done,
+                                              isPending
+                                                  ? Icons.schedule
+                                                  : isSeen
+                                                      ? Icons.done_all
+                                                      : Icons.done,
                                               size: 12,
                                               color: isSeen
                                                   ? Colors.lightBlueAccent
@@ -1742,6 +1968,8 @@ class _ChatPageState extends State<ChatPage> {
 
     setState(() {
       _sendingMedia = true;
+      _mediaProgress = 0;
+      _mediaProgressLabel = 'Uploading voice note...';
     });
     try {
       await _setTyping(false);
@@ -1753,6 +1981,9 @@ class _ChatPageState extends State<ChatPage> {
         path: fileName,
         bytes: bytes,
         chatId: widget.chatId,
+        onProgress: (progress) {
+          if (mounted) setState(() => _mediaProgress = progress);
+        },
       );
 
       if (url == null) {
@@ -1788,6 +2019,8 @@ class _ChatPageState extends State<ChatPage> {
       if (mounted) {
         setState(() {
           _sendingMedia = false;
+          _mediaProgress = 0;
+          _mediaProgressLabel = '';
         });
       }
     }
@@ -1818,10 +2051,20 @@ class _ChatPageState extends State<ChatPage> {
 
     setState(() {
       _sendingMedia = true;
+      _mediaProgress = 0;
+      _mediaProgressLabel = 'Preparing ${result.files.length} file(s)...';
     });
     try {
       await _setTyping(false);
-      for (final file in result.files) {
+      for (var index = 0; index < result.files.length; index++) {
+        final file = result.files[index];
+        if (mounted) {
+          setState(() {
+            _mediaProgress = 0;
+            _mediaProgressLabel =
+                'Sending ${index + 1} of ${result.files.length}: ${file.name}';
+          });
+        }
         final bytes = file.bytes;
         if (bytes == null) continue;
         final ext = file.extension ?? 'bin';
@@ -1833,6 +2076,9 @@ class _ChatPageState extends State<ChatPage> {
           bytes: bytes,
           contentType: _contentTypeForFile(file.name),
           chatId: widget.chatId,
+          onProgress: (progress) {
+            if (mounted) setState(() => _mediaProgress = progress);
+          },
         );
         if (url == null) {
           if (mounted) {
@@ -1866,6 +2112,8 @@ class _ChatPageState extends State<ChatPage> {
       if (mounted) {
         setState(() {
           _sendingMedia = false;
+          _mediaProgress = 0;
+          _mediaProgressLabel = '';
         });
       }
     }
@@ -2189,16 +2437,19 @@ class _ChatPageState extends State<ChatPage> {
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _repo.messagesStream(widget.chatId),
+              child: FutureBuilder<
+                  List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+                future: _sharedItems ??= ref
+                    .read(chatMessagesProvider(widget.chatId))
+                    .loadSharedItems(),
                 builder: (context, snapshot) {
-                  final docs = snapshot.data?.docs ?? const [];
+                  final docs = snapshot.data ?? const [];
                   final mediaEntries = <Map<String, dynamic>>[];
                   final linkEntries = <Map<String, dynamic>>[];
                   final documentEntries = <Map<String, dynamic>>[];
 
                   for (final doc in docs) {
-                    final data = doc.data() as Map<String, dynamic>;
+                    final data = doc.data();
                     if (data['deleted'] == true) continue;
 
                     final messageId = (data['id'] ?? doc.id).toString();
@@ -2249,295 +2500,6 @@ class _ChatPageState extends State<ChatPage> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildSharedMediaGrid(
-    List<Map<String, dynamic>> items,
-    bool isDark,
-  ) {
-    if (items.isEmpty) {
-      return _buildSharedTabEmptyState(
-        icon: Icons.photo_library_outlined,
-        label: 'No media shared yet',
-      );
-    }
-
-    return GridView.builder(
-      padding: EdgeInsets.zero,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 1,
-      ),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        final url = item['url'] as String;
-        final isVideo = item['type'] == 'video';
-        return FutureBuilder<String>(
-          future: _resolveChatMediaUrl(url),
-          builder: (context, resolvedSnapshot) {
-            final resolvedUrl = resolvedSnapshot.data;
-            if (resolvedUrl == null) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            return InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => _scrollToMessage(item['messageId'] as String),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (!isVideo)
-                      Image.network(resolvedUrl, fit: BoxFit.cover)
-                    else
-                      FutureBuilder<Uint8List?>(
-                        future: _getVideoThumbnail(resolvedUrl),
-                        builder: (context, snapshot) {
-                          final bytes = snapshot.data;
-                          if (bytes == null) {
-                            return Container(
-                              color: isDark
-                                  ? Colors.white.withValues(alpha: 0.06)
-                                  : Colors.black.withValues(alpha: 0.05),
-                              child: const Icon(Icons.videocam_rounded),
-                            );
-                          }
-                          return Image.memory(bytes, fit: BoxFit.cover);
-                        },
-                      ),
-                    if (isVideo)
-                      Container(
-                        color: Colors.black.withValues(alpha: 0.18),
-                        child: const Center(
-                          child: Icon(
-                            Icons.play_circle_fill_rounded,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildSharedLinksList(
-    List<Map<String, dynamic>> items,
-    bool isDark,
-  ) {
-    if (items.isEmpty) {
-      return _buildSharedTabEmptyState(
-        icon: Icons.link_off_rounded,
-        label: 'No shared links yet',
-      );
-    }
-
-    return ListView.separated(
-      padding: EdgeInsets.zero,
-      itemCount: items.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final item = items[index];
-        final url = item['url'] as String;
-        return InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () => _scrollToMessage(item['messageId'] as String),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.04)
-                  : Colors.black.withValues(alpha: 0.03),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child:
-                      const Icon(Icons.link_rounded, color: AppColors.primary),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        (item['host'] ?? 'Shared link').toString(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        url,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? Colors.white70 : AppColors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Open link',
-                  onPressed: () => _openLink(url),
-                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildSharedDocumentsList(
-    List<Map<String, dynamic>> items,
-    bool isDark,
-  ) {
-    if (items.isEmpty) {
-      return _buildSharedTabEmptyState(
-        icon: Icons.folder_open_rounded,
-        label: 'No shared documents yet',
-      );
-    }
-
-    return ListView.separated(
-      padding: EdgeInsets.zero,
-      itemCount: items.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final item = items[index];
-        final size = item['size'] as int?;
-        final mediaRef = item['url'] as String;
-        return InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () async {
-            try {
-              await _openLink(await _resolveChatMediaUrl(mediaRef));
-            } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Could not open file: $e')),
-                );
-              }
-            }
-          },
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.04)
-                  : Colors.black.withValues(alpha: 0.03),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.insert_drive_file_rounded,
-                    color: Colors.orange,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        (item['name'] ?? 'Document').toString(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      if (size != null)
-                        Text(
-                          _formatBytes(size),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isDark ? Colors.white70 : AppColors.grey,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                Tooltip(
-                  message: 'Private link expires after 15 minutes',
-                  child: Icon(
-                    Icons.lock_outline_rounded,
-                    size: 18,
-                    color: isDark ? Colors.white54 : AppColors.grey,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildSharedTabEmptyState({
-    required IconData icon,
-    required String label,
-  }) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: AppColors.grey, size: 28),
-          const SizedBox(height: 10),
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.grey,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatBytes(int bytes) {
-    const kb = 1024;
-    const mb = kb * 1024;
-    if (bytes >= mb) {
-      return '${(bytes / mb).toStringAsFixed(1)} MB';
-    }
-    if (bytes >= kb) {
-      return '${(bytes / kb).toStringAsFixed(1)} KB';
-    }
-    return '$bytes B';
-  }
-
-  void _showComingSoon(String feature) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$feature coming soon!')),
     );
   }
 
@@ -2762,6 +2724,11 @@ class _ChatPageState extends State<ChatPage> {
 
   void _handleScroll() {
     if (!_scrollController.hasClients) return;
+    // The list is reversed: the top (older messages) is maxScrollExtent.
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 400) {
+      ref.read(chatMessagesProvider(widget.chatId)).loadMore();
+    }
     final shouldShow = _scrollController.offset > 220;
     if (shouldShow != _showScrollToBottom) {
       setState(() {
@@ -2886,7 +2853,7 @@ class _ChatPageState extends State<ChatPage> {
           builder: (context) => AlertDialog(
             title: const Text('Clear chat'),
             content: const Text(
-              'This will delete all messages in this chat. Continue?',
+              'Messages will be removed from this chat for you. The other person keeps their copy. Continue?',
             ),
             actions: [
               TextButton(
@@ -2979,15 +2946,22 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  Future<void> _setTyping(bool value) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    await FirebaseFirestore.instance
-        .collection('chats')
-        .doc(widget.chatId)
-        .update({
-      'typing.${user.uid}': value,
-    });
+  // Typing now goes to the Realtime Database (cheap, clears itself when the
+  // phone disconnects) instead of writing the chat document every time.
+  Future<void> _setTyping(bool value) =>
+      PresenceService.instance.setTyping(widget.chatId, value);
+
+  void _watchOtherTyping(String? otherUserId) {
+    if (otherUserId == null || otherUserId == _typingWatchUid) return;
+    _typingWatchUid = otherUserId;
+    _typingSub?.cancel();
+    _typingSub = PresenceService.instance
+        .watchTyping(widget.chatId, otherUserId)
+        .listen((typing) {
+      if (mounted && typing != _isOtherTyping) {
+        setState(() => _isOtherTyping = typing);
+      }
+    }, onError: (_) {});
   }
 
   void _startVideoCall() {
@@ -3157,859 +3131,6 @@ class _ChatPageState extends State<ChatPage> {
           ),
         );
       },
-    );
-  }
-}
-
-class _ChatMediaItem {
-  final String url;
-  final String type; // image | video
-
-  const _ChatMediaItem({
-    required this.url,
-    required this.type,
-  });
-}
-
-class _ChatMediaViewerPage extends StatefulWidget {
-  const _ChatMediaViewerPage({
-    required this.items,
-    required this.initialIndex,
-  });
-
-  final List<_ChatMediaItem> items;
-  final int initialIndex;
-
-  @override
-  State<_ChatMediaViewerPage> createState() => _ChatMediaViewerPageState();
-}
-
-class _ChatMediaViewerPageState extends State<_ChatMediaViewerPage> {
-  late final PageController _controller;
-  int _index = 0;
-  VideoPlayerController? _videoController;
-  Player? _mediaKitPlayer;
-  VideoController? _mediaKitController;
-  String? _currentVideoUrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _index = widget.initialIndex.clamp(0, widget.items.length - 1);
-    _controller = PageController(initialPage: _index);
-    _initForIndex(_index);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    if (Platform.isWindows) {
-      _mediaKitPlayer?.dispose();
-    } else {
-      _videoController?.dispose();
-    }
-    super.dispose();
-  }
-
-  void _initForIndex(int index) async {
-    final item = widget.items[index];
-    if (item.type != 'video') {
-      if (Platform.isWindows) {
-        _mediaKitPlayer?.pause();
-        _mediaKitPlayer?.dispose();
-        _mediaKitPlayer = null;
-        _mediaKitController = null;
-      } else {
-        _videoController?.pause();
-        _videoController?.dispose();
-        _videoController = null;
-      }
-      _currentVideoUrl = null;
-      return;
-    }
-    if (_currentVideoUrl == item.url) return;
-    if (Platform.isWindows) {
-      _mediaKitPlayer?.dispose();
-      _mediaKitPlayer = Player();
-      _mediaKitController = VideoController(_mediaKitPlayer!);
-      try {
-        await _mediaKitPlayer!.open(Media(item.url));
-        _currentVideoUrl = item.url;
-        if (mounted) {
-          setState(() {});
-          _mediaKitPlayer!.play();
-        }
-      } catch (e) {
-        // Handle error silently
-      }
-    } else {
-      _videoController?.dispose();
-      final controller = VideoPlayerController.networkUrl(Uri.parse(item.url));
-      _videoController = controller;
-      _currentVideoUrl = item.url;
-      controller.initialize().then((_) {
-        if (mounted) {
-          setState(() {});
-          controller.play();
-        }
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final items = widget.items;
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        elevation: 0,
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: PageView.builder(
-              controller: _controller,
-              itemCount: items.length,
-              onPageChanged: (value) {
-                setState(() => _index = value);
-                _initForIndex(value);
-              },
-              itemBuilder: (context, index) {
-                final item = items[index];
-                if (item.type == 'image') {
-                  return InteractiveViewer(
-                    child: Center(
-                      child: Image.network(item.url, fit: BoxFit.contain),
-                    ),
-                  );
-                }
-                final isInitialized = Platform.isWindows
-                    ? _mediaKitPlayer != null
-                    : _videoController != null &&
-                        _videoController!.value.isInitialized;
-                if (!isInitialized) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  );
-                }
-                return Column(
-                  children: [
-                    Expanded(
-                      child: Center(
-                        child: Platform.isWindows
-                            ? Video(controller: _mediaKitController!)
-                            : AspectRatio(
-                                aspectRatio:
-                                    _videoController!.value.aspectRatio,
-                                child: VideoPlayer(_videoController!),
-                              ),
-                      ),
-                    ),
-                    if (!Platform.isWindows)
-                      VideoProgressIndicator(
-                        _videoController!,
-                        allowScrubbing: true,
-                        colors: const VideoProgressColors(
-                          playedColor: Colors.white,
-                          bufferedColor: Colors.white24,
-                          backgroundColor: Colors.white10,
-                        ),
-                      ),
-                    if (!Platform.isWindows)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        child: Row(
-                          children: [
-                            IconButton(
-                              icon: Icon(
-                                _videoController!.value.isPlaying
-                                    ? Icons.pause
-                                    : Icons.play_arrow,
-                                color: Colors.white,
-                              ),
-                              onPressed: () {
-                                _videoController!.value.isPlaying
-                                    ? _videoController!.pause()
-                                    : _videoController!.play();
-                                setState(() {});
-                              },
-                            ),
-                            const Spacer(),
-                          ],
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-          SizedBox(
-            height: 90,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              scrollDirection: Axis.horizontal,
-              itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, i) {
-                final item = items[i];
-                final isActive = i == _index;
-                return GestureDetector(
-                  onTap: () {
-                    _controller.animateToPage(
-                      i,
-                      duration: const Duration(milliseconds: 250),
-                      curve: Curves.easeOut,
-                    );
-                    setState(() => _index = i);
-                    _initForIndex(i);
-                  },
-                  child: Container(
-                    width: 70,
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: isActive ? Colors.white : Colors.white24,
-                        width: isActive ? 2 : 1,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          item.type == 'image'
-                              ? Image.network(item.url, fit: BoxFit.cover)
-                              : FutureBuilder<Uint8List?>(
-                                  future: VideoThumbnail.thumbnailData(
-                                    video: item.url,
-                                    imageFormat: ImageFormat.JPEG,
-                                    maxWidth: 140,
-                                    quality: 60,
-                                  ),
-                                  builder: (context, snap) {
-                                    if (snap.data == null) {
-                                      return const ColoredBox(
-                                        color: Colors.black12,
-                                        child: Center(
-                                          child: Icon(
-                                            Icons.play_arrow,
-                                            color: Colors.white70,
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                    return Image.memory(
-                                      snap.data!,
-                                      fit: BoxFit.cover,
-                                    );
-                                  },
-                                ),
-                          if (item.type == 'video')
-                            const Center(
-                              child: Icon(
-                                Icons.play_circle_fill,
-                                color: Colors.white70,
-                                size: 18,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChatActionButton extends StatelessWidget {
-  const _ChatActionButton({
-    required this.icon,
-    required this.onPressed,
-    required this.tooltip,
-  });
-
-  final IconData icon;
-  final VoidCallback? onPressed;
-  final String tooltip;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Tooltip(
-      message: tooltip,
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
-          shape: BoxShape.circle,
-        ),
-        child: IconButton(
-          padding: EdgeInsets.zero,
-          icon: Icon(icon, size: 18),
-          onPressed: onPressed,
-        ),
-      ),
-    );
-  }
-}
-
-class _GhostMessageContent extends StatefulWidget {
-  const _GhostMessageContent({
-    required this.encryptedText,
-    required this.text,
-    required this.isMe,
-    required this.isDark,
-    this.onReveal,
-    this.onHide,
-  });
-
-  final String encryptedText;
-  final String text;
-  final bool isMe;
-  final bool isDark;
-  final VoidCallback? onReveal;
-  final VoidCallback? onHide;
-
-  @override
-  State<_GhostMessageContent> createState() => _GhostMessageContentState();
-}
-
-class _GhostMessageContentState extends State<_GhostMessageContent> {
-  bool _revealed = false;
-  bool _dissolving = false;
-
-  Future<void> _handleTap() async {
-    if (_dissolving) return;
-    if (!_revealed) {
-      setState(() {
-        _revealed = true;
-      });
-      widget.onReveal?.call();
-      return;
-    }
-    setState(() {
-      _dissolving = true;
-    });
-    await Future.delayed(const Duration(milliseconds: 920));
-    if (!mounted) return;
-    setState(() {
-      _revealed = false;
-      _dissolving = false;
-    });
-    widget.onHide?.call();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = widget.isMe
-        ? Colors.white
-        : (widget.isDark ? const Color(0xFF61D1ED) : AppColors.primary);
-    return Semantics(
-      button: true,
-      label: _revealed ? 'Hide encrypted message' : 'Reveal encrypted message',
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: _handleTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-          constraints: const BoxConstraints(minWidth: 150),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: widget.isMe ? 0.12 : 0.08),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: accent.withValues(alpha: 0.28)),
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                child: _revealed && !_dissolving
-                    ? Text(
-                        widget.text,
-                        key: const ValueKey('revealed'),
-                        style: TextStyle(
-                          color: widget.isMe
-                              ? Colors.white
-                              : (widget.isDark ? Colors.white : Colors.black87),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      )
-                    : ConstrainedBox(
-                        key: const ValueKey('hidden'),
-                        constraints: const BoxConstraints(maxWidth: 250),
-                        child: Text(
-                          widget.encryptedText,
-                          maxLines: 5,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: accent,
-                            fontSize: 12,
-                            fontFamily: 'RobotoMono',
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0,
-                          ),
-                        ),
-                      ),
-              ),
-              if (_dissolving)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: _FloatingGhostLetters(
-                      text: widget.text,
-                      color: accent,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FloatingGhostLetters extends StatefulWidget {
-  const _FloatingGhostLetters({
-    required this.text,
-    required this.color,
-  });
-
-  final String text;
-  final Color color;
-
-  @override
-  State<_FloatingGhostLetters> createState() => _FloatingGhostLettersState();
-}
-
-class _FloatingGhostLettersState extends State<_FloatingGhostLetters>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final List<_GhostLetterParticle> _particles;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 880),
-    )..forward();
-    final chars = widget.text.runes
-        .map((rune) => String.fromCharCode(rune))
-        .where((char) => char.trim().isNotEmpty)
-        .take(34)
-        .toList();
-    final random = math.Random(widget.text.hashCode);
-    _particles = List<_GhostLetterParticle>.generate(chars.length, (index) {
-      return _GhostLetterParticle(
-        char: chars[index],
-        x: random.nextDouble(),
-        rise: 16 + random.nextDouble() * 34,
-        drift: (random.nextDouble() - 0.5) * 46,
-        delay: random.nextDouble() * 0.22,
-        scale: 0.74 + random.nextDouble() * 0.55,
-      );
-    });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            return Stack(
-              clipBehavior: Clip.none,
-              children: _particles.map((particle) {
-                final rawProgress =
-                    ((_controller.value - particle.delay) / 0.78)
-                        .clamp(0.0, 1.0);
-                final eased = Curves.easeOutCubic.transform(rawProgress);
-                return Positioned(
-                  left: (constraints.maxWidth * particle.x) +
-                      (particle.drift * eased),
-                  top: (constraints.maxHeight * 0.48) - (particle.rise * eased),
-                  child: Opacity(
-                    opacity: (1 - eased).clamp(0.0, 1.0),
-                    child: Transform.scale(
-                      scale: particle.scale + (eased * 0.45),
-                      child: Text(
-                        particle.char,
-                        style: TextStyle(
-                          color: widget.color,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
-class _GhostLetterParticle {
-  const _GhostLetterParticle({
-    required this.char,
-    required this.x,
-    required this.rise,
-    required this.drift,
-    required this.delay,
-    required this.scale,
-  });
-
-  final String char;
-  final double x;
-  final double rise;
-  final double drift;
-  final double delay;
-  final double scale;
-}
-
-class _ComposerIconButton extends StatelessWidget {
-  const _ComposerIconButton({
-    required this.icon,
-    required this.onPressed,
-    this.color,
-  });
-
-  final IconData icon;
-  final VoidCallback? onPressed;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return IconButton(
-      onPressed: onPressed,
-      style: IconButton.styleFrom(
-        minimumSize: const Size(38, 38),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        backgroundColor: isDark
-            ? Colors.white.withValues(alpha: 0.06)
-            : Colors.black.withValues(alpha: 0.04),
-      ),
-      icon: Icon(icon, color: color),
-    );
-  }
-}
-
-class _ChatStatusLabel extends StatelessWidget {
-  const _ChatStatusLabel({
-    required this.otherUserId,
-    required this.isTyping,
-    required this.chatType,
-  });
-
-  final String? otherUserId;
-  final bool isTyping;
-  final String chatType;
-
-  static String statusText({
-    required String? otherUserId,
-    required bool isTyping,
-    required String chatType,
-  }) {
-    if (isTyping) return 'typing...';
-    if (otherUserId == null || otherUserId.isEmpty) {
-      return chatType == 'direct' ? 'Conversation' : 'Creator chat';
-    }
-    return chatType == 'direct'
-        ? 'Shared conversation'
-        : 'Business conversation';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (isTyping) {
-      return const Text(
-        'typing...',
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: AppColors.primary,
-        ),
-      );
-    }
-
-    if (otherUserId == null || otherUserId!.isEmpty) {
-      return Text(
-        chatType == 'direct' ? 'Conversation' : 'Creator chat',
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white70
-              : AppColors.grey,
-        ),
-      );
-    }
-
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .doc(otherUserId)
-          .snapshots(),
-      builder: (context, snapshot) {
-        final lastSeen = snapshot.data?.data()?['lastSeen'] as Timestamp?;
-        final isOnline = lastSeen != null &&
-            DateTime.now().difference(lastSeen.toDate()).inMinutes < 3;
-        final text = isOnline
-            ? 'Active now'
-            : lastSeen == null
-                ? (chatType == 'direct' ? 'Offline' : 'Creator chat')
-                : _formatActivity(lastSeen.toDate());
-        final color = isOnline
-            ? const Color(0xFF37C58A)
-            : (Theme.of(context).brightness == Brightness.dark
-                ? Colors.white70
-                : AppColors.grey);
-        return Text(
-          text,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: color,
-          ),
-        );
-      },
-    );
-  }
-
-  static String _formatActivity(DateTime time) {
-    final diff = DateTime.now().difference(time);
-    if (diff.inMinutes < 60) return 'Active ${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return 'Active ${diff.inHours}h ago';
-    return 'Active ${diff.inDays}d ago';
-  }
-}
-
-class _AudioMessageTile extends StatefulWidget {
-  const _AudioMessageTile({
-    required this.url,
-    required this.chatId,
-    required this.isMe,
-  });
-
-  final String url;
-  final String chatId;
-  final bool isMe;
-
-  @override
-  State<_AudioMessageTile> createState() => _AudioMessageTileState();
-}
-
-class _AudioMessageTileState extends State<_AudioMessageTile> {
-  final AudioPlayer _player = AudioPlayer();
-  bool _isPlaying = false;
-  Duration _duration = Duration.zero;
-  Duration _position = Duration.zero;
-  final List<double> _waveHeights = const [
-    6,
-    10,
-    14,
-    8,
-    16,
-    12,
-    6,
-    18,
-    9,
-    14,
-    8,
-    12,
-    6,
-    10,
-    7,
-    15
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _player.onDurationChanged.listen((d) {
-      if (mounted) {
-        setState(() => _duration = d);
-      }
-    });
-    _player.onPositionChanged.listen((p) {
-      if (mounted) {
-        setState(() => _position = p);
-      }
-    });
-    _player.onPlayerComplete.listen((_) {
-      if (mounted) {
-        setState(() {
-          _isPlaying = false;
-          _position = Duration.zero;
-        });
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _player.dispose();
-    super.dispose();
-  }
-
-  String _format(Duration d) {
-    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
-  Future<void> _toggle() async {
-    if (_isPlaying) {
-      await _player.pause();
-      if (mounted) {
-        setState(() => _isPlaying = false);
-      }
-      return;
-    }
-    final url = await R2StorageService.instance.downloadPrivateMediaUrl(
-      mediaRef: widget.url,
-      chatId: widget.chatId,
-    );
-    await _player.play(UrlSource(url));
-    if (mounted) {
-      setState(() => _isPlaying = true);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final total =
-        _duration.inMilliseconds > 0 ? _duration : const Duration(seconds: 1);
-    final progress = _position.inMilliseconds / total.inMilliseconds;
-    final activeColor = widget.isMe
-        ? Colors.white.withOpacity(0.95)
-        : Theme.of(context).colorScheme.primary;
-    final inactiveColor = widget.isMe
-        ? Colors.white38
-        : Theme.of(context).colorScheme.primary.withOpacity(0.35);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
-          color: widget.isMe ? Colors.white : Theme.of(context).iconTheme.color,
-          onPressed: _toggle,
-        ),
-        SizedBox(
-          width: 140,
-          height: 28,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: List.generate(_waveHeights.length, (i) {
-              final ratio = i / (_waveHeights.length - 1);
-              final isActive = ratio <= progress;
-              return Container(
-                width: 4,
-                height: _waveHeights[i],
-                margin: const EdgeInsets.symmetric(horizontal: 1),
-                decoration: BoxDecoration(
-                  color: isActive ? activeColor : inactiveColor,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              );
-            }),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          '${_format(_position)} / ${_format(_duration)}',
-          style: const TextStyle(fontSize: 11),
-        ),
-      ],
-    );
-  }
-}
-
-class _TypingDots extends StatefulWidget {
-  const _TypingDots({required this.color});
-
-  final Color color;
-
-  @override
-  State<_TypingDots> createState() => _TypingDotsState();
-}
-
-class _TypingDotsState extends State<_TypingDots>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  double _opacity(double phase) {
-    final value = math.sin((_controller.value * math.pi * 2) + phase);
-    return 0.35 + 0.65 * ((value + 1) / 2);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        return Row(
-          children: [
-            _dot(_opacity(0)),
-            const SizedBox(width: 4),
-            _dot(_opacity(1.2)),
-            const SizedBox(width: 4),
-            _dot(_opacity(2.4)),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _dot(double opacity) {
-    return Container(
-      width: 6,
-      height: 6,
-      decoration: BoxDecoration(
-        color: widget.color.withOpacity(opacity),
-        shape: BoxShape.circle,
-      ),
     );
   }
 }

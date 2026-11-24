@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $releaseDir = Join-Path $repoRoot 'build\windows\x64\runner\Release'
 $payloadDir = Join-Path $repoRoot 'build\windows\x64\installer-payload'
-$scriptPath = Join-Path $PSScriptRoot 'Spotlight.iss'
+$scriptPath = Join-Path $PSScriptRoot 'Duhuze.iss'
 $oauthConfig = Join-Path $repoRoot 'windows_google_oauth.json'
 
 Push-Location $repoRoot
@@ -23,7 +23,7 @@ try {
         }
     }
 
-    $appExecutable = Join-Path $releaseDir 'SpotLight.exe'
+    $appExecutable = Join-Path $releaseDir 'Duhuze.exe'
     $dataDirectory = Join-Path $releaseDir 'data'
     if (-not (Test-Path $appExecutable) -or -not (Test-Path $dataDirectory)) {
         throw "Flutter release output is incomplete: $releaseDir"
@@ -83,7 +83,7 @@ try {
         throw "Inno Setup compilation failed with exit code $LASTEXITCODE."
     }
 
-    $installer = Join-Path $repoRoot 'build\windows\installer-output\SpotLight-Setup-1.0.0-x64.exe'
+    $installer = Join-Path $repoRoot 'build\windows\installer-output\Duhuze-Setup-1.0.0-x64.exe'
     if (-not (Test-Path $installer)) {
         throw "Installer compilation reported success but did not create $installer."
     }

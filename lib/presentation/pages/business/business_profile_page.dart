@@ -16,7 +16,7 @@ import 'package:latlong2/latlong.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
 import 'post_detail_page.dart';
-import '../../../data/repositories/chat_repository.dart';
+import 'package:businessfinder/features/chat/data/chat_repository.dart';
 import '../../../core/constants/app_constants.dart';
 
 class BusinessProfilePage extends StatefulWidget {
@@ -409,7 +409,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                     }
 
                     final totalLikes = posts.fold<int>(
-                        0, (total, p) => total + p.likes.length);
+                        0, (total, p) => total + p.likeCount);
                     final avgLikes =
                         totalLikes / (posts.isEmpty ? 1 : posts.length);
 
@@ -558,7 +558,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
               ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
             final totalLikes =
-                posts.fold<int>(0, (total, p) => total + p.likes.length);
+                posts.fold<int>(0, (total, p) => total + p.likeCount);
             final avgLikes = posts.isEmpty ? 0.0 : totalLikes / posts.length;
             final mediaPosts = posts.where((p) => p.media.isNotEmpty).length;
             final videoPosts = posts

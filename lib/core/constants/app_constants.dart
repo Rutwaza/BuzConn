@@ -1,7 +1,12 @@
 class AppConstants {
   // App Info
-  static const String appName = 'Spotlight';
+  static const String appName = 'Duhuze';
   static const String appVersion = '1.0.0';
+
+  // Realtime Database (online status + typing). Copied from Firebase
+  // console -> Realtime Database -> Data (the URL at the top).
+  static const String realtimeDatabaseUrl =
+      'https://bussinessfinder-327f5-default-rtdb.firebaseio.com';
   
   // Storage Keys
   static const String tokenKey = 'auth_token';

@@ -10,11 +10,10 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../../../core/constants/app_constants.dart';
-import '../../../core/services/social_notification_service.dart';
 import '../../../core/services/r2_storage_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
-import '../../../data/repositories/chat_repository.dart';
+import 'package:businessfinder/features/chat/data/chat_repository.dart';
 import '../business/post_detail_page.dart' as business_post;
 
 class ClientProfilePage extends StatefulWidget {
@@ -51,10 +50,6 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
       'followingId': followingId,
       'createdAt': FieldValue.serverTimestamp(),
     });
-    await SocialNotificationService.createFollowNotification(
-      followerId: followerId,
-      followingId: followingId,
-    );
   }
 
   Future<void> _unfollowUser(String followerId, String followingId) async {
@@ -1036,7 +1031,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
         if (docs.isEmpty) {
           return _emptyCard(
             _isSelf
-                ? 'No posts yet. Start posting to build your Spotlight.'
+                ? 'No posts yet. Share your first post.'
                 : 'No posts yet.',
           );
         }
@@ -1507,7 +1502,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                       color: Colors.white, size: 12),
                   const SizedBox(width: 4),
                   Text(
-                    '${post.likes.length}',
+                    '${post.likeCount}',
                     style: const TextStyle(color: Colors.white, fontSize: 11),
                   ),
                   const SizedBox(width: 10),
@@ -1515,7 +1510,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                       color: Colors.white, size: 12),
                   const SizedBox(width: 4),
                   Text(
-                    '${post.comments.length}',
+                    '${post.commentCount}',
                     style: const TextStyle(color: Colors.white, fontSize: 11),
                   ),
                 ],

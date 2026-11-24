@@ -32,6 +32,7 @@ class _PhoneSignInSheetState extends State<_PhoneSignInSheet> {
   bool _codeSent = false;
   bool _isSending = false;
   bool _isVerifying = false;
+  bool _isCompletingSignIn = false;
   bool _finished = false;
 
   bool get _isBusy => _isSending || _isVerifying;
@@ -139,7 +140,8 @@ class _PhoneSignInSheetState extends State<_PhoneSignInSheet> {
   }
 
   Future<void> _completeSignIn(PhoneAuthCredential credential) async {
-    if (_finished || !mounted) return;
+    if (_finished || _isCompletingSignIn || !mounted) return;
+    _isCompletingSignIn = true;
     setState(() {
       _isVerifying = true;
       _isSending = false;
@@ -153,16 +155,18 @@ class _PhoneSignInSheetState extends State<_PhoneSignInSheet> {
       _finished = true;
       Navigator.of(context).pop(userCredential);
     } on FirebaseAuthException catch (exception) {
+      _isCompletingSignIn = false;
       if (!mounted) return;
       setState(() {
         _isVerifying = false;
         _error = exception.message ?? 'Phone sign-in failed.';
       });
-    } catch (_) {
+    } catch (error) {
+      _isCompletingSignIn = false;
       if (!mounted) return;
       setState(() {
         _isVerifying = false;
-        _error = 'Phone sign-in failed. Please try again.';
+        _error = 'Phone sign-in failed: $error';
       });
     }
   }

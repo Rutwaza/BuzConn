@@ -388,7 +388,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Pick the frame people will notice first in Spotlight.',
+                  'Pick the frame people will notice first.',
                   style: TextStyle(color: AppColors.grey),
                 ),
                 const SizedBox(height: 14),

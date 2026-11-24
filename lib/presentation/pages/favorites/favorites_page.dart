@@ -136,7 +136,7 @@ class FavoritesPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Likes: ${post.likes.length}  Comments: ${post.comments.length}',
+                    'Likes: ${post.likeCount}  Comments: ${post.commentCount}',
                     style: TextStyle(
                       color: Theme.of(context).brightness == Brightness.dark
                           ? Colors.white70

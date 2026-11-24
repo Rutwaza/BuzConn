@@ -11,8 +11,8 @@ import 'package:businessfinder/presentation/pages/business/businesses_page.dart'
 import 'package:businessfinder/presentation/pages/feed/posts_feed_page.dart';
 import 'package:businessfinder/presentation/pages/feed/create_post_page.dart';
 import 'package:businessfinder/presentation/pages/business/business_profile_page.dart';
-import 'package:businessfinder/presentation/pages/chat/chat_list_page.dart';
-import 'package:businessfinder/presentation/pages/chat/chat_page.dart';
+import 'package:businessfinder/features/chat/ui/chat_list_page.dart';
+import 'package:businessfinder/features/chat/ui/chat_page.dart';
 import 'package:businessfinder/presentation/pages/search/search_page.dart';
 import 'package:businessfinder/presentation/pages/profile/client_profile_page.dart';
 import 'package:businessfinder/presentation/pages/notifications/notifications_page.dart';

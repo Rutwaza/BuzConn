@@ -13,8 +13,14 @@ class Post {
   final String? googleMapsLink;
   final int viewCount;
   final int playCount;
+  /// Legacy lists (before Phase 2). New posts keep them empty; use
+  /// [likeCount], [commentCount] and LikeStore instead.
   final List<String> likes;
   final List<Comment> comments;
+
+  /// Kept up to date by Cloud Functions (functions/social.js).
+  final int likeCount;
+  final int commentCount;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -31,11 +37,43 @@ class Post {
     this.googleMapsLink,
     this.viewCount = 0,
     this.playCount = 0,
-    required this.likes,
-    required this.comments,
+    this.likes = const [],
+    this.comments = const [],
+    int? likeCount,
+    int? commentCount,
     required this.createdAt,
     required this.updatedAt,
-  });
+  })  : likeCount = likeCount ?? likes.length,
+        commentCount = commentCount ?? comments.length;
+
+  Post copyWith({
+    int? likeCount,
+    int? commentCount,
+    int? viewCount,
+    int? playCount,
+    DateTime? updatedAt,
+  }) {
+    return Post(
+      id: id,
+      ownerId: ownerId,
+      businessId: businessId,
+      businessName: businessName,
+      businessImageUrl: businessImageUrl,
+      content: content,
+      imageUrl: imageUrl,
+      videoUrl: videoUrl,
+      media: media,
+      googleMapsLink: googleMapsLink,
+      viewCount: viewCount ?? this.viewCount,
+      playCount: playCount ?? this.playCount,
+      likes: likes,
+      comments: comments,
+      likeCount: likeCount ?? this.likeCount,
+      commentCount: commentCount ?? this.commentCount,
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
 
   factory Post.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
@@ -69,6 +107,10 @@ class Post {
       comments: (data['comments'] is List)
           ? (data['comments'] as List<dynamic>).map((comment) => Comment.fromMap(comment)).toList()
           : [],
+      likeCount: data['likeCount'] == null ? null : _intFromDynamic(data['likeCount']),
+      commentCount: data['commentCount'] == null
+          ? null
+          : _intFromDynamic(data['commentCount']),
       createdAt: _parseTimestamp(data['createdAt']),
       updatedAt: _parseTimestamp(data['updatedAt']),
     );
@@ -87,8 +129,8 @@ class Post {
       'googleMapsLink': googleMapsLink,
       'viewCount': viewCount,
       'playCount': playCount,
-      'likes': likes,
-      'comments': comments.map((comment) => comment.toMap()).toList(),
+      'likeCount': 0,
+      'commentCount': 0,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
     };

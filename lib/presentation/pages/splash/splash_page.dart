@@ -73,7 +73,7 @@ class _SplashPageState extends ConsumerState<SplashPage> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(24),
                 child: Image.asset(
-                  'assets/images/spotlight_logo.png',
+                  'assets/images/duhuze_logo.png',
                   fit: BoxFit.cover,
                 ),
               ),
@@ -92,14 +92,14 @@ class _SplashPageState extends ConsumerState<SplashPage> {
             const SizedBox(height: 8),
             // Tagline
             Text(
-              'Spotlight your work. Discover creators.',
+              'Africa Connected.',
               style: TextStyle(
                 fontSize: 16,
                 color: AppColors.white.withOpacity(0.8),
               ),
             ),
             const SizedBox(height: 48),
-            // SpotLight loader
+            // Loader
             const SpotlightLoader(size: 42, color: AppColors.white),
           ],
         ),

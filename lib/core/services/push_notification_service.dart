@@ -1,14 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:win_toast/win_toast.dart';
 
-import '../routes/router.dart';
 import 'local_notification_service.dart';
 
 class PushNotificationService {
@@ -28,12 +28,31 @@ class PushNotificationService {
   static const MethodChannel _windowsCallChannel =
       MethodChannel('spotlight/calls');
   bool _initialized = false;
+  bool _windowsToastReady = false;
 
   Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
 
     if (Platform.isWindows) {
+      try {
+        _windowsToastReady = await WinToast.instance().initialize(
+          aumId: 'BuzConn.Duhuze',
+          displayName: 'Duhuze',
+          iconPath: '',
+          clsid: 'D926593C-9EBD-4E8B-A6DD-4905854EE387',
+        );
+        WinToast.instance().setActivatedCallback((event) {
+          try {
+            final payload = jsonDecode(event.argument) as Map<String, dynamic>;
+            LocalNotificationService.instance.handlePayload(payload);
+          } catch (error) {
+            if (kDebugMode) debugPrint('Windows toast activation failed: $error');
+          }
+        });
+      } catch (error) {
+        if (kDebugMode) debugPrint('Windows toast initialization failed: $error');
+      }
       _authSub = _auth.authStateChanges().listen(_handleWindowsAuthChange);
       return;
     }
@@ -58,7 +77,7 @@ class PushNotificationService {
       final body = notification?.body ?? _bodyFromData(message.data);
       if (title.isNotEmpty || body.isNotEmpty) {
         LocalNotificationService.instance.show(
-          title: title.isEmpty ? 'SpotLight' : title,
+          title: title.isEmpty ? 'Duhuze' : title,
           body: body.isEmpty ? 'You have a new update.' : body,
           payload: {
             'type': message.data['type'],
@@ -132,26 +151,45 @@ class PushNotificationService {
       _watchWindowsCall(chatId);
     }
 
-    final messenger = AppRouter.scaffoldMessengerKey.currentState;
-    messenger?.showSnackBar(
-      SnackBar(
-        content: Text('$title\n$body'),
-        duration: const Duration(seconds: 8),
-        action: SnackBarAction(
-          label: type == 'call' ? 'Answer' : 'Open',
-          onPressed: () {
-            if (type == 'call') unawaited(_setWindowsRinging(false));
-            LocalNotificationService.instance.handlePayload({
-              'type': type,
-              'chatId': chatId,
-              'postId': data['postId'],
-              'userId': data['fromUserId'],
-            });
-          },
-        ),
-      ),
-    );
+    if (!_windowsToastReady) return;
+    final safeTitle = _escapeToastText(title);
+    final safeBody = _escapeToastText(body);
+    final launchPayload = jsonEncode({
+      'type': type,
+      'chatId': chatId,
+      'postId': data['postId'],
+      'userId': data['fromUserId'],
+    });
+    unawaited(_showWindowsToast(
+      safeTitle,
+      safeBody,
+      _escapeToastText(launchPayload),
+    ));
   }
+
+  Future<void> _showWindowsToast(
+    String title,
+    String body,
+    String launchPayload,
+  ) async {
+    try {
+      await WinToast.instance().showCustomToast(
+        xml: '''<?xml version="1.0" encoding="UTF-8"?>
+<toast duration="long" launch="$launchPayload"><visual><binding template="ToastGeneric">
+<text>$title</text><text>$body</text>
+</binding></visual></toast>''',
+      );
+    } catch (error) {
+      if (kDebugMode) debugPrint('Windows toast display failed: $error');
+    }
+  }
+
+  String _escapeToastText(String text) => text
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&apos;');
 
   void _watchWindowsCall(String chatId) {
     unawaited(_windowsCallSub?.cancel());
@@ -204,7 +242,9 @@ class PushNotificationService {
   Future<void> _saveToken(String token) async {
     final user = _auth.currentUser;
     if (user == null) return;
-    await _firestore.collection('users').doc(user.uid).set({
+    // Device tokens are private: users_private/{uid} can only be read by its
+    // owner (and the server, which sends the pushes).
+    await _firestore.collection('users_private').doc(user.uid).set({
       'fcmTokens': FieldValue.arrayUnion([token]),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -235,7 +275,7 @@ class PushNotificationService {
       case 'like':
         return 'New like';
       default:
-        return 'SpotLight';
+        return 'Duhuze';
     }
   }
 

@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
-import '../../../data/repositories/chat_repository.dart';
+import 'package:businessfinder/features/chat/data/chat_repository.dart';
 import 'chat_page.dart';
 
 class ChatListPage extends StatefulWidget {

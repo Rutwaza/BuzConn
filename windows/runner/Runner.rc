@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "SpotLight" "\0"
+            VALUE "FileDescription", "Duhuze" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "SpotLight" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 SpotLight. All rights reserved." "\0"
-            VALUE "OriginalFilename", "SpotLight.exe" "\0"
-            VALUE "ProductName", "SpotLight" "\0"
+            VALUE "InternalName", "Duhuze" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Duhuze. All rights reserved." "\0"
+            VALUE "OriginalFilename", "Duhuze.exe" "\0"
+            VALUE "ProductName", "Duhuze" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

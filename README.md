@@ -1,8 +1,44 @@
-# SpotLight
+# Duhuze
 
-SpotLight is a Flutter social app for discovering creators and businesses, publishing image/video posts, and communicating through direct or business chats. Firebase provides identity, application data, realtime updates and push notifications. Cloudflare R2 stores media; authenticated Firebase Functions issue short-lived upload/download links.
+Duhuze ("let's connect", Africa Connected; formerly SpotLight/BussFinder) is a Flutter social app for discovering creators and businesses, publishing image/video posts, and communicating through direct or business chats. Firebase provides identity, application data, realtime updates and push notifications. Cloudflare R2 stores media; authenticated Firebase Functions issue short-lived upload/download links.
 
 This README is the setup and release handoff for the current repository. It describes the configuration found in this checkout, including gaps that must be closed before a public release. Do not treat a successful debug run as a production readiness check.
+
+## Phase 1 changes (security + rename), November 2026
+
+What changed and what you must do once:
+
+1. **Deploy rules and the new functions** (from the repo root):
+
+   ```powershell
+   firebase deploy --only firestore:rules --project bussinessfinder-327f5
+   firebase deploy --only functions:notifyOnPostLike,functions:notifyOnFollow,functions:notifyOnChatMessage,functions:postCommentAction,functions:sendNotificationDocumentPush --project bussinessfinder-327f5
+   ```
+
+   Deploy the functions **before or together with** the new app build: the new app no longer creates notifications or edits comments itself, the server does (`functions/social.js`).
+
+2. **Give yourself admin with a custom claim**, then sign out and in again:
+
+   ```powershell
+   cd functions
+   gcloud auth application-default login
+   node scripts/set-admin.js nelsonjembe99@gmail.com
+   ```
+
+   After that, delete the email fallback in `firestore.rules` (`isSuperAdmin`) and `SUPER_ADMIN_EMAILS` in `functions/index.js`.
+
+3. **Move old push tokens to the private collection** (once): `node scripts/move-fcm-tokens.js` from `functions/`.
+
+4. **Run the rules tests** any time you change `firestore.rules` (needs Java):
+
+   ```powershell
+   cd rules-tests
+   npm install
+   npm test
+   ```
+
+Summary of the rules: only the server creates notifications; comments change only through `postCommentAction`; a like may only add or remove your own id; counters go up by one; you can only send, edit or delete your own messages (ghost messages may be removed by the receiver); "Clear chat" hides messages for you only (`chats/{id}.clearedAt.{uid}`); push tokens live in `users_private/{uid}`; users cannot change `isActive`, `username`, `apps` or `role` on their own profile.
+
 
 ## Project ownership and services
 

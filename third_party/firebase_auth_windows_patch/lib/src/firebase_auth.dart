@@ -71,11 +71,7 @@ class FirebaseAuth extends FirebasePluginPlatform {
   ///
   /// See [setLanguageCode] to update the language code.
   String? get languageCode {
-    if (_delegate.languageCode != null) {
-      return _delegate.languageCode;
-    }
-
-    return null;
+    return _delegate.languageCode;
   }
 
   /// Changes this instance to point to an Auth emulator running locally.
@@ -155,6 +151,35 @@ class FirebaseAuth extends FirebasePluginPlatform {
   /// parent project. By default, this is set to `null`.
   set tenantId(String? tenantId) {
     _delegate.tenantId = tenantId;
+  }
+
+  /// The current Auth instance's custom auth domain.
+  /// The auth domain used to handle redirects from OAuth provides, for example
+  /// "my-awesome-app.firebaseapp.com". By default, this is set to `null` and
+  /// default auth domain is used.
+  ///
+  /// If not `null`, this value will supersede `authDomain` property set in `initializeApp`.
+  String? get customAuthDomain {
+    return _delegate.customAuthDomain;
+  }
+
+  /// Set the current Auth instance's auth domain for apple and android platforms.
+  /// The auth domain used to handle redirects from OAuth provides, for example
+  /// "my-awesome-app.firebaseapp.com". By default, this is set to `null` and
+  /// default auth domain is used.
+  ///
+  /// If not `null`, this value will supersede `authDomain` property set in `initializeApp`.
+  set customAuthDomain(String? customAuthDomain) {
+    // Web and windows do not support setting custom auth domains on the auth instance
+    if (defaultTargetPlatform == TargetPlatform.windows || kIsWeb) {
+      final message = defaultTargetPlatform == TargetPlatform.windows
+          ? 'Cannot set custom auth domain on a FirebaseAuth instance for windows platform'
+          : 'Cannot set custom auth domain on a FirebaseAuth instance. Set the custom auth domain on `FirebaseOptions.authDomain` instance and pass into `Firebase.initializeApp()` instead.';
+      throw UnimplementedError(
+        message,
+      );
+    }
+    _delegate.customAuthDomain = customAuthDomain;
   }
 
   /// Applies a verification code sent to the user by email or other out-of-band
@@ -258,6 +283,9 @@ class FirebaseAuth extends FirebasePluginPlatform {
   /// A [FirebaseAuthException] maybe thrown with the following error code:
   /// - **invalid-email**:
   ///  - Thrown if the email address is not valid.
+  @Deprecated('fetchSignInMethodsForEmail() has been deprecated. '
+      'Migrating off of this method is recommended as a security best-practice. Learn more in the Identity Platform documentation: '
+      ' https://cloud.google.com/identity-platform/docs/admin/email-enumeration-protection.')
   Future<List<String>> fetchSignInMethodsForEmail(String email) {
     return _delegate.fetchSignInMethodsForEmail(email);
   }
@@ -481,6 +509,7 @@ class FirebaseAuth extends FirebasePluginPlatform {
   /// - **account-exists-with-different-credential**:
   ///  - Thrown if there already exists an account with the email address
   ///    asserted by the credential.
+  // ignore: deprecated_member_use_from_same_package
   ///    Resolve this by calling [fetchSignInMethodsForEmail] and then asking
   ///    the user to sign in using one of the returned providers.
   ///    Once the user is signed in, the original credential can be linked to

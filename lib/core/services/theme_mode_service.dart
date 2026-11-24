@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-enum AppThemeMode { light, dark, cyber }
+enum AppThemeMode { light, dark }
 
 class ThemeModeService {
   ThemeModeService._();
@@ -21,30 +21,19 @@ class ThemeModeService {
         .get();
     final data = doc.data() ?? {};
     final value = (data['themeMode'] ?? 'dark').toString();
-    if (value == 'dark') {
-      mode.value = AppThemeMode.dark;
-    } else if (value == 'cyber') {
-      mode.value = AppThemeMode.cyber;
-    } else {
-      mode.value = AppThemeMode.light;
-    }
+    // 'cyber' was removed; anyone who had it gets dark mode.
+    mode.value =
+        value == 'light' ? AppThemeMode.light : AppThemeMode.dark;
   }
 
   Future<void> toggle() async {
     final current = mode.value;
-    final newMode = current == AppThemeMode.light
-        ? AppThemeMode.dark
-        : current == AppThemeMode.dark
-            ? AppThemeMode.cyber
-            : AppThemeMode.light;
+    final newMode =
+        current == AppThemeMode.light ? AppThemeMode.dark : AppThemeMode.light;
     mode.value = newMode;
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      final modeValue = newMode == AppThemeMode.dark
-          ? 'dark'
-          : newMode == AppThemeMode.cyber
-              ? 'cyber'
-              : 'light';
+      final modeValue = newMode == AppThemeMode.dark ? 'dark' : 'light';
       await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
         'themeMode': modeValue,
         'updatedAt': FieldValue.serverTimestamp(),

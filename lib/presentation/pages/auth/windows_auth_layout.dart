@@ -150,7 +150,7 @@ class WindowsAuthLayout extends StatelessWidget {
           _feature(Icons.forum_rounded, 'Build real connections',
               'Start conversations and grow your network.'),
           const SizedBox(height: 20),
-          _feature(Icons.trending_up_rounded, 'Grow with Spotlight',
+          _feature(Icons.trending_up_rounded, 'Grow with Duhuze',
               'Share your work with a community that cares.'),
           const Spacer(),
           const Text(
@@ -177,14 +177,14 @@ class WindowsAuthLayout extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(14),
             child: Image.asset(
-              'assets/images/spotlight_logo.png',
+              'assets/images/duhuze_logo.png',
               fit: BoxFit.cover,
             ),
           ),
         ),
         const SizedBox(width: 12),
         const Text(
-          'Spotlight',
+          'Duhuze',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w800,

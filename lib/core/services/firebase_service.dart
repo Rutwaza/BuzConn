@@ -1,7 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 
 import '../../firebase_options.dart';
 
@@ -12,7 +11,6 @@ class FirebaseService {
   late FirebaseApp app;
   late FirebaseAuth auth;
   late FirebaseFirestore firestore;
-  late FirebaseStorage storage;
 
   FirebaseService._();
 
@@ -22,12 +20,16 @@ class FirebaseService {
     );
     auth = FirebaseAuth.instance;
     firestore = FirebaseFirestore.instance;
-    storage = FirebaseStorage.instance;
     
-    // Privacy-first default: keep Firestore in memory so sensitive chat docs
-    // are not intentionally persisted in the local offline cache.
+    // Phase 2: keep a local copy (offline cache). Chats and feeds open
+    // instantly from the phone, messages written offline are sent later, and
+    // we pay for far fewer reads. 40 MB keeps it small on cheap phones.
+    // (Before, the cache was off, so every screen waited for the network.)
     try {
-      firestore.settings = const Settings(persistenceEnabled: false);
+      firestore.settings = const Settings(
+        persistenceEnabled: true,
+        cacheSizeBytes: 40 * 1024 * 1024,
+      );
     } catch (_) {
       // Ignore if settings were already locked by an earlier Firestore use.
     }

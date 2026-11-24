@@ -12,6 +12,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../core/widgets/night_sky_background.dart';
 import '../../../core/widgets/spotlight_toast.dart';
 import '../../../core/services/windows_google_auth_service.dart';
 import 'email_verification_notice.dart';
@@ -137,7 +138,6 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       'createdAt': FieldValue.serverTimestamp(),
       'userType': 'client',
       'profileCompleted': false,
-      'fcmTokens': [],
       'themeMode': 'dark',
     });
     return false;
@@ -260,7 +260,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     return WindowsAuthLayout(
       eyebrow: 'Get started',
       title: 'Create your account',
-      subtitle: 'Set up your Spotlight account and start building connections.',
+      subtitle: 'Set up your Duhuze account and start building connections.',
       footerPrompt: 'Already have an account?',
       footerAction: 'Sign in',
       onFooterTap: () => context.go(AppRoutes.login),
@@ -428,18 +428,10 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         extendBodyBehindAppBar: true,
         body: Stack(
           children: [
-            Positioned.fill(
-              child: Opacity(
-                opacity: isDark ? 0.5 : 0.42,
-                child: Image.asset(
-                  'assets/images/chat_bg.gif',
-                  fit: BoxFit.cover,
-                  alignment: Alignment.center,
-                  filterQuality: FilterQuality.low,
-                  gaplessPlayback: true,
-                ),
+            if (!isDark)
+              const Positioned.fill(
+                child: IgnorePointer(child: NightSkyBackground()),
               ),
-            ),
             Positioned.fill(
               child: Container(
                 color: isDark
@@ -457,7 +449,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     const SizedBox(height: 80),
                     Center(
                       child: Text(
-                        'Create Your Spotlight',
+                        'Join Duhuze',
                         textAlign: TextAlign.center,
                         style: Theme.of(context)
                             .textTheme
@@ -478,7 +470,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     const SizedBox(height: 8),
                     Center(
                       child: Text(
-                        'Join Spotlight and share your story',
+                        'Connect with people, pages and businesses near you',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                               color: Colors.white70,

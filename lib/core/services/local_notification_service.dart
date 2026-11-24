@@ -19,7 +19,7 @@ class LocalNotificationService {
   static const AndroidNotificationChannel _chatChannel =
       AndroidNotificationChannel(
     'spotlight_chat',
-    'SpotLight Chats',
+    'Duhuze Chats',
     description: 'Direct messages and chat alerts.',
     importance: Importance.high,
   );
@@ -27,14 +27,14 @@ class LocalNotificationService {
   static const AndroidNotificationChannel _activityChannel =
       AndroidNotificationChannel(
     'spotlight_activity',
-    'SpotLight Activity',
-    description: 'Follows, likes, comments, and Spotlight activity.',
+    'Duhuze Activity',
+    description: 'Follows, likes, comments and other activity.',
     importance: Importance.high,
   );
   static const AndroidNotificationChannel _callsChannel =
       AndroidNotificationChannel(
     'spotlight_calls',
-    'SpotLight Calls',
+    'Duhuze Calls',
     description: 'Incoming voice and video call alerts.',
     importance: Importance.max,
     playSound: true,

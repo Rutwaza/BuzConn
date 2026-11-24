@@ -782,7 +782,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Build your Spotlight page',
+                            'Build your Duhuze page',
                             style: Theme.of(context)
                                 .textTheme
                                 .titleMedium

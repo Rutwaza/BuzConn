@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:businessfinder/features/chat/data/presence_service.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_constants.dart';
@@ -18,6 +19,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _isDeletingAccount = false;
 
   Future<void> _signOut() async {
+    await PresenceService.instance.goOffline();
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
     context.go(AppRoutes.login);
@@ -221,15 +223,9 @@ class _SettingsPageState extends State<SettingsPage> {
               return _SettingsTile(
                 icon: mode == AppThemeMode.dark
                     ? Icons.dark_mode
-                    : mode == AppThemeMode.cyber
-                        ? Icons.bolt
-                        : Icons.light_mode,
+                    : Icons.light_mode,
                 title: 'Theme Mode',
-                subtitle: mode == AppThemeMode.dark
-                    ? 'Dark'
-                    : mode == AppThemeMode.cyber
-                        ? 'Cyber'
-                        : 'Light',
+                subtitle: mode == AppThemeMode.dark ? 'Dark' : 'Light',
                 onTap: () async {
                   await ThemeModeService.instance.toggle();
                   if (mounted) {

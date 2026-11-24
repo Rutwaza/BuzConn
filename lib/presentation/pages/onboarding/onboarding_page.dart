@@ -21,7 +21,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
 
   final List<OnboardingItem> _onboardingItems = [
     OnboardingItem(
-      title: 'Spotlight Your Work',
+      title: 'Duhuze: Africa Connected',
       description: 'Share your posts and shine in a creator-first community.',
       icon: Icons.auto_awesome,
     ),

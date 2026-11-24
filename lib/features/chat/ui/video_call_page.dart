@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 class VideoCallPage extends StatefulWidget {
@@ -33,6 +35,8 @@ class _VideoCallPageState extends State<VideoCallPage> {
   bool _cameraOff = false;
   bool _hasRemoteDescription = false;
   bool _statusSent = false;
+  bool _ringbackPlaying = false;
+  static const MethodChannel _callsChannel = MethodChannel('spotlight/calls');
 
   DocumentReference<Map<String, dynamic>> get _callDoc =>
       FirebaseFirestore.instance
@@ -62,6 +66,7 @@ class _VideoCallPageState extends State<VideoCallPage> {
     _localRenderer.dispose();
     _remoteRenderer.dispose();
     _localStream?.dispose();
+    if (_ringbackPlaying) unawaited(_setRingback(false));
     super.dispose();
   }
 
@@ -139,12 +144,18 @@ class _VideoCallPageState extends State<VideoCallPage> {
     await _callDoc.update({
       'offer': offer.toMap(),
     });
+    _ringbackPlaying = true;
+    await _setRingback(true);
 
     _callSub = _callDoc.snapshots().listen((snap) async {
       final data = snap.data();
-      if (data == null) return;
+      if (data == null) {
+        _stopRingback();
+        return;
+      }
       final answer = data['answer'];
       if (answer != null && _peerConnection != null) {
+        _stopRingback();
         final desc = RTCSessionDescription(
           answer['sdp'],
           answer['type'],
@@ -221,6 +232,7 @@ class _VideoCallPageState extends State<VideoCallPage> {
   }
 
   Future<void> _hangUp() async {
+    _stopRingback();
     try {
       await _sendCallStatus();
       await _peerConnection?.close();
@@ -232,6 +244,30 @@ class _VideoCallPageState extends State<VideoCallPage> {
     if (mounted) {
       Navigator.of(context).pop();
     }
+  }
+
+  void _stopRingback() {
+    if (!_ringbackPlaying) return;
+    _ringbackPlaying = false;
+    unawaited(_setRingback(false));
+  }
+
+  Future<void> _setRingback(bool enabled) async {
+    if (Platform.isWindows) {
+      try {
+        await _callsChannel.invokeMethod<void>(
+          'setRinging',
+          {'enabled': enabled},
+        );
+      } catch (_) {}
+      return;
+    }
+    if (!Platform.isAndroid) return;
+    try {
+      await _callsChannel.invokeMethod<void>(
+        enabled ? 'startRinging' : 'stopRinging',
+      );
+    } catch (_) {}
   }
 
   Future<void> _sendCallStatus() async {

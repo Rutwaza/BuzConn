@@ -19,6 +19,7 @@ class R2StorageService {
     required String path,
     required Uint8List bytes,
     String? chatId,
+    void Function(double progress)? onProgress,
   }) {
     return _upload(
       bucket: bucket,
@@ -26,6 +27,7 @@ class R2StorageService {
       bytes: bytes,
       contentType: 'image/jpeg',
       chatId: chatId,
+      onProgress: onProgress,
     );
   }
 
@@ -34,6 +36,7 @@ class R2StorageService {
     required String path,
     required Uint8List bytes,
     String? chatId,
+    void Function(double progress)? onProgress,
   }) {
     return _upload(
       bucket: bucket,
@@ -41,6 +44,7 @@ class R2StorageService {
       bytes: bytes,
       contentType: 'video/mp4',
       chatId: chatId,
+      onProgress: onProgress,
     );
   }
 
@@ -49,6 +53,7 @@ class R2StorageService {
     required String path,
     required Uint8List bytes,
     String? chatId,
+    void Function(double progress)? onProgress,
   }) {
     return _upload(
       bucket: bucket,
@@ -56,6 +61,7 @@ class R2StorageService {
       bytes: bytes,
       contentType: 'audio/mp4',
       chatId: chatId,
+      onProgress: onProgress,
     );
   }
 
@@ -65,6 +71,7 @@ class R2StorageService {
     required Uint8List bytes,
     String contentType = 'application/octet-stream',
     String? chatId,
+    void Function(double progress)? onProgress,
   }) {
     return _upload(
       bucket: bucket,
@@ -72,6 +79,7 @@ class R2StorageService {
       bytes: bytes,
       contentType: contentType,
       chatId: chatId,
+      onProgress: onProgress,
     );
   }
 
@@ -109,6 +117,7 @@ class R2StorageService {
     required Uint8List bytes,
     required String contentType,
     String? chatId,
+    void Function(double progress)? onProgress,
   }) async {
     if (bytes.isEmpty || bytes.length > _maxUploadBytes) {
       throw const FormatException('Files must be smaller than 250 MB.');
@@ -130,7 +139,15 @@ class R2StorageService {
       final request = await client.putUrl(Uri.parse(uploadUrl));
       request.headers.set(HttpHeaders.contentTypeHeader, contentType);
       request.contentLength = bytes.length;
-      request.add(bytes);
+      const chunkSize = 64 * 1024;
+      for (var offset = 0; offset < bytes.length; offset += chunkSize) {
+        final end = (offset + chunkSize < bytes.length)
+            ? offset + chunkSize
+            : bytes.length;
+        request.add(bytes.sublist(offset, end));
+        await request.flush();
+        onProgress?.call(end / bytes.length);
+      }
       final response = await request.close();
       final responseBody = await response.transform(utf8.decoder).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {

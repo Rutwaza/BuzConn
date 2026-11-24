@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:businessfinder/features/posts/data/engagement_repository.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
@@ -36,6 +37,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
   late final PageController _controller;
   final _commentController = TextEditingController();
   final _repo = PostsRepository();
+  // Comments are their own documents now (Phase 2): one live listener.
+  List<Comment> _serverComments = const [];
+  StreamSubscription<List<Comment>>? _commentsSub;
   final Map<String, String?> _userImageCache = {};
   final List<Comment> _pendingComments = [];
   final ScrollController _commentsScrollController = ScrollController();
@@ -53,9 +57,17 @@ class _PostDetailPageState extends State<PostDetailPage> {
   final ValueNotifier<bool> _isMuted = ValueNotifier<bool>(false);
   bool _isSubmittingComment = false;
 
+  void _onLikesChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    LikeStore.instance.addListener(_onLikesChanged);
+    _commentsSub = _repo.watchComments(widget.post.id).listen((comments) {
+      if (mounted) setState(() => _serverComments = comments);
+    }, onError: (_) {});
     _mediaIndex = widget.initialMediaIndex;
     _controller = PageController(initialPage: _mediaIndex);
     if (widget.post.media.isNotEmpty) {
@@ -65,6 +77,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
 
   @override
   void dispose() {
+    LikeStore.instance.removeListener(_onLikesChanged);
+    _commentsSub?.cancel();
     _controller.dispose();
     _commentController.dispose();
     _commentsScrollController.dispose();
@@ -263,6 +277,15 @@ class _PostDetailPageState extends State<PostDetailPage> {
         _pendingComments.removeWhere((comment) => comment.id == optimistic.id);
         _replyingToComment = null;
       });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _pendingComments.removeWhere((comment) => comment.id == optimistic.id);
+      });
+      _commentController.text = text;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Comment not sent. Check your connection. ($e)')),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -526,7 +549,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                             const SizedBox(height: 4),
                             Text(
                               post.content.trim().isEmpty
-                                  ? 'Share this Spotlight moment.'
+                                  ? 'Share this moment.'
                                   : post.content,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
@@ -564,7 +587,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         await Clipboard.setData(
                           ClipboardData(
                             text: post.content.trim().isEmpty
-                                ? 'Check out this Spotlight post from ${post.businessName}'
+                                ? 'Check out this Duhuze post from ${post.businessName}'
                                 : post.content,
                           ),
                         );
@@ -1102,10 +1125,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
           }
           final currentUser = FirebaseAuth.instance.currentUser;
           final isLiked =
-              currentUser != null && post.likes.contains(currentUser.uid);
+              currentUser != null && LikeStore.instance.isLiked(post.id);
           final mergedComments = <Comment>[
             ..._pendingComments,
-            ...post.comments.where(
+            ..._serverComments.where(
               (serverComment) => !_pendingComments.any(
                 (pending) =>
                     pending.userId == serverComment.userId &&
@@ -1497,9 +1520,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                   _repo.toggleLike(post.id);
                                 },
                               ),
-                              Text('${post.likes.length}'),
+                              Text('${post.likeCount}'),
                               const Icon(Icons.chat_bubble_outline),
-                              Text('${post.comments.length}'),
+                              Text('${post.commentCount}'),
                               IconButton(
                                 icon: const Icon(Icons.forward),
                                 onPressed: () => _showShareSheet(post),

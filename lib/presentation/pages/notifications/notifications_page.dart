@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_constants.dart';
-import '../../../core/services/social_notification_service.dart';
+import '../../../core/services/notification_read_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
 import '../business/post_detail_page.dart';
@@ -30,19 +30,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Future<void> _markAllRead() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('notifications')
-          .where('toUserId', isEqualTo: user.uid)
-          .where('readAt', isEqualTo: null)
-          .get();
-      final batch = FirebaseFirestore.instance.batch();
-      for (final doc in snap.docs) {
-        batch.update(doc.reference, {'readAt': Timestamp.now()});
-      }
-      await batch.commit();
+      await NotificationReadService.markAllRead();
     } catch (e) {
       debugPrint('Failed to mark notifications read: $e');
       if (mounted) {
@@ -163,7 +152,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           if (docs.isEmpty) {
             return const _NotificationsEmptyState(
               title: 'You are all caught up',
-              subtitle: 'Fresh activity from Spotlight will land here.',
+              subtitle: 'New likes, follows and comments will show up here.',
             );
           }
           final grouped = _groupNotifications(docs)
@@ -524,11 +513,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                     'followingId': item.fromUserId,
                                     'createdAt': FieldValue.serverTimestamp(),
                                   });
-                                  await SocialNotificationService
-                                      .createFollowNotification(
-                                    followerId: currentUser.uid,
-                                    followingId: item.fromUserId,
-                                  );
                                 },
                                 style: TextButton.styleFrom(
                                   minimumSize: Size.zero,
@@ -904,7 +888,7 @@ class _NotificationsHeroCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Spotlight activity',
+                  'Duhuze activity',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 16,

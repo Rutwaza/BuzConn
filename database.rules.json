@@ -1,10 +1,8 @@
 {
   "rules": {
-    ".read": "auth != null",
     ".write": false,
     "devices": {
       "$busId": {
-        ".read": "auth != null",
         "sits": {
           ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 200"
         },
@@ -40,6 +38,32 @@
           "ts": {
             ".validate": "!newData.exists() || newData.isNumber()"
           }
+        }
+      },
+      ".read": "auth != null"
+    },
+    "status": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['state','lastChanged'])",
+        "state": {
+          ".validate": "newData.isString() && (newData.val() === 'online' || newData.val() === 'offline')"
+        },
+        "lastChanged": {
+          ".validate": "newData.isNumber()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "typing": {
+      "$chatId": {
+        ".read": "auth != null && $chatId.contains(auth.uid)",
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid && $chatId.contains(auth.uid)",
+          ".validate": "newData.isBoolean()"
         }
       }
     }

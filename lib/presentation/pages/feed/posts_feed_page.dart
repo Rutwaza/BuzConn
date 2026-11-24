@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/features/posts/data/engagement_repository.dart';
+import 'package:businessfinder/features/chat/data/presence_service.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -15,12 +17,12 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/constants/app_constants.dart';
-import '../../../core/services/social_notification_service.dart';
+import '../../../core/services/notification_read_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/widgets/spotlight_loader.dart';
 import '../../../data/models/post_model.dart';
 import '../../../data/repositories/posts_repository.dart';
-import '../../../data/repositories/chat_repository.dart';
+import 'package:businessfinder/features/chat/data/chat_repository.dart';
 import '../../../core/services/r2_storage_service.dart';
 import '../business/post_detail_page.dart' as business_post;
 import 'package:visibility_detector/visibility_detector.dart';
@@ -63,6 +65,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   bool _inlineSuggestionsDismissed = false;
 
   Future<void> _signOut() async {
+    await PresenceService.instance.goOffline();
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
     context.go(AppRoutes.login);
@@ -99,6 +102,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
 
   @override
   void dispose() {
+    LikeStore.instance.removeListener(_onLikesChanged);
     _commentController.dispose();
     _scrollController.dispose();
     _reelsPageController.dispose();
@@ -106,9 +110,14 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     super.dispose();
   }
 
+  void _onLikesChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    LikeStore.instance.addListener(_onLikesChanged);
     _scrollController.addListener(_onScroll);
     _bootstrapFeed();
   }
@@ -195,10 +204,6 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
           'followingId': userId,
           'createdAt': Timestamp.now(),
         });
-        await SocialNotificationService.createFollowNotification(
-          followerId: user.uid,
-          followingId: userId,
-        );
       }
     } on FirebaseException catch (e) {
       if (!mounted) return;
@@ -424,7 +429,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     final freshnessBoost =
         ageHours <= 0 ? 3.0 : (72 - ageHours.clamp(0, 72)) / 24;
     final engagementBoost =
-        (post.likes.length * 0.18) + (post.comments.length * 0.34);
+        (post.likeCount * 0.18) + (post.commentCount * 0.34);
     final mediaBoost = post.media.isNotEmpty ? 0.4 : 0.0;
     final relationshipBoost =
         (_followingUserIds.contains(post.ownerId) ? 2.6 : 0.0) +
@@ -616,32 +621,13 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     });
   }
 
+  // Changes only the number on screen; LikeStore.toggle (called right after
+  // through _postsRepository.toggleLike) flips the heart and writes the like.
   void _optimisticallyToggleLike(Post post, String currentUserId) {
+    final delta = LikeStore.instance.isLiked(post.id) ? -1 : 1;
     _replacePost(post.id, (current) {
-      final likes = List<String>.from(current.likes);
-      if (likes.contains(currentUserId)) {
-        likes.remove(currentUserId);
-      } else {
-        likes.add(currentUserId);
-      }
-      return Post(
-        id: current.id,
-        ownerId: current.ownerId,
-        businessId: current.businessId,
-        businessName: current.businessName,
-        businessImageUrl: current.businessImageUrl,
-        content: current.content,
-        imageUrl: current.imageUrl,
-        videoUrl: current.videoUrl,
-        media: current.media,
-        googleMapsLink: current.googleMapsLink,
-        viewCount: current.viewCount,
-        playCount: current.playCount,
-        likes: likes,
-        comments: current.comments,
-        createdAt: current.createdAt,
-        updatedAt: DateTime.now(),
-      );
+      final next = current.likeCount + delta;
+      return current.copyWith(likeCount: next < 0 ? 0 : next);
     });
   }
 
@@ -651,49 +637,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    String displayName = user.displayName?.trim().isNotEmpty == true
-        ? user.displayName!.trim()
-        : 'You';
-    try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final name = (userDoc.data()?['name'] ?? '').toString().trim();
-      if (name.isNotEmpty) {
-        displayName = name;
-      }
-    } catch (_) {}
-
-    final optimisticComment = Comment(
-      id: 'local_${DateTime.now().microsecondsSinceEpoch}',
-      userId: user.uid,
-      userName: displayName,
-      content: trimmed,
-      createdAt: DateTime.now(),
-    );
-
     _replacePost(postId, (current) {
-      final comments = List<Comment>.from(current.comments)
-        ..add(optimisticComment);
-      return Post(
-        id: current.id,
-        ownerId: current.ownerId,
-        businessId: current.businessId,
-        businessName: current.businessName,
-        businessImageUrl: current.businessImageUrl,
-        content: current.content,
-        imageUrl: current.imageUrl,
-        videoUrl: current.videoUrl,
-        media: current.media,
-        googleMapsLink: current.googleMapsLink,
-        viewCount: current.viewCount,
-        playCount: current.playCount,
-        likes: current.likes,
-        comments: comments,
-        createdAt: current.createdAt,
-        updatedAt: DateTime.now(),
-      );
+      return current.copyWith(commentCount: current.commentCount + 1);
     });
 
     await _postsRepository.addComment(postId, trimmed);
@@ -701,25 +646,11 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
 
   void _incrementPostMetricLocally(String postId, String field) {
     _replacePost(postId, (current) {
-      return Post(
-        id: current.id,
-        ownerId: current.ownerId,
-        businessId: current.businessId,
-        businessName: current.businessName,
-        businessImageUrl: current.businessImageUrl,
-        content: current.content,
-        imageUrl: current.imageUrl,
-        videoUrl: current.videoUrl,
-        media: current.media,
-        googleMapsLink: current.googleMapsLink,
+      return current.copyWith(
         viewCount:
             field == 'viewCount' ? current.viewCount + 1 : current.viewCount,
         playCount:
             field == 'playCount' ? current.playCount + 1 : current.playCount,
-        likes: current.likes,
-        comments: current.comments,
-        createdAt: current.createdAt,
-        updatedAt: current.updatedAt,
       );
     });
   }
@@ -932,6 +863,10 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                       return IconButton(
                         onPressed: () {
                           _badgeClearedAt.value = Timestamp.now();
+                          unawaited(NotificationReadService.markAllRead()
+                              .catchError((Object error) {
+                            debugPrint('Could not clear notification badge: $error');
+                          }));
                           context.push(AppRoutes.notifications);
                         },
                         icon: Stack(
@@ -1049,7 +984,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                   final videoMedia = post.media.firstWhere((m) => m.isVideo);
                   final currentUserId =
                       FirebaseAuth.instance.currentUser?.uid ?? '';
-                  final isLiked = post.likes.contains(currentUserId);
+                  final isLiked = LikeStore.instance.isLiked(post.id);
                   final isFollowingCreator = post.businessId.isNotEmpty
                       ? _followingPageIds.contains(post.businessId)
                       : _followingUserIds.contains(post.ownerId);
@@ -1135,7 +1070,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                   _postsRepository.toggleLike(post.id);
                                 },
                               ),
-                              Text('${post.likes.length}',
+                              Text('${post.likeCount}',
                                   style: const TextStyle(color: Colors.white)),
                               const SizedBox(height: 18),
                               IconButton(
@@ -1143,7 +1078,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                     color: Colors.white),
                                 onPressed: () => _showCommentDialog(post.id),
                               ),
-                              Text('${post.comments.length}',
+                              Text('${post.commentCount}',
                                   style: const TextStyle(color: Colors.white)),
                               const SizedBox(height: 18),
                               IconButton(
@@ -1582,7 +1517,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                                 final uid =
                                                     currentUser?.uid ?? '';
                                                 final alreadyLiked =
-                                                    post.likes.contains(uid);
+                                                    LikeStore.instance.isLiked(post.id);
                                                 if (uid.isEmpty ||
                                                     alreadyLiked) {
                                                   return;
@@ -1618,8 +1553,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                               },
                                               onLike: () {
                                                 final currentlyLiked =
-                                                    post.likes.contains(
-                                                        currentUser?.uid ?? '');
+                                                    LikeStore.instance.isLiked(post.id);
                                                 final uid =
                                                     currentUser?.uid ?? '';
                                                 if (uid.isNotEmpty) {
@@ -2144,7 +2078,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                   ),
                 ),
                 Text(
-                  'Spotlight Feed',
+                  'Duhuze Feed',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -2344,7 +2278,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                         await Clipboard.setData(
                           ClipboardData(
                             text: post.content.trim().isEmpty
-                                ? 'Check out this Spotlight post from ${post.businessName}'
+                                ? 'Check out this Duhuze post from ${post.businessName}'
                                 : post.content,
                           ),
                         );
@@ -3592,7 +3526,7 @@ class _RefreshingSpotlightPillState extends State<_RefreshingSpotlightPill>
         ),
         const SizedBox(width: 10),
         const Text(
-          'Refreshing Spotlight',
+          'Refreshing',
           style: TextStyle(
             fontWeight: FontWeight.w700,
           ),
@@ -3658,7 +3592,7 @@ class _InlineFollowSuggestionsCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     const Text(
-                      'Fresh creators and pages to shape your Spotlight',
+                      'Fresh creators and pages for you',
                       style: TextStyle(
                         color: AppColors.grey,
                         fontSize: 12,
@@ -3817,7 +3751,7 @@ class PostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isLiked = post.likes.contains(currentUserId);
+    final isLiked = LikeStore.instance.isLiked(post.id);
     final timeAgo = _formatTimeAgo(post.createdAt);
     final media = post.media;
     final isProfilePost = post.businessId.isEmpty;
@@ -4052,7 +3986,7 @@ class PostCard extends StatelessWidget {
                           color: isLiked ? Colors.pinkAccent : null,
                         ),
                       ),
-                      _AnimatedCountText(value: post.likes.length),
+                      _AnimatedCountText(value: post.likeCount),
                       const SizedBox(width: 6),
                       IconButton(
                         visualDensity: VisualDensity.compact,
@@ -4062,7 +3996,7 @@ class PostCard extends StatelessWidget {
                         icon: const Icon(Icons.chat_bubble_outline),
                         onPressed: onComment,
                       ),
-                      _AnimatedCountText(value: post.comments.length),
+                      _AnimatedCountText(value: post.commentCount),
                       const SizedBox(width: 6),
                       IconButton(
                         visualDensity: VisualDensity.compact,
@@ -4320,7 +4254,7 @@ class _ShareSheetPreview extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   post.content.trim().isEmpty
-                      ? 'Share this Spotlight moment with your people.'
+                      ? 'Share this moment with your people.'
                       : post.content,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -4376,7 +4310,7 @@ class _AnimatedSpotlightWordmarkState extends State<_AnimatedSpotlightWordmark>
             stops: const [0, 0.38, 0.56, 1],
           ).createShader(bounds),
           child: const Text(
-            'SpotLight',
+            'Duhuze',
             style: TextStyle(
               fontWeight: FontWeight.w900,
               letterSpacing: -0.35,
@@ -4422,7 +4356,7 @@ class _DesktopSpotlightRail extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Spotlight on desktop',
+                'Duhuze on desktop',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
@@ -4620,7 +4554,7 @@ class _DesktopSpotlightDock extends StatelessWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(18),
               child: Image.asset(
-                'assets/images/spotlight_logo.png',
+                'assets/images/duhuze_logo.png',
                 fit: BoxFit.cover,
               ),
             ),

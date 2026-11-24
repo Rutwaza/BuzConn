@@ -91,15 +91,6 @@ class ChatRepository {
     return chatId;
   }
 
-  Stream<QuerySnapshot> messagesStream(String chatId) {
-    return _firestore
-        .collection('chats')
-        .doc(chatId)
-        .collection('messages')
-        .orderBy('createdAt', descending: true)
-        .snapshots();
-  }
-
   Future<void> sendMessage({
     required String chatId,
     required String senderId,
@@ -118,10 +109,14 @@ class ChatRepository {
         _firestore.collection('chats').doc(chatId).collection('messages').doc();
     var senderName = _auth.currentUser?.displayName ?? 'User';
     String? senderAvatar = _auth.currentUser?.photoURL;
-    var isRequest = false;
-    await _firestore.runTransaction((transaction) async {
-      final chatSnap = await transaction.get(chatRef);
-      final chat = chatSnap.data() ?? <String, dynamic>{};
+    // Phase 2 speed fix: no transaction. A transaction must ask the server
+    // first, so the message only appeared after a round trip (the "slow
+    // send"). Now we read the chat from the phone's cache (it is already
+    // open on screen) and write with a batch. Firestore shows a batch write in
+    // the message list immediately and uploads it in the background.
+    // The Firestore rules still decide whether the write is allowed.
+    final chat = await _readChat(chatRef);
+    {
       final participants = (chat['participants'] as List? ?? [])
           .map((id) => id.toString())
           .toList();
@@ -159,7 +154,6 @@ class ChatRepository {
         senderAvatar = chat['clientImageUrl'] as String?;
       }
 
-      isRequest = status == 'pending' && requesterId == senderId;
       if (chat['chatType'] == 'direct' && status == 'none') {
         if (chat['lastMessageAt'] == null) {
           final recipientId = participants.firstWhere(
@@ -167,7 +161,6 @@ class ChatRepository {
             orElse: () => '',
           );
           if (recipientId.isNotEmpty) {
-            isRequest = true;
             chatUpdates.addAll({
               'requestStatus': 'pending',
               'requesterId': senderId,
@@ -176,7 +169,8 @@ class ChatRepository {
           }
         }
       }
-      transaction.set(messageRef, {
+      final batch = _firestore.batch();
+      batch.set(messageRef, {
         'id': messageRef.id,
         'senderId': senderId,
         'senderName': senderName,
@@ -192,51 +186,26 @@ class ChatRepository {
         'replyTo': replyTo,
         'createdAt': FieldValue.serverTimestamp(),
       });
-      transaction.update(chatRef, chatUpdates);
-    });
-
-    if (!isGhost || isRequest) {
-      unawaited(
-        _createMessageNotifications(
-          chatId: chatId,
-          senderId: senderId,
-          senderName: senderName,
-          senderAvatar: senderAvatar,
-          previewText: mediaUrl != null ? '[media]' : text,
-          type: isRequest ? 'message_request' : 'message',
-        ).catchError((_) {}),
-      );
+      batch.update(chatRef, chatUpdates);
+      // Not awaited by the chat screen: the message is already visible.
+      await batch.commit();
     }
+
+    // Notifications are created by the server (functions/social.js ->
+    // notifyOnChatMessage), so a phone can no longer fake them.
   }
 
-  Future<void> _createMessageNotifications({
-    required String chatId,
-    required String senderId,
-    required String senderName,
-    String? senderAvatar,
-    required String previewText,
-    String type = 'message',
-  }) async {
-    final chatSnap = await _firestore.collection('chats').doc(chatId).get();
-    final chatData = chatSnap.data() ?? {};
-    final participants = (chatData['participants'] as List<dynamic>? ?? [])
-        .map((e) => e.toString())
-        .toList();
-    for (final uid in participants) {
-      if (uid == senderId) continue;
-      await _firestore.collection('notifications').add({
-        'toUserId': uid,
-        'fromUserId': senderId,
-        'fromUserName': senderName,
-        'fromUserImageUrl': senderAvatar,
-        'type': type,
-        'chatId': chatId,
-        'preview': previewText,
-        'readAt': null,
-        'hidden': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+  Future<Map<String, dynamic>> _readChat(
+    DocumentReference<Map<String, dynamic>> chatRef,
+  ) async {
+    try {
+      final cached = await chatRef.get(const GetOptions(source: Source.cache));
+      final data = cached.data();
+      if (data != null) return data;
+    } catch (_) {
+      // Not in the cache yet: fall through to the server.
     }
+    return (await chatRef.get()).data() ?? <String, dynamic>{};
   }
 
   Future<void> respondToMessageRequest({
@@ -341,23 +310,15 @@ class ChatRepository {
     });
   }
 
+  /// "Clear chat" now clears it only for the current user: it saves the
+  /// moment of clearing, and ChatMessagesController hides older messages for
+  /// them.
+  /// Before, it deleted every message for both people.
   Future<void> clearChatMessages(String chatId) async {
-    final messagesRef =
-        _firestore.collection('chats').doc(chatId).collection('messages');
-    while (true) {
-      final snap = await messagesRef.limit(200).get();
-      if (snap.docs.isEmpty) break;
-      final batch = _firestore.batch();
-      for (final doc in snap.docs) {
-        batch.delete(doc.reference);
-      }
-      await batch.commit();
-    }
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
     await _firestore.collection('chats').doc(chatId).update({
-      'lastMessage': '',
-      'lastMessageAt': null,
-      'lastMessageSenderId': null,
-      'updatedAt': FieldValue.serverTimestamp(),
+      'clearedAt.$uid': FieldValue.serverTimestamp(),
     });
   }
 

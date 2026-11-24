@@ -13,6 +13,9 @@ const logger = require("firebase-functions/logger");
 admin.initializeApp();
 const db = admin.firestore();
 
+// Server-side social features (notifications, comments). See social.js.
+Object.assign(exports, require("./social"));
+
 const R2_ACCOUNT_ID = defineString("R2_ACCOUNT_ID");
 const R2_PUBLIC_BUCKET_NAME = defineString("R2_PUBLIC_BUCKET_NAME");
 const R2_PRIVATE_BUCKET_NAME = defineString("R2_PRIVATE_BUCKET_NAME");
@@ -272,13 +275,18 @@ exports.sendNotificationDocumentPush = onDocumentCreated(
     const toUserId = notification.toUserId;
     if (!toUserId) return;
 
-    const userSnap = await db.collection("users").doc(toUserId).get();
-    if (!userSnap.exists) return;
-
-    const userData = userSnap.data() || {};
-    const tokens = Array.isArray(userData.fcmTokens)
-      ? userData.fcmTokens.filter(Boolean)
-      : [];
+    // Device tokens now live in users_private/{uid} (only the owner can read
+    // it). Old accounts may still have them on users/{uid}; use both.
+    const [privateSnap, userSnap] = await Promise.all([
+      db.collection("users_private").doc(toUserId).get(),
+      db.collection("users").doc(toUserId).get(),
+    ]);
+    const privateTokens = privateSnap.data()?.fcmTokens;
+    const legacyTokens = userSnap.data()?.fcmTokens;
+    const tokens = [...new Set([
+      ...(Array.isArray(privateTokens) ? privateTokens : []),
+      ...(Array.isArray(legacyTokens) ? legacyTokens : []),
+    ].filter(Boolean))];
 
     if (!tokens.length) {
       logger.info("No FCM tokens for user", {toUserId});
@@ -337,12 +345,13 @@ exports.sendNotificationDocumentPush = onDocumentCreated(
     });
 
     if (invalidTokens.length) {
-      await db.collection("users").doc(toUserId).set(
-        {
-          fcmTokens: admin.firestore.FieldValue.arrayRemove(...invalidTokens),
-        },
-        {merge: true},
-      );
+      const removal = {
+        fcmTokens: admin.firestore.FieldValue.arrayRemove(...invalidTokens),
+      };
+      await Promise.all([
+        db.collection("users_private").doc(toUserId).set(removal, {merge: true}),
+        db.collection("users").doc(toUserId).set(removal, {merge: true}),
+      ]);
     }
   },
 );
@@ -563,8 +572,7 @@ exports.backfillDiscoveredBuses = onCall({region: "us-central1"}, async (request
     throw new HttpsError("unauthenticated", "Sign in required.");
   }
 
-  const email = String(request.auth.token.email || "").toLowerCase();
-  const isSuper = SUPER_ADMIN_EMAILS.has(email);
+  const isSuper = isSuperAdminAuth(request);
   let allowedAgencyId = "";
   if (!isSuper) {
     const member = await getAgencyMembership(request.auth.uid);
@@ -1424,16 +1432,20 @@ async function resolveAgencyIdRef(agencyRef) {
   throw new HttpsError("not-found", "Agency not found.");
 }
 
-function assertSuperAdmin(request) {
-  const email = String(request.auth?.token?.email || "").toLowerCase();
-  if (!SUPER_ADMIN_EMAILS.has(email)) {
-    throw new HttpsError("permission-denied", "Super admin only.");
-  }
+// Admin = the `admin: true` custom claim (set with functions/scripts/set-admin.js).
+// The email list is a temporary fallback until the claim is set; it only
+// counts for a verified email. Remove SUPER_ADMIN_EMAILS once the claim works.
+function isSuperAdminAuth(request) {
+  const token = request.auth?.token || {};
+  if (token.admin === true) return true;
+  const email = String(token.email || "").toLowerCase();
+  return token.email_verified === true && SUPER_ADMIN_EMAILS.has(email);
 }
 
-function isSuperAdminAuth(request) {
-  const email = String(request.auth?.token?.email || "").toLowerCase();
-  return SUPER_ADMIN_EMAILS.has(email);
+function assertSuperAdmin(request) {
+  if (!isSuperAdminAuth(request)) {
+    throw new HttpsError("permission-denied", "Super admin only.");
+  }
 }
 
 function assertRole(role, allowed) {
