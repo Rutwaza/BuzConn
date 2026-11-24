@@ -103,10 +103,15 @@ class ChatRepository {
     bool isGhost = false,
     String? ghostCipherText,
     String? ghostNonce,
+    Map<String, dynamic>? extra,
+    String? messageId,
   }) async {
     final chatRef = _firestore.collection('chats').doc(chatId);
-    final messageRef =
-        _firestore.collection('chats').doc(chatId).collection('messages').doc();
+    final messageRef = _firestore
+        .collection('chats')
+        .doc(chatId)
+        .collection('messages')
+        .doc(messageId);
     var senderName = _auth.currentUser?.displayName ?? 'User';
     String? senderAvatar = _auth.currentUser?.photoURL;
     // Phase 2 speed fix: no transaction. A transaction must ask the server
@@ -123,7 +128,9 @@ class ChatRepository {
       final status = (chat['requestStatus'] ?? 'none').toString();
       final requesterId = chat['requesterId']?.toString();
       final chatUpdates = <String, dynamic>{
-        'lastMessage': mediaUrl != null
+        'lastMessage': mediaType == 'location'
+            ? text
+            : mediaUrl != null
             ? '[media]'
             : isGhost
                 ? 'Ghost message'
@@ -185,6 +192,7 @@ class ChatRepository {
         'mediaSize': mediaSize,
         'replyTo': replyTo,
         'createdAt': FieldValue.serverTimestamp(),
+        ...?extra,
       });
       batch.update(chatRef, chatUpdates);
       // Not awaited by the chat screen: the message is already visible.
@@ -276,6 +284,81 @@ class ChatRepository {
     await _firestore.collection('users').doc(userId).update({
       'lastSeen': FieldValue.serverTimestamp(),
     });
+  }
+
+  /// Sends a location pin. With [liveFor] it becomes a live location that
+  /// the sender's phone keeps moving (see LiveLocationService) until it ends.
+  /// Returns the new message id at once (the upload continues in the
+  /// background, like normal messages).
+  String sendLocation({
+    required String chatId,
+    required String senderId,
+    required double lat,
+    required double lng,
+    double? accuracy,
+    Duration? liveFor,
+    Map<String, dynamic>? replyTo,
+    void Function(Future<void> upload)? onUpload,
+  }) {
+    final live = liveFor != null;
+    final messageId =
+        _firestore.collection('chats').doc(chatId).collection('messages').doc().id;
+    final sending = sendMessage(
+      messageId: messageId,
+      chatId: chatId,
+      senderId: senderId,
+      text: live ? '📍 Live location' : '📍 Location',
+      mediaType: 'location',
+      replyTo: replyTo,
+      extra: {
+        'location': {
+          'lat': lat,
+          'lng': lng,
+          if (accuracy != null) 'accuracy': accuracy,
+          'updatedAt': Timestamp.now(),
+        },
+        'live': live,
+        if (live) 'liveUntil': Timestamp.fromDate(DateTime.now().add(liveFor)),
+        if (live) 'liveEnded': false,
+      },
+    );
+    onUpload?.call(sending);
+    return messageId;
+  }
+
+  /// Moves the pin of a live location message (sender only, see rules).
+  Future<void> updateLiveLocation({
+    required String chatId,
+    required String messageId,
+    required double lat,
+    required double lng,
+    double? accuracy,
+  }) {
+    return _firestore
+        .collection('chats')
+        .doc(chatId)
+        .collection('messages')
+        .doc(messageId)
+        .update({
+      'location': {
+        'lat': lat,
+        'lng': lng,
+        if (accuracy != null) 'accuracy': accuracy,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+    });
+  }
+
+  Future<void> stopLiveLocation({
+    required String chatId,
+    required String messageId,
+  }) {
+    return _firestore
+        .collection('chats')
+        .doc(chatId)
+        .collection('messages')
+        .doc(messageId)
+        .update({'liveEnded': true, 'liveUntil': FieldValue.serverTimestamp()});
   }
 
   Future<void> hardDeleteMessage({

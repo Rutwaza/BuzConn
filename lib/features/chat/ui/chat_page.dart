@@ -22,6 +22,10 @@ import 'package:video_player/video_player.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'video_call_page.dart';
+import 'location_map_page.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart' hide Path;
+import 'package:businessfinder/features/chat/data/live_location_service.dart';
 
 import '../../../core/theme/colors.dart';
 import '../../../core/services/r2_storage_service.dart';
@@ -35,6 +39,7 @@ part 'widgets/chat_media_viewer.dart';
 part 'widgets/ghost_message.dart';
 part 'widgets/chat_small_widgets.dart';
 part 'widgets/chat_shared_panel.dart';
+part 'widgets/chat_location.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
   final String chatId;
@@ -1398,6 +1403,27 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       },
                 onHide: null,
               );
+            } else if (mediaType == 'location' && data['location'] is Map) {
+              // If you were sharing live and reopened the app, keep the pin moving.
+              final info = LocationInfo.fromMessage(data);
+              if (isMe &&
+                  info.isLiveNow &&
+                  !LiveLocationService.instance.isSharing(messageId)) {
+                LiveLocationService.instance.start(
+                  chatId: widget.chatId,
+                  messageId: messageId,
+                  until: info.until!,
+                );
+              }
+              content = _LocationMessageCard(
+                chatId: widget.chatId,
+                messageId: messageId,
+                data: data,
+                isMe: isMe,
+                isDark: isDark,
+                senderName: senderName.toString(),
+                senderAvatar: senderAvatar,
+              );
             } else if (mediaUrl != null && mediaType == 'image') {
               final index = mediaItems.indexWhere(
                 (item) => item.url == mediaUrl,
@@ -2591,6 +2617,90 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     return digest.bytes[index % digest.bytes.length];
   }
 
+  Future<void> _showLocationSheet() async {
+    final choice = await showModalBottomSheet<Duration?>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        Widget live(String label, Duration d) => ListTile(
+              leading: const Icon(Icons.share_location_rounded,
+                  color: AppColors.secondary),
+              title: Text('Share live location · $label'),
+              onTap: () => Navigator.of(context).pop(d),
+            );
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.my_location_rounded,
+                    color: AppColors.primary),
+                title: const Text('Send my current location'),
+                onTap: () => Navigator.of(context).pop(Duration.zero),
+              ),
+              const Divider(height: 1),
+              live('15 min', const Duration(minutes: 15)),
+              live('1 hour', const Duration(hours: 1)),
+              live('8 hours', const Duration(hours: 8)),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: Text(
+                  'Live location moves while Duhuze is open. You can stop it any time.',
+                  style: TextStyle(color: AppColors.grey, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (choice == null || !mounted) return;
+    await _sendLocation(liveFor: choice == Duration.zero ? null : choice);
+  }
+
+  Future<void> _sendLocation({Duration? liveFor}) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Finding your location…'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+    try {
+      final p = await LiveLocationService.currentPosition();
+      if (!mounted) return;
+      final replyTo = _replyingTo;
+      setState(() => _replyingTo = null);
+      final messageId = _repo.sendLocation(
+        chatId: widget.chatId,
+        senderId: user.uid,
+        lat: p.latitude,
+        lng: p.longitude,
+        accuracy: p.accuracy,
+        liveFor: liveFor,
+        replyTo: replyTo,
+        onUpload: (upload) => upload.catchError((Object e) {
+          messenger.showSnackBar(
+            SnackBar(content: Text('Location not sent: $e')),
+          );
+        }),
+      );
+      if (liveFor != null) {
+        LiveLocationService.instance.start(
+          chatId: widget.chatId,
+          messageId: messageId,
+          until: DateTime.now().add(liveFor),
+        );
+      }
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    } catch (e) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
   void _showAttachmentSheet() {
     showModalBottomSheet(
       context: context,
@@ -2620,6 +2730,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 onTap: () {
                   Navigator.of(context).pop();
                   _sendDocument();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.location_on_rounded,
+                    color: AppColors.primary),
+                title: const Text('Location'),
+                subtitle: const Text('Send where you are, or share it live'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _showLocationSheet();
                 },
               ),
             ],

@@ -22,6 +22,12 @@ class AppConstants {
   // Billing guard: pause Google Maps widget rendering temporarily.
   // Set to false to restore native Google Maps.
   static const bool pauseGoogleMaps = true;
+
+  // Map tiles for chat locations (flutter_map). OpenStreetMap's free server is
+  // fine for testing; before a big launch switch to a paid tile provider
+  // (e.g. MapTiler or Stadia) by changing this one line.
+  static const String mapTileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  static const String mapUserAgent = 'rw.duhuze.app';
   
   // Pagination
   static const int defaultPageSize = 10;

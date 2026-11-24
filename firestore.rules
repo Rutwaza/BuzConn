@@ -244,7 +244,8 @@ service cloud.firestore {
           && resource.data.senderId == request.auth.uid
           && request.resource.data.senderId == resource.data.senderId
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['text', 'editedAt', 'mediaUrl', 'mediaType', 'deleted', 'deletedAt']);
+            .hasOnly(['text', 'editedAt', 'mediaUrl', 'mediaType', 'deleted', 'deletedAt',
+              'location', 'liveUntil', 'liveEnded']);
         // Your own messages; ghost messages may also be removed by the
         // receiver after reading (that is how ghost mode works).
         allow delete: if isChatParticipant(chatId)

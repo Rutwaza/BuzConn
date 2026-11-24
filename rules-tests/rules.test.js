@@ -186,3 +186,21 @@ test("feed scores, keywords and timelines are server-only", async () => {
   await assertSucceeds(getDoc(doc(as(EVE), "timelines/eve/items/p1")));
   await assertFails(getDoc(doc(as(BOB), "timelines/eve/items/p1")));
 });
+
+// Phase 4 ---------------------------------------------------------------------
+test("live location: only the sender moves or stops their pin", async () => {
+  const pin = {lat: -1.95, lng: 30.06, updatedAt: serverTimestamp()};
+  await assertSucceeds(updateDoc(doc(as(ALICE), "chats/alice_bob/messages/m1"), {location: pin}));
+  await assertSucceeds(updateDoc(doc(as(ALICE), "chats/alice_bob/messages/m1"), {liveEnded: true, liveUntil: serverTimestamp()}));
+  await assertFails(updateDoc(doc(as(BOB), "chats/alice_bob/messages/m1"), {location: pin}));
+  await assertFails(updateDoc(doc(as(EVE), "chats/alice_bob/messages/m1"), {location: pin}));
+});
+
+test("the ghost archive is closed to every app user", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "ghost_archive/alice_bob_g1"), {chatId: "alice_bob"});
+  });
+  await assertFails(getDoc(doc(as(ALICE), "ghost_archive/alice_bob_g1")));
+  await assertFails(getDoc(doc(as(EVE, {admin: true}), "ghost_archive/alice_bob_g1")));
+  await assertFails(setDoc(doc(as(ALICE), "ghost_archive/x"), {chatId: "alice_bob"}));
+});
