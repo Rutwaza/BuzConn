@@ -295,3 +295,22 @@ test("block: my list is private, and a blocked person cannot message me", async 
   await assertSucceeds(deleteDoc(doc(as(ALICE), "users/alice/blocked/bob")));
   await assertSucceeds(setDoc(doc(as(BOB), "chats/alice_bob/messages/b2"), {senderId: BOB, text: "hi again"}));
 });
+
+// Admin panel -----------------------------------------------------------------
+test("moderators read reports and the team list; normal users cannot; nobody edits from the app", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "reports/r9"), {reporterId: BOB, status: "open", reason: "spam"});
+    await setDoc(doc(ctx.firestore(), "staff/eve"), {role: "moderator"});
+  });
+  const mod = as(EVE, {moderator: true});
+  await assertSucceeds(getDoc(doc(mod, "reports/r9")));
+  await assertSucceeds(getDoc(doc(mod, "staff/eve")));
+  await assertFails(getDoc(doc(as(BOB), "staff/eve")));
+  await assertFails(updateDoc(doc(mod, "reports/r9"), {status: "dismissed"}));
+  await assertFails(setDoc(doc(mod, "staff/bob"), {role: "moderator"}));
+  await assertFails(getDoc(doc(mod, "admin_events/e1")));
+});
+
+test("users cannot un-suspend themselves", async () => {
+  await assertFails(updateDoc(doc(as(ALICE), "users/alice"), {suspended: false}));
+});

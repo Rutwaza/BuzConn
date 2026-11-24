@@ -35,6 +35,10 @@ Object.assign(exports, require("./status"));
 Object.assign(exports, require("./account"));
 // Moderation: admin alert for each report. See moderation.js.
 Object.assign(exports, require("./moderation"));
+// Admin panel actions (reports, suspend, moderators, stats). See admin.js.
+// eslint-disable-next-line no-unused-vars
+const {_adminInternals, ...adminFunctions} = require("./admin");
+Object.assign(exports, adminFunctions);
 
 const R2_ACCOUNT_ID = defineString("R2_ACCOUNT_ID");
 const R2_PUBLIC_BUCKET_NAME = defineString("R2_PUBLIC_BUCKET_NAME");

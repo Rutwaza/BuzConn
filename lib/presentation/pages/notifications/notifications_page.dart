@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:businessfinder/features/admin/admin_panel_page.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:businessfinder/features/shop/ui/orders_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -65,6 +66,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
       } else {
         context.push(AppRoutes.chatDetailPath(item.chatId!));
       }
+      return;
+    }
+    if (item.type == 'report') {
+      if (!context.mounted) return;
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => const AdminPanelPage(),
+      ));
       return;
     }
     if (item.type == 'order') {
@@ -680,7 +688,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'order':
         return ': ${item.preview ?? 'order update'}';
       case 'report':
-        return ': ${item.preview ?? 'new report'} (Firestore > reports)';
+        return ': ${item.preview ?? 'new report'}';
       case 'follow':
         return item.count > 1
             ? ' and ${item.count - 1} others followed you'

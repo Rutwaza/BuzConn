@@ -107,6 +107,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           errorMessage = 'Invalid email address.';
         } else if (e.code == 'invalid-credential') {
           errorMessage = 'Invalid credentials.';
+        } else if (e.code == 'user-disabled') {
+          errorMessage = tr('This account is suspended. Contact Duhuze support.');
         }
 
         if (didSignIn && mounted) {
@@ -219,7 +221,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     } on FirebaseAuthException catch (e) {
       showSpotlightToast(
         context,
-        e.message ?? 'Google sign-in failed',
+        e.code == 'user-disabled'
+            ? tr('This account is suspended. Contact Duhuze support.')
+            : (e.message ?? 'Google sign-in failed'),
         success: false,
       );
     } catch (error, stackTrace) {

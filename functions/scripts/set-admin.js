@@ -23,7 +23,14 @@ async function main() {
   if (flag === "--remove") delete claims.admin;
   else claims.admin = true;
   await admin.auth().setCustomUserClaims(user.uid, claims);
-  console.log(`${email} admin = ${claims.admin === true}`);
+  // Keep the Admin panel team list in step (staff/{uid}).
+  const staff = admin.firestore().collection("staff").doc(user.uid);
+  if (claims.admin === true) {
+    await staff.set({uid: user.uid, email, role: "admin", addedAt: admin.firestore.FieldValue.serverTimestamp()});
+  } else {
+    await staff.delete();
+  }
+  console.log(`${email} admin = ${claims.admin === true}. Sign out and in again in the app.`);
 }
 
 main().catch((error) => {

@@ -478,4 +478,5 @@ const Map<String, String> rwStrings = {
   'What we collect and your rights': 'Ibyo tubika n\'uburenganzira bwawe',
   'Community rules': 'Amategeko y\'abakoresha',
   'How to report harm to children': 'Uko wamenyesha ihohoterwa ry\'abana',
+  'This account is suspended. Contact Duhuze support.': 'Iyi konti yahagaritswe. Vugana na Duhuze.',
 };

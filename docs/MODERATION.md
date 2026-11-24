@@ -17,27 +17,25 @@ the admin does.
 - Only admins can read reports (rules). For each new report, `onReportCreated` (`functions/moderation.js`) notifies the admin accounts in `ADMIN_EMAILS`. **Child safety reports are marked URGENT.**
 - A block saves `users/{me}/blocked/{them}`. Their posts and statuses are hidden for me, and the rules stop them from sending me messages. They are not told.
 
-## Handling a report (admin)
+## Handling a report (Admin panel)
 
-1. Open Firebase console → Firestore → `reports`, newest first.
-2. Look at the target:
-   - post → `posts/{targetId}`
-   - status → `statuses/{targetId}`
-   - user → `users/{targetOwnerId}`
-   - chat → `chats/{targetId}`; for chats, use the export function or the ghost archive script (below), and **only for this report**.
-3. Decide:
-   - **Not a problem** → set the report's `status` to `"dismissed"`.
-   - **Remove content** → delete the post or status document, then set the report to `"actioned"`.
-   - **Suspend the user** → set `users/{uid}.isActive = false` (also done by the admin function `setEntityActive`). For serious cases, disable the account in Firebase console → Authentication.
-4. Write a short note in the report: `adminNote`, `handledAt`.
+Use the **Admin panel** in the app (Settings → Admin panel). Who has access,
+roles and every button are explained in README → *Admin panel*. In short:
+
+1. Open the report (child safety is always on top).
+2. Look at the person and the content shown in the sheet.
+3. Choose **Dismiss**, **Remove post/status**, **Suspend user** or **Remove + suspend**, and write a short note.
+4. The server does it, marks the report handled and logs it in `admin_events`.
 
 Aim to handle reports within **24 hours**, and child safety reports **at once**.
+Firebase console is the fallback, for example for a report type the panel
+cannot act on: delete the document by hand, then set the report's `status`.
 
 ## Child safety (CSAE): zero tolerance
 
 1. Do **not** download, copy or forward the material.
-2. Disable the account immediately (Authentication → disable user) and hide the content: set `isActive = false`, delete the post or status.
-3. Keep the evidence. Do not delete the user's chats or ghost copies, because the authorities may need them.
+2. In the Admin panel choose **Remove + suspend** (or **Suspend user** for a chat or profile report).
+3. Keep the evidence: **Remove** saves a copy of the post or status in Firestore `evidence/{reportId}` (locked, only visible in Firebase console) and the media files stay in R2. Do not delete the user's chats or ghost copies, because the authorities may need them.
 4. Report to **Rwanda Investigation Bureau (RIB)**. If the material is online elsewhere, also report it to the international hotline (INHOPE / NCMEC CyberTipline).
 5. Write what you did in the report (`adminNote`).
 

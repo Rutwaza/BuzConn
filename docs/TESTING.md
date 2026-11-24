@@ -66,6 +66,15 @@ Run first: `flutter run --release` (or install the APK from
 - [ ] B blocks A (profile ⋮ → Block): A's posts and statuses disappear for B.
 - [ ] A tries to message B: it fails (blocked). B unblocks: it works again.
 
+## 7b. Admin panel (admin account + a moderator account + a normal account)
+- [ ] `node scripts/set-admin.js <your email>` → sign out/in → Settings shows **Admin panel**; a normal account does not see it.
+- [ ] Reports tab: counts at the top; B's report of A's post is in **Open**; child safety reports are on top in red.
+- [ ] Open the report: A's name, the post photo/text. **Dismiss** → moves to **Handled** with your note.
+- [ ] New report → **Remove post**: the post disappears for everyone; Firestore `evidence/<reportId>` has a copy.
+- [ ] **Suspend user** (use a test account): it is logged out within about an hour, and at once on the next sign-in try ("This account is suspended"). **Users** tab → Restore → it can sign in again.
+- [ ] Team tab → Add moderator (email of a test account) → they sign out/in → they see **Moderator panel** with Reports + Users, no Team tab. Remove them → they lose access after signing in again.
+- [ ] Firestore `admin_events` lists each action with your email.
+
 ## 8. Settings
 - [ ] Language → Ikinyarwanda: all main screens change; back to English.
 - [ ] Theme dark/light.

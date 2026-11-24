@@ -109,12 +109,18 @@ service cloud.firestore {
     }
 
 
+    // Admin panel staff: admins, or moderators (claim set by adminSetRole).
+    function isStaff() {
+      return isSuperAdmin()
+        || (isSignedIn() && request.auth.token.get('moderator', false) == true);
+    }
+
     // ---- Users (Phase 1) ------------------------------------------------
     // Fields only the server/admin may set: account status, the unique
     // username (claimUsername function) and app access.
     function userServerFields() {
       return ['isActive', 'username', 'usernameLower', 'apps', 'admin', 'role',
-        'searchKeywords'];
+        'searchKeywords', 'suspended'];
     }
 
     function isBusinessOwner(businessId) {
@@ -296,8 +302,20 @@ service cloud.firestore {
         && request.resource.data.status == 'open'
         && request.resource.data.reason is string
         && request.resource.data.details.size() <= 500;
-      allow read, update: if isSuperAdmin();
-      allow delete: if false;
+      // Staff read them in the Admin panel; changes go through adminResolveReport.
+      allow read: if isStaff();
+      allow update, delete: if false;
+    }
+
+    // Copies of removed content, kept for the authorities (admin.js).
+    match /evidence/{id} {
+      allow read, write: if false;
+    }
+
+    // The admin team (written by the server: adminSetRole, set-admin.js).
+    match /staff/{uid} {
+      allow read: if isStaff();
+      allow write: if false;
     }
 
     match /users/{userId}/liked_posts/{postId} {

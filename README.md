@@ -102,9 +102,71 @@ Order states (rules allow only these moves): `pending_payment → paid_claimed �
 - [ ] In the app, add a class next to `MomoUssdPayment` in `lib/features/shop/data/payment_methods.dart` with `automatic = true`, and return it from `PaymentMethods.current`. The pay sheet should then wait for the server instead of asking "Did it go through?".
 - [ ] Decide whether shops still get paid directly (marketplace split) or Duhuze collects and pays out. The second makes Duhuze hold money, which needs a licence; ask a lawyer first.
 
+### Admin panel: who is admin and how to moderate
+
+**Who is who**
+
+| Role | Who | Can do | How you become it |
+| --- | --- | --- | --- |
+| **Admin** | The owner, `nelsonjembe99@gmail.com` | Everything below, plus add or remove moderators, open the ghost archive (from the PC), see `admin_events` | `cd functions; node scripts/set-admin.js <email>` (from the PC, signed in with `gcloud auth application-default login`) |
+| **Moderator** | Trusted helpers you choose | Read and handle reports, suspend and restore users | The admin adds them in the app: Admin panel → **Team** → *Add moderator* |
+| Everyone else | Normal users | Report and block | Nothing |
+
+Roles are **custom claims** on the Firebase account (`admin: true` or
+`moderator: true`), so nobody can give themselves a role from the phone. The
+team list is in Firestore `staff/{uid}`. After a role change the person must
+**sign out and in again** (or wait up to 1 hour).
+
+> First time: run `node scripts/set-admin.js nelsonjembe99@gmail.com` once,
+> sign out and in. Until then a temporary fallback treats that verified email
+> as admin. Remove the fallback afterwards (see the checklist below).
+
+**Opening the panel**
+
+App → **Settings → Admin panel** (moderators see *Moderator panel*). The tile
+only appears for staff. Tapping a report notification also opens it. Every
+staff member gets a notification for each new report; child-safety reports
+say **URGENT**.
+
+**The tabs**
+
+1. **Reports**
+   - The top row shows counts: urgent, open reports, users, pages, posts, suspended.
+   - *Open* is the to-do list (child safety always first); *Handled* is the history.
+   - Tap a report to see the reported person, the post or status (photo + text), the reporter's note, and the actions:
+     - **Dismiss**: nothing wrong.
+     - **Remove post/status**: deletes it with its likes, comments and views. A copy is kept in the locked Firestore collection `evidence` (for the police), and photo/video files stay in R2.
+     - **Suspend user**: logs them out everywhere and blocks sign-in. Their posts stay up; use *Remove* for those.
+     - **Remove + suspend**: both at once.
+   - Write a short note (why). It is saved on the report.
+2. **Users**: search one word of a name or username. **Suspend** or **Restore**. The list opens on the suspended users. Tap a person to see their profile.
+3. **Team** (admin only): see the team, **Add moderator** by email (they need a Duhuze account), remove a moderator.
+
+**Rules for the team**
+
+- Aim to handle reports within **24 hours**, child safety **immediately** (steps in `docs/MODERATION.md`: remove + suspend, do not download or forward anything, keep the evidence, report to RIB).
+- Chats are private and are **not** shown in the panel. Only the admin may open messages for a specific report, from the PC (ghost archive script above, or `exportChatBetweenUsers`), and every opening is logged.
+- Suspended people see "This account is suspended. Contact Duhuze support." when they try to sign in. Restore them from **Users** if it was a mistake.
+- Every action is checked on the server (`functions/admin.js`) and written to Firestore `admin_events`: who, what, when, which report or user. Moderators cannot suspend an admin or change the team.
+
+**Where things are in the code**
+
+| Part | File |
+| --- | --- |
+| Panel screens | `lib/features/admin/admin_panel_page.dart` |
+| Role check + calls | `lib/features/admin/admin_service.dart` |
+| Server actions: `adminResolveReport`, `adminSetUserSuspended`, `adminSetRole`, `adminStats` | `functions/admin.js` |
+| Report alerts to the team | `functions/moderation.js` (`staff` + `ADMIN_EMAILS`) |
+| Who can read `reports` / `staff` | `firestore.rules` (`isStaff()`) |
+| Report & block for users | `lib/features/moderation/moderation.dart` |
+
+**If you lose access** (changed email, new account): from the PC run
+`node scripts/set-admin.js <new email>` (needs the Firebase owner Google
+account), then `node scripts/set-admin.js <old email> --remove`.
+
 ### Other things that must not be forgotten
 
-- [ ] **Admin:** run `node scripts/set-admin.js nelsonjembe99@gmail.com` (from `functions/`), sign out and in, then remove the email fallback (`isSuperAdmin` in `firestore.rules`, `SUPER_ADMIN_EMAILS` in `functions/index.js` and `functions/ghost.js`).
+- [ ] **Admin:** run `node scripts/set-admin.js nelsonjembe99@gmail.com` (from `functions/`), sign out and in, then remove the email fallback: `isSuperAdmin` in `firestore.rules`, `SUPER_ADMIN_EMAILS` in `functions/index.js` and `functions/ghost.js`, `OWNER_EMAILS` in `functions/admin.js`, `_ownerEmails` in `lib/features/admin/admin_service.dart`.
 - [ ] **One-time jobs:** when Firestore `_maintenance/phase2` and `_maintenance/phase3` both show `done: true`, delete `phase2Maintenance` (social.js) and `phase3Maintenance` (feed.js), then deploy.
 - [ ] **Map tiles:** chat maps use OpenStreetMap's free server (`AppConstants.mapTileUrl`). Switch to a paid provider (MapTiler, Stadia, …) before a big launch.
 - [ ] **Live location:** works in the background through an Android foreground service (`lib/features/chat/data/live_location_service.dart`). It stops if the user swipes the app away, and resumes when that chat is opened again. Google Play will ask why the app uses `FOREGROUND_SERVICE_LOCATION`; the answer is "live location sharing in chat".
@@ -115,7 +177,7 @@ Order states (rules allow only these moves): `pending_payment → paid_claimed �
 - [ ] **Website placeholders:** replace `CHANGE_ME_EMAIL` / `CHANGE_ME_OWNER` in `site/*.html`, then `deploy.ps1` publishes them.
 - [ ] **Kinyarwanda review:** a native speaker reads `lib/core/i18n/rw_strings.dart` (drafted with AI help). Server notification texts (functions) are still English only.
 - [ ] **NCSA registration:** Rwanda's data protection law requires registering as a data controller; storing data with Google/Cloudflare outside Rwanda needs their authorization.
-- [ ] **Admin emails** for report alerts: `ADMIN_EMAILS` in `functions/moderation.js`.
+- [ ] **Report alerts** go to everyone in the Admin panel's Team plus `ADMIN_EMAILS` in `functions/moderation.js`.
 - [ ] **R2 media of expired statuses** is not deleted yet (only the Firestore docs). Add an R2 lifecycle rule for `public/post-*/…/status/` or a cleanup job when storage grows.
 
 ### Where the data lives
@@ -131,7 +193,10 @@ Order states (rules allow only these moves): `pending_payment → paid_claimed �
 | `ghost_archive` | Encrypted ghost copies | Server only, nobody reads from the app |
 | `statuses`, `statuses/{id}/views` | 24h statuses and who viewed them | Owner creates/deletes; viewer adds own view; server counts + cleans up hourly |
 | `users/{uid}/blocked/{otherUid}` | People I blocked | Only me |
-| `reports` | Reports of posts/users/chats/statuses | Anyone creates; admins read |
+| `reports` | Reports of posts/users/chats/statuses | Anyone creates; staff read; only the server (Admin panel actions) changes them |
+| `evidence` | Copies of removed reported content, for the authorities | Server only; nobody reads from the app (Firebase console only) |
+| `staff` | Admin/moderator team list | Server only (`adminSetRole`, `set-admin.js`); staff read |
+| `admin_events` | Log of every admin action, ghost archive opening, account deletion | Server only; admins read |
 | `notifications` | In-app + push notifications | Server only |
 | `admin_events` | Admin actions log | Server only |
 | Realtime DB `status/{uid}`, `typing/{chatId}/{uid}` | Online + typing | Each user for themselves |
@@ -152,7 +217,7 @@ These are account identifiers only. Passwords, recovery codes, API secrets, serv
 - Firebase client options: `lib/firebase_options.dart`
 - Firestore rules: `firestore.rules`
 - Realtime Database rules: `database.rules.json`
-- Cloud Functions (Node.js 22): `functions/` (`index.js` media/push/admin, `social.js` likes/comments/notifications, `feed.js` feeds/search, `ghost.js` ghost archive, `shop.js` + `payments/` shop and payments, `status.js` 24h statuses, `account.js` account deletion, `moderation.js` report alerts, `scripts/` owner tools)
+- Cloud Functions (Node.js 22): `functions/` (`index.js` media/push/admin, `social.js` likes/comments/notifications, `feed.js` feeds/search, `ghost.js` ghost archive, `shop.js` + `payments/` shop and payments, `status.js` 24h statuses, `account.js` account deletion, `moderation.js` report alerts, `admin.js` Admin panel actions, `scripts/` owner tools)
 - Translations: `lib/core/i18n/` (`tr()` + `rw_strings.dart`); test: `test/translations_test.dart`
 - Release: `docs/`, `tools/`, `site/` (public legal pages), `store-assets/` (Play icon + feature graphic)
 - Deploy script: `deploy.ps1`; security-rules tests: `rules-tests/`

@@ -1,4 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:businessfinder/features/admin/admin_service.dart';
+import 'package:businessfinder/features/admin/admin_panel_page.dart';
 import 'package:businessfinder/core/widgets/legal_links.dart';
 import 'package:businessfinder/core/services/r2_storage_service.dart';
 import 'package:businessfinder/core/services/lite_mode_service.dart';
@@ -288,6 +290,22 @@ class _SettingsPageState extends State<SettingsPage> {
             title: tr('Edit Profile'),
             subtitle: tr('Update your photo, bio, and contact details'),
             onTap: () => context.push(AppRoutes.profile),
+          ),
+          // Only the Duhuze team sees this (README -> "Admin panel").
+          FutureBuilder<StaffRole>(
+            future: AdminService.instance.role(),
+            builder: (context, snap) {
+              final role = snap.data ?? StaffRole.none;
+              if (role == StaffRole.none) return const SizedBox.shrink();
+              return _SettingsTile(
+                icon: Icons.admin_panel_settings_rounded,
+                title: role == StaffRole.admin ? 'Admin panel' : 'Moderator panel',
+                subtitle: 'Reports, users and team',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AdminPanelPage()),
+                ),
+              );
+            },
           ),
           _GhostModeSetting(),
           _SettingsTile(
