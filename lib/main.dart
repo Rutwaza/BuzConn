@@ -11,6 +11,7 @@ import 'core/theme/app_theme.dart';
 import 'core/services/firebase_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/services/theme_mode_service.dart';
+import 'core/services/lite_mode_service.dart';
 import 'core/routes/router.dart';
 import 'features/chat/data/presence_service.dart';
 import 'core/widgets/network_status_banner.dart';
@@ -57,6 +58,7 @@ void main() async {
     await PushNotificationService.instance.initialize();
     await ThemeModeService.instance.loadFromUser();
     await LanguageService.instance.loadFromUser();
+    await LiteModeService.instance.loadFromUser();
   });
 }
 

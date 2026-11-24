@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/services/lite_mode_service.dart';
 import 'package:businessfinder/features/status/ui/status_bar.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:businessfinder/core/services/video_compressor.dart';
@@ -1046,6 +1047,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                             height: MediaQuery.of(context).size.height,
                             rounded: false,
                             showReelLabel: true,
+                            alwaysLoad: true,
                             onTap: () {},
                           ),
                         ),
@@ -2659,8 +2661,11 @@ class _AutoPlayVideoPreview extends StatefulWidget {
     this.onDoubleTap,
     this.onActivePlayback,
     this.showReelLabel = false,
+    this.alwaysLoad = false,
   });
 
+  /// Reels load at once; feed videos wait for a tap in Lite mode.
+  final bool alwaysLoad;
   final String url;
   final double height;
   final bool rounded;
@@ -2685,14 +2690,22 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
   bool _isMuted = true;
   bool _didNotifyActivePlayback = false;
 
-  @override
-  void initState() {
-    super.initState();
+  /// Lite mode: nothing is downloaded until the user taps play.
+  late bool _waitForTap =
+      !widget.alwaysLoad && LiteModeService.instance.enabled;
+
+  void _startLoading() {
     if (Platform.isWindows) {
       _initMediaKit();
     } else {
       _initVideoPlayer();
     }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_waitForTap) _startLoading();
     _isMuted = _globalMuted.value;
     _globalMuted.addListener(_handleGlobalMuteChanged);
   }
@@ -2811,6 +2824,32 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
 
   @override
   Widget build(BuildContext context) {
+    if (_waitForTap) {
+      return GestureDetector(
+        onTap: () {
+          setState(() => _waitForTap = false);
+          _isVisible = true;
+          _startLoading();
+        },
+        child: Container(
+          height: widget.height,
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(widget.rounded ? 18 : 0),
+          ),
+          alignment: Alignment.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 64),
+              const SizedBox(height: 8),
+              Text(tr('Tap to play · Lite mode'),
+                  style: const TextStyle(color: Colors.white70)),
+            ],
+          ),
+        ),
+      );
+    }
     final controller = _controller;
     return VisibilityDetector(
       key: ObjectKey(this),

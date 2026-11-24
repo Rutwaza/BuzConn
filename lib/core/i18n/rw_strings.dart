@@ -437,4 +437,9 @@ const Map<String, String> rwStrings = {
   'Type a status': 'Andika status',
   'Add a caption…': 'Ongeraho igisobanuro…',
   'Text': 'Inyandiko',
+  'Tap to play · Lite mode': 'Kanda urebe · Lite mode',
+  'Lite mode (save data)': 'Lite mode (zigama interineti)',
+  'Auto: on when using mobile data': 'Byikora: bikora ukoresha interineti ya telefoni',
+  'On: videos play only when you tap': 'Birakora: videwo zikina ari uko ukanze',
+  'Off': 'Ntibikora',
 };

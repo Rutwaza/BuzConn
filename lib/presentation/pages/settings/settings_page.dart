@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:businessfinder/core/services/lite_mode_service.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -235,6 +236,21 @@ class _SettingsPageState extends State<SettingsPage> {
                 },
               );
             },
+          ),
+          ValueListenableBuilder<LiteMode>(
+            valueListenable: LiteModeService.instance.mode,
+            builder: (context, lite, _) => _SettingsTile(
+              icon: Icons.data_saver_on_rounded,
+              title: tr('Lite mode (save data)'),
+              subtitle: switch (lite) {
+                LiteMode.auto => tr('Auto: on when using mobile data'),
+                LiteMode.on => tr('On: videos play only when you tap'),
+                LiteMode.off => tr('Off'),
+              },
+              onTap: () => LiteModeService.instance.set(
+                LiteMode.values[(lite.index + 1) % LiteMode.values.length],
+              ),
+            ),
           ),
           ValueListenableBuilder<AppLanguage>(
             valueListenable: LanguageService.instance.language,

@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
+import '../../../core/services/lite_mode_service.dart';
+
 /// Downloads the next reels in the background so swiping up starts playback
 /// at once (Phase 3). Videos are kept in a small on-phone cache.
 class ReelPrefetcher {
@@ -21,7 +23,7 @@ class ReelPrefetcher {
 
   /// Start downloading [urls] (usually the next 2 reels). Safe to call often.
   static void prefetch(Iterable<String> urls) {
-    if (kIsWeb) return;
+    if (kIsWeb || LiteModeService.instance.enabled) return; // Lite mode: save data
     for (final url in urls) {
       if (url.isEmpty || _inFlight.contains(url)) continue;
       _inFlight.add(url);
