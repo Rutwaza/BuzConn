@@ -1,9 +1,0 @@
-SpotLight v1.0.0
-
-Android release APK for SpotLight.
-
-Highlights
-- Social-media styled Spotlight feed, Discover, profile, messages, and notifications experience
-- Creator pages, saved content, insights, smarter feed ranking, and polished post details/comments
-- Push notification plumbing added with exact deep links for posts, chats, and profiles
-- Release build support updated for notification dependencies

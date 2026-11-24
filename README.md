@@ -11,8 +11,7 @@ What changed and what you must do once:
 1. **Deploy rules and the new functions** (from the repo root):
 
    ```powershell
-   firebase deploy --only firestore:rules --project bussinessfinder-327f5
-   firebase deploy --only functions:notifyOnPostLike,functions:notifyOnFollow,functions:notifyOnChatMessage,functions:postCommentAction,functions:sendNotificationDocumentPush --project bussinessfinder-327f5
+   powershell -ExecutionPolicy Bypass -File .\deploy.ps1
    ```
 
    Deploy the functions **before or together with** the new app build: the new app no longer creates notifications or edits comments itself, the server does (`functions/social.js`).
@@ -61,7 +60,7 @@ These are account identifiers only. Passwords, recovery codes, API secrets, serv
 - R2 configuration guide: [`R2_SETUP.md`](R2_SETUP.md)
 - App image assets and logo: `assets/`
 
-The main app includes email/password, Google and phone authentication; profile completion; creator/business pages; For You, Following and Reels feeds; posts with photos/videos; chat requests and chats; voice/video calls; notifications; and privacy/ghost-mode controls. The Functions source also contains existing bus, booking/card and agency-management endpoints. Review the complete exports in `functions/index.js` before deploying or granting production access; a full Functions deployment affects all exported functions, not only media and notifications.
+The main app includes email/password, Google and phone authentication; profile completion; creator/business pages; For You, Following and Reels feeds; posts with photos/videos; chat requests and chats; voice/video calls; notifications; and privacy/ghost-mode controls.
 
 There are currently **no separate Flutter dev/staging/production flavors or Firebase option sets**. Debug and release builds use the same Firebase project configuration unless you deliberately change it. That means development runs can write to the current Firebase project. Create and configure a separate staging project before inviting testers or using production data for development.
 
@@ -69,7 +68,7 @@ There are currently **no separate Flutter dev/staging/production flavors or Fire
 
 - **Firebase Authentication:** email/password with email verification, Google sign-in, and SMS phone verification.
 - **Cloud Firestore:** user profiles, posts, business pages, chats/messages, notifications, follows, call signaling, and other app data. Firestore rules are in `firestore.rules`.
-- **Firebase Realtime Database:** device/bus live data; rules are in `database.rules.json`.
+- **Firebase Realtime Database:** online presence (`status/{uid}`) and typing indicators (`typing/{chatId}/{uid}`); rules are in `database.rules.json`.
 - **Firebase Cloud Messaging (FCM):** Android push notifications. Functions send push notifications from Firestore notification/call events. Windows has desktop-specific notification handling; do not assume Android background delivery behavior is identical on Windows.
 - **Cloud Functions:** Node.js 22, deployed in `us-central1` unless an export specifies otherwise. Functions require Firebase billing (Blaze) for the current project setup and incur usage charges.
 - **Cloudflare R2:** public profile/business/post media and private chat attachments use separate buckets. Firebase Auth remains the identity source; Firestore remains the application database. See `R2_SETUP.md`.
@@ -226,7 +225,7 @@ Set-Location ..
 firebase deploy --only functions --project bussinessfinder-327f5
 ```
 
-The full source also contains non-social bus/booking/card/agency endpoints. Do not run a full deployment without reviewing which functions will be updated, created or removed. Use a separate Firebase staging project for risky rules or backend changes. Never deploy test rules that allow unrestricted reads/writes.
+`functions/index.js` now only contains Duhuze functions, so a full deployment is safe; Firebase will ask before deleting any function that is no longer in the source. Use a separate Firebase staging project for risky rules or backend changes. Never deploy test rules that allow unrestricted reads/writes.
 
 ## Build artifacts
 

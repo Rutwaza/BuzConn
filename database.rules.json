@@ -1,47 +1,6 @@
 {
   "rules": {
     ".write": false,
-    "devices": {
-      "$busId": {
-        "sits": {
-          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 200"
-        },
-        "agencyName": {
-          ".validate": "newData.isString() && newData.val().length <= 80"
-        },
-        "plateNumber": {
-          ".validate": "newData.isString() && newData.val().length <= 20"
-        },
-        "routeId": {
-          ".validate": "newData.isString() && newData.val().length <= 100"
-        },
-        "$pushId": {
-          ".validate": "$pushId.matches(/^-[A-Za-z0-9_-]{10,}$/) && newData.hasChildren(['lat','lng'])",
-          "lat": {
-            ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90"
-          },
-          "lng": {
-            ".validate": "newData.isNumber() && newData.val() >= -180 && newData.val() <= 180"
-          },
-          "spd": {
-            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 250)"
-          },
-          "hdop": {
-            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 99.9)"
-          },
-          "alt": {
-            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= -500 && newData.val() <= 9000)"
-          },
-          "bat": {
-            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 6)"
-          },
-          "ts": {
-            ".validate": "!newData.exists() || newData.isNumber()"
-          }
-        }
-      },
-      ".read": "auth != null"
-    },
     "status": {
       "$uid": {
         ".read": "auth != null",
@@ -66,6 +25,7 @@
           ".validate": "newData.isBoolean()"
         }
       }
-    }
+    },
+    ".read": false
   }
 }

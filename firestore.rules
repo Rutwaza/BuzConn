@@ -100,32 +100,6 @@ service cloud.firestore {
             && request.auth.token.email == "nelsonjembe99@gmail.com"));
     }
 
-    function hasAgencyMembership() {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/agency_members/$(request.auth.uid));
-    }
-
-    function agencyMemberData() {
-      return get(/databases/$(database)/documents/agency_members/$(request.auth.uid)).data;
-    }
-
-    function isActiveAgencyMember() {
-      return hasAgencyMembership()
-        && agencyMemberData().active == true
-        && (agencyMemberData().role == 'agency_admin' || agencyMemberData().role == 'agency_staff');
-    }
-
-    function isAgencyAdmin() {
-      return isActiveAgencyMember() && agencyMemberData().role == 'agency_admin';
-    }
-
-    function sameAgency(agencyId) {
-      return isActiveAgencyMember() && agencyMemberData().agencyId == agencyId;
-    }
-
-    function agencyReadableDoc(agencyId) {
-      return isSuperAdmin() || sameAgency(agencyId);
-    }
 
     // ---- Users (Phase 1) ------------------------------------------------
     // Fields only the server/admin may set: account status, the unique
@@ -301,92 +275,9 @@ service cloud.firestore {
       allow update: if false;
     }
 
-    // -------- Agency Admin Domain --------
-
-    match /agencies/{agencyId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if false;
-    }
-
-    match /agency_members/{uid} {
-      allow read: if isSuperAdmin()
-        || (isSignedIn() && request.auth.uid == uid)
-        || (isAgencyAdmin()
-          && resource.data.agencyId == agencyMemberData().agencyId);
-      allow create, update, delete: if false;
-    }
-
-    match /agency_applications/{id} {
-      allow read: if isSuperAdmin()
-        || (isSignedIn() && resource.data.ownerUid == request.auth.uid);
-      // Created/updated by Cloud Functions only.
-      allow create, update, delete: if false;
-    }
-
-    match /agency_secrets/{agencyId} {
-      // Password hashes are function-managed only.
-      allow read, write: if false;
-    }
-
-    match /agency_password_reset_requests/{id} {
-      allow read: if isSuperAdmin()
-        || (isSignedIn() && resource.data.requesterUid == request.auth.uid);
-      // Managed by Cloud Functions only.
-      allow create, update, delete: if false;
-    }
-
-    match /routes/{routeId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if false;
-    }
-
-    match /buses/{busId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if false;
-    }
-
-    match /cards/{cardId} {
-      allow read: if isSuperAdmin()
-        || (isSignedIn() && resource.data.userId == request.auth.uid)
-        || (isActiveAgencyMember()
-          && resource.data.issuerAgencyId is string
-          && sameAgency(resource.data.issuerAgencyId));
-      allow create, update, delete: if false;
-    }
-
-    match /card_transactions/{txId} {
-      allow read: if isSuperAdmin()
-        || (isSignedIn() && resource.data.userId == request.auth.uid)
-        || (isSignedIn() && resource.data.bookingUserId == request.auth.uid)
-        || (isActiveAgencyMember()
-          && resource.data.agencyId is string
-          && sameAgency(resource.data.agencyId));
-      allow create, update, delete: if false;
-    }
-
-    match /bookings/{bookingId} {
-      allow read: if isSuperAdmin()
-        || (isSignedIn() && resource.data.userId == request.auth.uid)
-        || (isSignedIn() && resource.data.bookingUserId == request.auth.uid)
-        || (isActiveAgencyMember()
-          && resource.data.agencyId is string
-          && sameAgency(resource.data.agencyId));
-      allow create, update, delete: if false;
-    }
-
-    match /booking_events/{eventId} {
-      allow read: if isSuperAdmin()
-        || (isActiveAgencyMember()
-          && resource.data.agencyId is string
-          && sameAgency(resource.data.agencyId));
-      allow create, update, delete: if false;
-    }
-
+    // Admin activity log (written by Cloud Functions only).
     match /admin_events/{eventId} {
-      allow read: if isSuperAdmin()
-        || (isActiveAgencyMember()
-          && resource.data.agencyId is string
-          && sameAgency(resource.data.agencyId));
+      allow read: if isSuperAdmin();
       allow create, update, delete: if false;
     }
 
