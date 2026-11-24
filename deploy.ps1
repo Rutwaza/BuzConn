@@ -101,18 +101,15 @@ if ($targets -contains 'hosting') {
   }
 }
 
-# The website lives on its own Hosting site "duhuze" -> https://duhuze.web.app
-# (firebase.json "site"). Create it the first time.
+# The website's Hosting site name is in firebase.json ("site"). If it does not
+# exist yet, tools\set-website.ps1 creates it (names are global, some are taken).
 if ($targets -contains 'hosting') {
+  $siteId = ((Get-Content firebase.json -Raw) | ConvertFrom-Json).hosting.site
   $sitesJson = firebase hosting:sites:list --project $project --json | Out-String
-  if ($sitesJson -notmatch 'sites/duhuze"') {
-    Write-Host "Creating Hosting site duhuze (https://duhuze.web.app)..." -ForegroundColor Cyan
-    firebase hosting:sites:create duhuze --project $project
-    if ($LASTEXITCODE -ne 0) {
-      Write-Host "Could not create the site 'duhuze' (name taken?). Pick another in firebase.json and AppConstants.websiteUrl." -ForegroundColor Red
-      $targets = @($targets | Where-Object { $_ -ne 'hosting' })
-      $hostingSkipped = $true
-    }
+  if ($siteId -and $sitesJson -notmatch "sites/$siteId`"") {
+    Write-Host "Hosting site '$siteId' does not exist. Run:  .\tools\set-website.ps1 <name>" -ForegroundColor Yellow
+    $targets = @($targets | Where-Object { $_ -ne 'hosting' })
+    $hostingSkipped = $true
   }
 }
 
@@ -152,7 +149,11 @@ for ($i = 0; $i -lt $fns.Count; $i += 4) {
 
 if ($failed.Count -gt 0) {
   Write-Host "`nThese failed: $($failed -join ', ')" -ForegroundColor Red
-  Write-Host "Retry just them:  .\deploy.ps1 -Functions $(($failed | Where-Object { $_ -notmatch ':' }) -join ',')" -ForegroundColor Red
+  $retryFns = @($failed | Where-Object { $allFns -contains $_ })
+  if ($retryFns) { Write-Host "Retry the functions:  .\deploy.ps1 -Functions $($retryFns -join ',')" -ForegroundColor Red }
+  if ($failed | Where-Object { $allFns -notcontains $_ }) {
+    Write-Host "Rules/indexes/website failed: fix the error above and run .\deploy.ps1 again." -ForegroundColor Red
+  }
   exit 1
 }
 if ($hostingSkipped) {
