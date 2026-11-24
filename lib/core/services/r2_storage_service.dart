@@ -174,6 +174,14 @@ class R2StorageService {
     return upload['publicUrl'] as String?;
   }
 
+  /// Calls any of our HTTPS callable Cloud Functions (works on Windows too,
+  /// where the cloud_functions package is not available).
+  Future<Map<String, dynamic>> callFunction(
+    String functionName,
+    Map<String, Object?> data,
+  ) =>
+      _callFunction(functionName, data);
+
   Future<Map<String, dynamic>> _callFunction(
     String functionName,
     Map<String, Object?> data,

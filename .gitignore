@@ -130,3 +130,6 @@ app.*.map.json
 # Flutter generated folders (Windows shortcuts inside break Git)
 **/windows/flutter/ephemeral/
 **/linux/flutter/ephemeral/
+
+# Last deployed commit (deploy.ps1)
+.deploy-state

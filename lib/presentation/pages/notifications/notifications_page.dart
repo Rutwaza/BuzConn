@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:businessfinder/features/shop/ui/orders_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -63,6 +64,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
       } else {
         context.push(AppRoutes.chatDetailPath(item.chatId!));
       }
+      return;
+    }
+    if (item.type == 'order') {
+      if (!context.mounted) return;
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => const OrdersPage(),
+      ));
       return;
     }
     if (item.type == 'follow') {
@@ -276,7 +284,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final chatId = data['chatId'] as String?;
       final readAt = data['readAt'] as Timestamp?;
       final preview = data['preview'] as String?;
-      final key = '$type|$fromUserId|${postId ?? ''}|${chatId ?? ''}';
+      final key = '$type|$fromUserId|${postId ?? ''}|${chatId ?? ''}'
+          // Each order update is its own line.
+          '${type == 'order' ? '|${doc.id}' : ''}';
 
       final last = grouped.isNotEmpty ? grouped.last : null;
       final canMerge = last != null &&
@@ -628,6 +638,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
           label: 'Comment',
           color: Color(0xFFFF9B54),
         );
+      case 'order':
+        return const _NotificationSpec(
+          icon: Icons.storefront_rounded,
+          emoji: '\u{1F6CD}\uFE0F',
+          label: 'Shop',
+          color: Color(0xFF14B8A6),
+        );
       case 'follow':
         return const _NotificationSpec(
           icon: Icons.person_add_alt_1_rounded,
@@ -659,6 +676,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
         return item.count > 1
             ? ' left ${item.count} new comments on your post'
             : ' commented on your post';
+      case 'order':
+        return ': ${item.preview ?? 'order update'}';
       case 'follow':
         return item.count > 1
             ? ' and ${item.count - 1} others followed you'

@@ -28,6 +28,10 @@ class AppConstants {
   // (e.g. MapTiler or Stadia) by changing this one line.
   static const String mapTileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   static const String mapUserAgent = 'rw.duhuze.app';
+
+  // MoMo Pay (MTN Rwanda). {code} = the shop's merchant code, {amount} = RWF.
+  // If MTN changes the menu, only this line needs to change.
+  static const String momoPayUssd = '*182*8*1*{code}*{amount}#';
   
   // Pagination
   static const int defaultPageSize = 10;

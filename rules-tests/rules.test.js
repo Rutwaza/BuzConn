@@ -204,3 +204,51 @@ test("the ghost archive is closed to every app user", async () => {
   await assertFails(getDoc(doc(as(EVE, {admin: true}), "ghost_archive/alice_bob_g1")));
   await assertFails(setDoc(doc(as(ALICE), "ghost_archive/x"), {chatId: "alice_bob"}));
 });
+
+// Shop ------------------------------------------------------------------------
+async function seedShop() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, "businesses/shop1"), {ownerId: ALICE, name: "Keza Shop", momoCode: "123456"});
+    await setDoc(doc(db, "orders/o1"), {
+      buyerId: BOB, businessOwnerId: ALICE, businessId: "shop1",
+      total: 5000, status: "pending_payment",
+    });
+  });
+}
+
+test("catalog: only the shop owner adds products, with a sane price", async () => {
+  await seedShop();
+  const good = {name: "Ibitenge", price: 5000, inStock: true};
+  await assertSucceeds(setDoc(doc(as(ALICE), "businesses/shop1/products/p1"), good));
+  await assertFails(setDoc(doc(as(BOB), "businesses/shop1/products/p2"), good));
+  await assertFails(setDoc(doc(as(ALICE), "businesses/shop1/products/p3"), {name: "Free", price: 0}));
+  await assertFails(setDoc(doc(as(ALICE), "businesses/shop1/products/p4"), {name: "Float", price: 12.5}));
+  await assertSucceeds(getDoc(doc(as(EVE), "businesses/shop1/products/p1")));
+});
+
+test("orders: only the server creates them; outsiders cannot read", async () => {
+  await seedShop();
+  await assertFails(setDoc(doc(as(BOB), "orders/o2"), {buyerId: BOB, businessOwnerId: ALICE, total: 1, status: "confirmed"}));
+  await assertSucceeds(getDoc(doc(as(BOB), "orders/o1")));
+  await assertSucceeds(getDoc(doc(as(ALICE), "orders/o1")));
+  await assertFails(getDoc(doc(as(EVE), "orders/o1")));
+});
+
+test("orders: buyer says paid, cannot confirm or change the total", async () => {
+  await seedShop();
+  const o = doc(as(BOB), "orders/o1");
+  await assertFails(updateDoc(o, {status: "confirmed"}));
+  await assertFails(updateDoc(o, {status: "paid_claimed", total: 1}));
+  await assertSucceeds(updateDoc(o, {status: "paid_claimed", txRef: "12345678", updatedAt: serverTimestamp()}));
+});
+
+test("orders: shop confirms or says not received; buyer can retry", async () => {
+  await seedShop();
+  await assertSucceeds(updateDoc(doc(as(BOB), "orders/o1"), {status: "paid_claimed"}));
+  await assertFails(updateDoc(doc(as(EVE), "orders/o1"), {status: "confirmed"}));
+  await assertSucceeds(updateDoc(doc(as(ALICE), "orders/o1"), {status: "not_received"}));
+  await assertSucceeds(updateDoc(doc(as(BOB), "orders/o1"), {status: "paid_claimed", txRef: "999"}));
+  await assertSucceeds(updateDoc(doc(as(ALICE), "orders/o1"), {status: "confirmed", confirmedAt: serverTimestamp()}));
+  await assertFails(updateDoc(doc(as(BOB), "orders/o1"), {status: "cancelled"}));
+});

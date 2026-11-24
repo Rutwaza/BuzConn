@@ -35,6 +35,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
   final _addressController = TextEditingController();
   final _googleMapsLinkController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _momoCodeController = TextEditingController();
+  final _momoNameController = TextEditingController();
   final _emailController = TextEditingController();
 
   String _selectedCategory = 'Other';
@@ -111,6 +113,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
         _googleMapsLinkController.text =
             (data['googleMapsLink'] ?? '').toString();
         _phoneController.text = (data['phone'] ?? '').toString();
+        _momoCodeController.text = (data['momoCode'] ?? '').toString();
+        _momoNameController.text = (data['momoName'] ?? '').toString();
         _emailController.text = (data['email'] ?? '').toString();
         final category = (data['category'] ?? 'Other').toString();
         _selectedCategory =
@@ -298,6 +302,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
             'address': address,
             'location': address,
             'phone': _phoneController.text.trim(),
+            'momoCode': _momoCodeController.text.trim(),
+            'momoName': _momoNameController.text.trim(),
             'email': _emailController.text.trim(),
             if (_selectedLocation != null) ...{
               'latitude': _selectedLocation!.latitude,
@@ -387,6 +393,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
     _addressController.dispose();
     _googleMapsLinkController.dispose();
     _phoneController.dispose();
+    _momoCodeController.dispose();
+    _momoNameController.dispose();
     _emailController.dispose();
     super.dispose();
   }
@@ -1049,6 +1057,35 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                         }
                         return null;
                       },
+                    ),
+                    const SizedBox(height: 16),
+                    AppTextField(
+                      controller: _momoCodeController,
+                      label: 'MoMo Pay merchant code (optional)',
+                      hintText: 'e.g. 123456',
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        final v = (value ?? '').trim();
+                        if (v.isEmpty) return null;
+                        if (!RegExp(r'^\d{4,10}$').hasMatch(v)) {
+                          return 'Only the digits of your MoMo Pay code';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    AppTextField(
+                      controller: _momoNameController,
+                      label: 'Name registered on MoMo Pay',
+                      hintText: 'The name MTN shows to customers',
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: Text(
+                        'With a MoMo Pay code your customers can buy from your Shop. '
+                        'Money goes straight to your MoMo; Duhuze never holds it.',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
                     ),
                     const SizedBox(height: 16),
                     AppTextField(

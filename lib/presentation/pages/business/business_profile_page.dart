@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:businessfinder/features/shop/ui/catalog_page.dart';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -270,6 +271,11 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                     _StatPill(
                                       label: 'Followers',
                                       value: followersCount,
+                                    ),
+                                    ElevatedButton.icon(
+                                      onPressed: () => _openShop(business, isOwner),
+                                      icon: const Icon(Icons.storefront_rounded),
+                                      label: Text(isOwner ? 'My shop' : 'Shop'),
                                     ),
                                     if (!isOwner && currentUserId != null)
                                       StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -683,6 +689,11 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                           onPressed: () => _openBusinessChat(ownerId),
                                           icon: const Icon(Icons.message_outlined),
                                           label: Text(isOwner ? 'Open inbox' : 'Message'),
+                                        ),
+                                        OutlinedButton.icon(
+                                          onPressed: () => _openShop(business, isOwner),
+                                          icon: const Icon(Icons.storefront_rounded),
+                                          label: Text(isOwner ? 'My shop' : 'Shop'),
                                         ),
                                       ],
                                     ),
@@ -1357,6 +1368,17 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
       return '${(value / 1000).toStringAsFixed(1)}K';
     }
     return value.toString();
+  }
+
+  void _openShop(Map<String, dynamic> business, bool isOwner) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => CatalogPage(
+        businessId: widget.businessId,
+        businessName: (business['name'] ?? 'Shop').toString(),
+        isOwner: isOwner,
+        hasMomoCode: (business['momoCode'] ?? '').toString().trim().isNotEmpty,
+      ),
+    ));
   }
 
   Future<void> _openBusinessChat(String ownerId) async {

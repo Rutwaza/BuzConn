@@ -27,6 +27,8 @@ Object.assign(exports, feedFunctions);
 // eslint-disable-next-line no-unused-vars
 const {_ghostInternals, ...ghostFunctions} = require("./ghost");
 Object.assign(exports, ghostFunctions);
+// Shop: catalogs, orders, MoMo payments. See shop.js and payments/.
+Object.assign(exports, require("./shop"));
 
 const R2_ACCOUNT_ID = defineString("R2_ACCOUNT_ID");
 const R2_PUBLIC_BUCKET_NAME = defineString("R2_PUBLIC_BUCKET_NAME");
@@ -562,8 +564,10 @@ function buildTitle(type, fromName) {
       return "New comment";
     case "like":
       return "New like";
+    case "order":
+      return "Duhuze Shop";
     default:
-      return "SpotLight";
+      return "Duhuze";
   }
 }
 
@@ -582,6 +586,6 @@ function buildBody(type, fromName, preview) {
     case "like":
       return preview || `${fromName} liked your post`;
     default:
-      return preview || "You have a new SpotLight update.";
+      return preview || "You have a new Duhuze update.";
   }
 }
