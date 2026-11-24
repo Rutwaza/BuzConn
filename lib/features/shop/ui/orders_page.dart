@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/theme/colors.dart';
@@ -18,7 +19,7 @@ class OrdersPage extends StatelessWidget {
       initialIndex: startOnShopTab ? 1 : 0,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Orders'),
+          title: Text(tr('Orders')),
           bottom: const TabBar(
               tabs: [Tab(text: 'My orders'), Tab(text: 'My shop')]),
         ),
@@ -92,18 +93,18 @@ class _OrderCard extends StatelessWidget {
         buttons.addAll([
           OutlinedButton(
             onPressed: () => repo.shopNotReceived(o.id),
-            child: const Text('Not received'),
+            child: Text(tr('Not received')),
           ),
           FilledButton(
             onPressed: () => repo.shopConfirmed(o.id),
-            child: const Text('Received ✓'),
+            child: Text(tr('Received ✓')),
           ),
         ]);
       } else if (o.status == OrderStatus.pendingPayment ||
           o.status == OrderStatus.notReceived) {
         buttons.add(TextButton(
           onPressed: () => repo.shopConfirmed(o.id),
-          child: const Text('Mark as paid'),
+          child: Text(tr('Mark as paid')),
         ));
       }
     } else if (o.status == OrderStatus.pendingPayment ||
@@ -156,11 +157,11 @@ class _OrderCard extends StatelessWidget {
               Text('MoMo transaction ID: ${o.txRef}',
                   style: const TextStyle(fontWeight: FontWeight.w600)),
             if (asShop && o.status == OrderStatus.paidClaimed)
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
                 child: Text(
-                  'Check your MoMo SMS for this amount before you tap Received.',
-                  style: TextStyle(fontSize: 12, color: AppColors.grey),
+                  tr('Check your MoMo SMS for this amount before you tap Received.'),
+                  style: const TextStyle(fontSize: 12, color: AppColors.grey),
                 ),
               ),
             if (buttons.isNotEmpty) ...[

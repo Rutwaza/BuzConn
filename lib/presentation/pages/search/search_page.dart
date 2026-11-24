@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -507,7 +508,7 @@ class _SearchPageState extends State<SearchPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Discover'),
+        title: Text(tr('Discover')),
       ),
       body: isDesktop
           ? _buildDiscoverDesktopBody(query, isDark)
@@ -521,7 +522,7 @@ class _SearchPageState extends State<SearchPage> {
                       color: isDark ? Colors.white : Colors.black87,
                     ),
                     decoration: InputDecoration(
-                      hintText: 'Search pages, users, or posts',
+                      hintText: tr('Search pages, users, or posts'),
                       hintStyle: TextStyle(
                         color: isDark ? Colors.white54 : AppColors.grey,
                       ),
@@ -558,7 +559,7 @@ class _SearchPageState extends State<SearchPage> {
                     children: [
                       _quickExplorePill(
                         icon: Icons.trending_up_rounded,
-                        label: 'Trending posts',
+                        label: tr('Trending posts'),
                         selected: _filter == SearchFilter.posts,
                         onTap: () {
                           HapticFeedback.selectionClick();
@@ -571,7 +572,7 @@ class _SearchPageState extends State<SearchPage> {
                       ),
                       _quickExplorePill(
                         icon: Icons.storefront_rounded,
-                        label: 'Fresh pages',
+                        label: tr('Fresh pages'),
                         selected: _filter == SearchFilter.businesses,
                         onTap: () {
                           HapticFeedback.selectionClick();
@@ -584,7 +585,7 @@ class _SearchPageState extends State<SearchPage> {
                       ),
                       _quickExplorePill(
                         icon: Icons.people_alt_rounded,
-                        label: 'Meet users',
+                        label: tr('Meet users'),
                         selected: _filter == SearchFilter.users,
                         onTap: () {
                           HapticFeedback.selectionClick();
@@ -619,7 +620,7 @@ class _SearchPageState extends State<SearchPage> {
 
                       if (_filter == SearchFilter.posts) {
                         if (filteredPosts.isEmpty && !_isLoadingPosts) {
-                          return const Center(child: Text('No results'));
+                          return Center(child: Text(tr('No results')));
                         }
                         return ListView.builder(
                           controller: _postScrollController,
@@ -652,7 +653,7 @@ class _SearchPageState extends State<SearchPage> {
                           !_isLoadingBusinesses &&
                           !_isLoadingUsers &&
                           !_isLoadingPosts) {
-                        return const Center(child: Text('No results'));
+                        return Center(child: Text(tr('No results')));
                       }
 
                       if (_filter == SearchFilter.all) {
@@ -790,7 +791,7 @@ class _SearchPageState extends State<SearchPage> {
           color: isDark ? Colors.white : Colors.black87,
         ),
         decoration: InputDecoration(
-          hintText: 'Search pages, users, or posts',
+          hintText: tr('Search pages, users, or posts'),
           hintStyle: TextStyle(
             color: isDark ? Colors.white54 : AppColors.grey,
           ),
@@ -827,7 +828,7 @@ class _SearchPageState extends State<SearchPage> {
         children: [
           _quickExplorePill(
             icon: Icons.trending_up_rounded,
-            label: 'Trending posts',
+            label: tr('Trending posts'),
             selected: _filter == SearchFilter.posts,
             onTap: () {
               HapticFeedback.selectionClick();
@@ -840,7 +841,7 @@ class _SearchPageState extends State<SearchPage> {
           ),
           _quickExplorePill(
             icon: Icons.storefront_rounded,
-            label: 'Fresh pages',
+            label: tr('Fresh pages'),
             selected: _filter == SearchFilter.businesses,
             onTap: () {
               HapticFeedback.selectionClick();
@@ -853,7 +854,7 @@ class _SearchPageState extends State<SearchPage> {
           ),
           _quickExplorePill(
             icon: Icons.people_alt_rounded,
-            label: 'Meet users',
+            label: tr('Meet users'),
             selected: _filter == SearchFilter.users,
             onTap: () {
               HapticFeedback.selectionClick();
@@ -924,21 +925,21 @@ class _SearchPageState extends State<SearchPage> {
                               ),
                             ),
                             const SizedBox(width: 10),
-                            const Expanded(
+                            Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Pages map',
-                                    style: TextStyle(
+                                    tr('Pages map'),
+                                    style: const TextStyle(
                                       fontWeight: FontWeight.w800,
                                       fontSize: 16,
                                     ),
                                   ),
-                                  SizedBox(height: 2),
+                                  const SizedBox(height: 2),
                                   Text(
-                                    'OpenStreetMap view of creator and page locations',
-                                    style: TextStyle(
+                                    tr('OpenStreetMap view of creator and page locations'),
+                                    style: const TextStyle(
                                       color: AppColors.grey,
                                       fontSize: 12,
                                     ),
@@ -1055,22 +1056,22 @@ class _SearchPageState extends State<SearchPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(4, 2, 4, 8),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Pages, people & posts',
-                          style: TextStyle(
+                          tr('Pages, people & posts'),
+                          style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        SizedBox(height: 4),
+                        const SizedBox(height: 4),
                         Text(
-                          'Filter the results and jump straight into discovery.',
-                          style: TextStyle(
+                          tr('Filter the results and jump straight into discovery.'),
+                          style: const TextStyle(
                             color: AppColors.grey,
                             fontSize: 12,
                           ),
@@ -1111,7 +1112,7 @@ class _SearchPageState extends State<SearchPage> {
                 minimumSize: const Size(0, 32),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              child: const Text('See all'),
+              child: Text(tr('See all')),
             ),
         ],
       ),
@@ -1135,7 +1136,7 @@ class _SearchPageState extends State<SearchPage> {
 
     if (_filter == SearchFilter.posts) {
       if (filteredPosts.isEmpty && !_isLoadingPosts) {
-        return const Center(child: Text('No results'));
+        return Center(child: Text(tr('No results')));
       }
       return ListView.builder(
         controller: _postScrollController,
@@ -1163,7 +1164,7 @@ class _SearchPageState extends State<SearchPage> {
         !_isLoadingBusinesses &&
         !_isLoadingUsers &&
         !_isLoadingPosts) {
-      return const Center(child: Text('No results'));
+      return Center(child: Text(tr('No results')));
     }
 
     if (_filter == SearchFilter.all) {
@@ -1520,9 +1521,9 @@ class _DiscoverSpotlightCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Discover what is moving right now',
-                  style: TextStyle(
+                Text(
+                  tr('Discover what is moving right now'),
+                  style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w800,
                     fontSize: 15,

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:businessfinder/features/shop/ui/orders_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -37,7 +38,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       debugPrint('Failed to mark notifications read: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to mark notifications read')),
+          SnackBar(content: Text(tr('Failed to mark notifications read'))),
         );
       }
     }
@@ -94,7 +95,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      return const Scaffold(body: Center(child: Text('Please sign in.')));
+      return Scaffold(body: Center(child: Text(tr('Please sign in.'))));
     }
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -122,12 +123,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
                       }
                     });
                   },
-                  tooltip: 'Select all',
+                  tooltip: tr('Select all'),
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete),
                   onPressed: _deleteSelected,
-                  tooltip: 'Delete selected',
+                  tooltip: tr('Delete selected'),
                 ),
               ]
             : [],
@@ -161,9 +162,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
             });
 
           if (docs.isEmpty) {
-            return const _NotificationsEmptyState(
-              title: 'You are all caught up',
-              subtitle: 'New likes, follows and comments will show up here.',
+            return _NotificationsEmptyState(
+              title: tr('You are all caught up'),
+              subtitle: tr('New likes, follows and comments will show up here.'),
             );
           }
           final grouped = _groupNotifications(docs)
@@ -172,9 +173,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
           _currentVisibleNotificationIds =
               grouped.expand((item) => item.ids).toSet();
           if (grouped.isEmpty) {
-            return const _NotificationsEmptyState(
-              title: 'Nothing for this filter',
-              subtitle: 'Try another tab to see more activity.',
+            return _NotificationsEmptyState(
+              title: tr('Nothing for this filter'),
+              subtitle: tr('Try another tab to see more activity.'),
             );
           }
 
@@ -508,10 +509,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
                             builder: (context, snap) {
                               final isFollowingBack = snap.data?.exists == true;
                               if (isFollowingBack) {
-                                return const _NotificationPill(
+                                return _NotificationPill(
                                   icon: Icons.check_rounded,
-                                  label: 'Following',
-                                  color: Color(0xFF37C58A),
+                                  label: tr('Following'),
+                                  color: const Color(0xFF37C58A),
                                 );
                               }
                               return TextButton(
@@ -542,9 +543,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                     borderRadius: BorderRadius.circular(999),
                                   ),
                                 ),
-                                child: const Text(
-                                  'Follow back',
-                                  style: TextStyle(
+                                child: Text(
+                                  tr('Follow back'),
+                                  style: const TextStyle(
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
@@ -591,10 +592,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                 await batch.commit();
                               }
                             },
-                            itemBuilder: (context) => const [
+                            itemBuilder: (context) => [
                               PopupMenuItem(
                                 value: 'delete',
-                                child: Text('Delete'),
+                                child: Text(tr('Delete')),
                               ),
                             ],
                           ),
@@ -618,46 +619,46 @@ class _NotificationsPageState extends State<NotificationsPage> {
   _NotificationSpec _notificationSpec(String type) {
     switch (type) {
       case 'message':
-        return const _NotificationSpec(
+        return _NotificationSpec(
           icon: Icons.chat_bubble_rounded,
           emoji: '\u{1F4AC}',
-          label: 'Message',
-          color: Color(0xFF4DA3FF),
+          label: tr('Message'),
+          color: const Color(0xFF4DA3FF),
         );
       case 'message_request':
-        return const _NotificationSpec(
+        return _NotificationSpec(
           icon: Icons.mark_chat_unread_rounded,
           emoji: '\u{1F4E8}',
-          label: 'Request',
-          color: Color(0xFF9B6BFF),
+          label: tr('Request'),
+          color: const Color(0xFF9B6BFF),
         );
       case 'comment':
-        return const _NotificationSpec(
+        return _NotificationSpec(
           icon: Icons.mode_comment_rounded,
           emoji: '\u{1F4AD}',
-          label: 'Comment',
-          color: Color(0xFFFF9B54),
+          label: tr('Comment'),
+          color: const Color(0xFFFF9B54),
         );
       case 'order':
-        return const _NotificationSpec(
+        return _NotificationSpec(
           icon: Icons.storefront_rounded,
           emoji: '\u{1F6CD}\uFE0F',
-          label: 'Shop',
-          color: Color(0xFF14B8A6),
+          label: tr('Shop'),
+          color: const Color(0xFF14B8A6),
         );
       case 'follow':
-        return const _NotificationSpec(
+        return _NotificationSpec(
           icon: Icons.person_add_alt_1_rounded,
           emoji: '\u2728',
-          label: 'Follow',
-          color: Color(0xFF7B61FF),
+          label: tr('Follow'),
+          color: const Color(0xFF7B61FF),
         );
       default:
-        return const _NotificationSpec(
+        return _NotificationSpec(
           icon: Icons.favorite_rounded,
           emoji: '\u2764\uFE0F',
-          label: 'Like',
-          color: Color(0xFFFF5A7A),
+          label: tr('Like'),
+          color: const Color(0xFFFF5A7A),
         );
     }
   }
@@ -909,9 +910,9 @@ class _NotificationsHeroCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Duhuze activity',
-                  style: TextStyle(
+                Text(
+                  tr('Duhuze activity'),
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.w800,

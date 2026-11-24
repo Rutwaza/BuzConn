@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:businessfinder/features/chat/data/presence_service.dart';
@@ -32,23 +33,23 @@ class _SettingsPageState extends State<SettingsPage> {
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         icon: const Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
-        title: const Text('Delete your account?'),
+        title: Text(tr('Delete your account?')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'This permanently deletes your account, profile, posts, pages, and outgoing follows. Enter your password to confirm.',
+            Text(
+              tr('This permanently deletes your account, profile, posts, pages, and outgoing follows. Enter your password to confirm.'),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: passwordController,
               obscureText: true,
               autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Account password',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.lock_outline_rounded),
+              decoration: InputDecoration(
+                labelText: tr('Account password'),
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.lock_outline_rounded),
               ),
               onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
             ),
@@ -57,13 +58,13 @@ class _SettingsPageState extends State<SettingsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
+            child: Text(tr('Cancel')),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () =>
                 Navigator.of(dialogContext).pop(passwordController.text),
-            child: const Text('Delete account'),
+            child: Text(tr('Delete account')),
           ),
         ],
       ),
@@ -100,7 +101,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (password == null || !mounted) return;
     if (password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter your password to continue.')),
+        SnackBar(content: Text(tr('Enter your password to continue.'))),
       );
       return;
     }
@@ -109,9 +110,9 @@ class _SettingsPageState extends State<SettingsPage> {
         user.providerData.any((provider) => provider.providerId == 'password');
     if (!hasPasswordLogin || user.email == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'This account has no password sign-in. Add an email and password before deleting it.',
+            tr('This account has no password sign-in. Add an email and password before deleting it.'),
           ),
         ),
       );
@@ -183,7 +184,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: Text(tr('Settings')),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -201,14 +202,14 @@ class _SettingsPageState extends State<SettingsPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Your space, your vibe',
+                  tr('Your space, your vibe'),
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Tune the app to match how you like to discover, post, and connect.',
+                  tr('Tune the app to match how you like to discover, post, and connect.'),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: AppColors.grey,
                       ),
@@ -224,8 +225,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 icon: mode == AppThemeMode.dark
                     ? Icons.dark_mode
                     : Icons.light_mode,
-                title: 'Theme Mode',
-                subtitle: mode == AppThemeMode.dark ? 'Dark' : 'Light',
+                title: tr('Theme Mode'),
+                subtitle: mode == AppThemeMode.dark ? tr('Dark') : tr('Light'),
                 onTap: () async {
                   await ThemeModeService.instance.toggle();
                   if (mounted) {
@@ -235,20 +236,50 @@ class _SettingsPageState extends State<SettingsPage> {
               );
             },
           ),
+          ValueListenableBuilder<AppLanguage>(
+            valueListenable: LanguageService.instance.language,
+            builder: (context, lang, _) => _SettingsTile(
+              icon: Icons.translate_rounded,
+              title: tr('Language'),
+              subtitle: lang.label,
+              onTap: () async {
+                final picked = await showModalBottomSheet<AppLanguage>(
+                  context: context,
+                  showDragHandle: true,
+                  builder: (context) => SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final l in AppLanguage.values)
+                          ListTile(
+                            title: Text(l.label),
+                            trailing: l == lang
+                                ? const Icon(Icons.check_rounded)
+                                : null,
+                            onTap: () => Navigator.of(context).pop(l),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+                if (picked != null) await LanguageService.instance.set(picked);
+              },
+            ),
+          ),
           _SettingsTile(
             icon: Icons.person_outline,
-            title: 'Edit Profile',
-            subtitle: 'Update your photo, bio, and contact details',
+            title: tr('Edit Profile'),
+            subtitle: tr('Update your photo, bio, and contact details'),
             onTap: () => context.push(AppRoutes.profile),
           ),
           _GhostModeSetting(),
           const SizedBox(height: 18),
           _SettingsTile(
             icon: Icons.delete_forever_outlined,
-            title: 'Delete Account',
+            title: tr('Delete Account'),
             subtitle: _isDeletingAccount
-                ? 'Deleting your account…'
-                : 'Permanently delete your profile and content',
+                ? tr('Deleting your account…')
+                : tr('Permanently delete your profile and content'),
             onTap: _isDeletingAccount ? () {} : _deleteAccount,
           ),
           const SizedBox(height: 6),
@@ -262,7 +293,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             icon: const Icon(Icons.logout),
-            label: const Text('Log Out'),
+            label: Text(tr('Log Out')),
           ),
         ],
       ),
@@ -289,7 +320,7 @@ class _GhostModeSetting extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(left: 4, bottom: 8),
               child: Text(
-                'Privacy & Safety',
+                tr('Privacy & Safety'),
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -316,11 +347,11 @@ class _GhostModeSetting extends StatelessWidget {
                   child: const Icon(Icons.visibility_off_outlined,
                       color: AppColors.primary),
                 ),
-                title: const Text('Ghost mode by default',
-                    style: TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: const Text(
-                    'Choose whether new messages start in ghost mode.',
-                    style: TextStyle(color: AppColors.grey, fontSize: 13)),
+                title: Text(tr('Ghost mode by default'),
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text(
+                    tr('Choose whether new messages start in ghost mode.'),
+                    style: const TextStyle(color: AppColors.grey, fontSize: 13)),
                 value: ghostMode,
                 onChanged: snapshot.connectionState == ConnectionState.waiting
                     ? null

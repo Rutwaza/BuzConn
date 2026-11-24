@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -157,7 +158,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
     } else {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open Google Maps')),
+        SnackBar(content: Text(tr('Could not open Google Maps'))),
       );
     }
   }
@@ -277,7 +278,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     return Scaffold(
-      appBar: AppBar(title: const Text('Post')),
+      appBar: AppBar(title: Text(tr('Post'))),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('posts')
@@ -288,7 +289,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text('Post not found'));
+            return Center(child: Text(tr('Post not found')));
           }
           final post = Post.fromFirestore(snapshot.data!);
           final media = post.media;
@@ -444,8 +445,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               icon: const Icon(Icons.forward),
                               onPressed: () {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Share feature coming soon!'),
+                                  SnackBar(
+                                    content: Text(tr('Share feature coming soon!')),
                                   ),
                                 );
                               },
@@ -472,12 +473,12 @@ class _PostDetailPageState extends State<PostDetailPage> {
                       },
                     ),
                     const Divider(),
-                    const Text(
-                      'Comments',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                    Text(
+                      tr('Comments'),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
-                    if (_serverComments.isEmpty) const Text('No comments yet'),
+                    if (_serverComments.isEmpty) Text(tr('No comments yet')),
                     ..._serverComments.reversed.map(
                       (c) => Padding(
                         padding: const EdgeInsets.symmetric(vertical: 6),
@@ -512,9 +513,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
                     Expanded(
                       child: TextField(
                         controller: _commentController,
-                        decoration: const InputDecoration(
-                          hintText: 'Write a comment...',
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          hintText: tr('Write a comment...'),
+                          border: const OutlineInputBorder(),
                           isDense: true,
                         ),
                       ),

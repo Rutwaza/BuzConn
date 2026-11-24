@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:country_code_picker/country_code_picker.dart';
@@ -201,7 +202,7 @@ class _PhoneSignInSheetState extends State<_PhoneSignInSheet> {
               Align(
                 alignment: Alignment.centerRight,
                 child: IconButton(
-                  tooltip: 'Close',
+                  tooltip: tr('Close'),
                   onPressed: _isBusy ? null : () => Navigator.pop(context),
                   icon: const Icon(Icons.close_rounded),
                 ),
@@ -245,7 +246,7 @@ class _PhoneSignInSheetState extends State<_PhoneSignInSheet> {
                   keyboardType: TextInputType.phone,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: InputDecoration(
-                    labelText: 'Phone number',
+                    labelText: tr('Phone number'),
                     hintText: '78 123 4567',
                     prefixIcon: CountryCodePicker(
                       initialSelection: 'RW',
@@ -274,10 +275,10 @@ class _PhoneSignInSheetState extends State<_PhoneSignInSheet> {
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(6),
                   ],
-                  decoration: const InputDecoration(
-                    labelText: 'Verification code',
+                  decoration: InputDecoration(
+                    labelText: tr('Verification code'),
                     hintText: '123456',
-                    prefixIcon: Icon(Icons.lock_outline_rounded),
+                    prefixIcon: const Icon(Icons.lock_outline_rounded),
                   ),
                 ),
                 Row(
@@ -291,11 +292,11 @@ class _PhoneSignInSheetState extends State<_PhoneSignInSheet> {
                                 _verificationId = null;
                                 _error = null;
                               }),
-                      child: const Text('Change number'),
+                      child: Text(tr('Change number')),
                     ),
                     TextButton(
                       onPressed: _isBusy ? null : () => _sendCode(resend: true),
-                      child: const Text('Resend code'),
+                      child: Text(tr('Resend code')),
                     ),
                   ],
                 ),
@@ -326,7 +327,7 @@ class _PhoneSignInSheetState extends State<_PhoneSignInSheet> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Standard message and data rates may apply.',
+                tr('Standard message and data rates may apply.'),
                 textAlign: TextAlign.center,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: colors.onSurfaceVariant,

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -392,14 +393,14 @@ class _VideoCallPageState extends State<VideoCallPage> {
             ),
           ),
           if (!_connected)
-            const Positioned(
+            Positioned(
               left: 0,
               right: 0,
               top: 120,
               child: Center(
                 child: Text(
-                  'Connecting...',
-                  style: TextStyle(color: Colors.white70),
+                  tr('Connecting...'),
+                  style: const TextStyle(color: Colors.white70),
                 ),
               ),
             ),

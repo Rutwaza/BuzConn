@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:businessfinder/core/services/video_compressor.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -222,7 +223,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Video too large'),
+        title: Text(tr('Video too large')),
         content: Text(
           hasMore
               ? 'Some selected videos are too large (over 300 MB).\n\nExamples: $preview'
@@ -231,7 +232,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+            child: Text(tr('OK')),
           ),
         ],
       ),
@@ -389,17 +390,17 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Choose video cover',
-                  style: TextStyle(
+                Text(
+                  tr('Choose video cover'),
+                  style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  'Pick the frame people will notice first.',
-                  style: TextStyle(color: AppColors.grey),
+                Text(
+                  tr('Pick the frame people will notice first.'),
+                  style: const TextStyle(color: AppColors.grey),
                 ),
                 const SizedBox(height: 14),
                 OutlinedButton.icon(
@@ -414,7 +415,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                     if (context.mounted) Navigator.pop(context, bytes);
                   },
                   icon: const Icon(Icons.folder_open_rounded),
-                  label: const Text('Browse a cover image'),
+                  label: Text(tr('Browse a cover image')),
                 ),
                 const SizedBox(height: 10),
                 SizedBox(
@@ -464,7 +465,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                       context,
                       _selectedVideoCover[media.file.path] ?? options.first,
                     ),
-                    child: const Text('Use selected frame'),
+                    child: Text(tr('Use selected frame')),
                   ),
                 ),
               ],
@@ -555,7 +556,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
   Future<void> _createPost() async {
     if (!_postAsProfile && _selectedBusinessId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a page.')),
+        SnackBar(content: Text(tr('Please select a page.'))),
       );
       return;
     }
@@ -696,12 +697,12 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('New Post'),
+        title: Text(tr('New Post')),
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _createPost,
             child: Text(
-              'Share',
+              tr('Share'),
               style: TextStyle(
                 color: _isLoading ? AppColors.grey : AppColors.primary,
                 fontWeight: FontWeight.bold,
@@ -774,7 +775,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                               CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              'Create your next spotlight',
+                                              tr('Create your next spotlight'),
                                               style: Theme.of(context)
                                                   .textTheme
                                                   .titleMedium
@@ -784,7 +785,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                             ),
                                             const SizedBox(height: 4),
                                             Text(
-                                              'Share something visual, personal, and scroll-stopping.',
+                                              tr('Share something visual, personal, and scroll-stopping.'),
                                               style: Theme.of(context)
                                                   .textTheme
                                                   .bodySmall
@@ -814,9 +815,9 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                                 fontWeight: FontWeight.w800,
                                               ),
                                             ),
-                                            const Text(
-                                              'chars',
-                                              style: TextStyle(
+                                            Text(
+                                              tr('chars'),
+                                              style: const TextStyle(
                                                 color: AppColors.primary,
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.w700,
@@ -895,12 +896,12 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                             if (_isBusinessUser &&
                                 _businesses.isEmpty &&
                                 !_isLoadingBusinesses)
-                              const Card(
+                              Card(
                                 color: AppColors.lightGrey,
                                 child: Padding(
-                                  padding: EdgeInsets.all(12),
+                                  padding: const EdgeInsets.all(12),
                                   child: Text(
-                                      'You have no active pages yet. You can still post from your profile.'),
+                                      tr('You have no active pages yet. You can still post from your profile.')),
                                 ),
                               ),
                             if (_isBusinessUser || _businesses.isNotEmpty) ...[
@@ -922,9 +923,9 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                           children: [
                                             AppTextField(
                                               controller: _contentController,
-                                              label: 'Caption',
+                                              label: tr('Caption'),
                                               hintText:
-                                                  'Share your spotlight...',
+                                                  tr('Share your spotlight...'),
                                               textCapitalization:
                                                   TextCapitalization.sentences,
                                               maxLines: 5,
@@ -946,7 +947,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                                     onPressed: _pickImages,
                                                     icon: const Icon(Icons
                                                         .photo_library_outlined),
-                                                    label: const Text('Photo'),
+                                                    label: Text(tr('Photo')),
                                                   ),
                                                 ),
                                                 const SizedBox(width: 12),
@@ -955,7 +956,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                                     onPressed: _pickVideos,
                                                     icon: const Icon(Icons
                                                         .movie_creation_outlined),
-                                                    label: const Text('Video'),
+                                                    label: Text(tr('Video')),
                                                   ),
                                                 ),
                                               ],
@@ -976,7 +977,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                                     CrossAxisAlignment.start,
                                                 children: [
                                                   Text(
-                                                    'Desktop studio tips',
+                                                    tr('Desktop studio tips'),
                                                     style: Theme.of(context)
                                                         .textTheme
                                                         .titleSmall
@@ -986,9 +987,9 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                                                     .w700),
                                                   ),
                                                   const SizedBox(height: 10),
-                                                  const Text(
-                                                    'Build the story on the left, shape the visual stack on the right, then publish once it feels scroll-stopping.',
-                                                    style: TextStyle(
+                                                  Text(
+                                                    tr('Build the story on the left, shape the visual stack on the right, then publish once it feels scroll-stopping.'),
+                                                    style: const TextStyle(
                                                         color: AppColors.grey,
                                                         height: 1.4),
                                                   ),
@@ -1026,8 +1027,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                   children: [
                                     AppTextField(
                                       controller: _contentController,
-                                      label: 'Caption',
-                                      hintText: 'Share your spotlight...',
+                                      label: tr('Caption'),
+                                      hintText: tr('Share your spotlight...'),
                                       textCapitalization:
                                           TextCapitalization.sentences,
                                       maxLines: 3,
@@ -1048,7 +1049,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                             onPressed: _pickImages,
                                             icon: const Icon(
                                                 Icons.photo_library_outlined),
-                                            label: const Text('Photo'),
+                                            label: Text(tr('Photo')),
                                           ),
                                         ),
                                         const SizedBox(width: 12),
@@ -1057,7 +1058,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                             onPressed: _pickVideos,
                                             icon: const Icon(
                                                 Icons.movie_creation_outlined),
-                                            label: const Text('Video'),
+                                            label: Text(tr('Video')),
                                           ),
                                         ),
                                       ],
@@ -1113,15 +1114,15 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                               ),
                             ],
                           ),
-                          child: const Column(
+                          child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.check_circle,
+                              const Icon(Icons.check_circle,
                                   color: Colors.green, size: 48),
-                              SizedBox(height: 8),
+                              const SizedBox(height: 8),
                               Text(
-                                'Posted!',
-                                style: TextStyle(
+                                tr('Posted!'),
+                                style: const TextStyle(
                                     fontSize: 18, fontWeight: FontWeight.bold),
                               ),
                             ],
@@ -1146,9 +1147,9 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Posting as',
-          style: TextStyle(fontWeight: FontWeight.w600),
+        Text(
+          tr('Posting as'),
+          style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Wrap(
@@ -1156,7 +1157,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
           runSpacing: 8,
           children: [
             ChoiceChip(
-              label: const Text('My Profile'),
+              label: Text(tr('My Profile')),
               selected: _postAsProfile,
               onSelected: (_) {
                 setState(() {
@@ -1221,16 +1222,16 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Studio preview',
+                        tr('Studio preview'),
                         style: Theme.of(context)
                             .textTheme
                             .titleSmall
                             ?.copyWith(fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Drop photos or videos in here and shape the visual story before you publish.',
-                        style: TextStyle(color: AppColors.grey),
+                      Text(
+                        tr('Drop photos or videos in here and shape the visual story before you publish.'),
+                        style: const TextStyle(color: AppColors.grey),
                       ),
                     ],
                   ),
@@ -1248,10 +1249,10 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                   colors: [Color(0xFF101827), Color(0xFF20324B)],
                 ),
               ),
-              child: const Center(
+              child: Center(
                 child: Text(
-                  'Your media preview will appear here',
-                  style: TextStyle(
+                  tr('Your media preview will appear here'),
+                  style: const TextStyle(
                     color: Colors.white70,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1282,7 +1283,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
           Row(
             children: [
               Text(
-                'Media Preview',
+                tr('Media Preview'),
                 style: Theme.of(context)
                     .textTheme
                     .titleSmall
@@ -1300,7 +1301,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Drag thumbnails to reorder your story flow.',
+            tr('Drag thumbnails to reorder your story flow.'),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: AppColors.grey,
                   fontWeight: FontWeight.w600,
@@ -1443,10 +1444,10 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
           const SizedBox(height: 10),
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'Swipe preview, tap a thumbnail, or use arrows to reorder.',
-                  style: TextStyle(color: AppColors.grey, fontSize: 12),
+                  tr('Swipe preview, tap a thumbnail, or use arrows to reorder.'),
+                  style: const TextStyle(color: AppColors.grey, fontSize: 12),
                 ),
               ),
               TextButton.icon(
@@ -1459,7 +1460,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                         });
                       },
                 icon: const Icon(Icons.clear_all_rounded, size: 18),
-                label: const Text('Clear all'),
+                label: Text(tr('Clear all')),
               ),
             ],
           ),
@@ -1590,14 +1591,14 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
         color: AppColors.primary.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.place_outlined, color: AppColors.primary),
-          SizedBox(width: 10),
+          const Icon(Icons.place_outlined, color: AppColors.primary),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Profile posts stay personal. If you post as a page, we attach that page location automatically.',
-              style: TextStyle(color: AppColors.grey),
+              tr('Profile posts stay personal. If you post as a page, we attach that page location automatically.'),
+              style: const TextStyle(color: AppColors.grey),
             ),
           ),
         ],
@@ -1626,9 +1627,9 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Preview',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          Text(
+            tr('Preview'),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
           ),
           const Divider(),
           Row(

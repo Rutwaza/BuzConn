@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:businessfinder/core/i18n/tr.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -286,13 +287,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         builder: (dialogContext) => StatefulBuilder(
           builder: (dialogContext, setDialogState) => AlertDialog(
             icon: const Icon(Icons.mark_email_read_outlined),
-            title: const Text('Reset your password'),
+            title: Text(tr('Reset your password')),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Enter the email on your account. We will send a secure reset link if the address is registered.',
+                Text(
+                  tr('Enter the email on your account. We will send a secure reset link if the address is registered.'),
                 ),
                 const SizedBox(height: 14),
                 TextField(
@@ -300,11 +301,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   autofocus: true,
                   keyboardType: TextInputType.emailAddress,
                   textInputAction: TextInputAction.send,
-                  decoration: const InputDecoration(
-                    labelText: 'Email address',
-                    hintText: 'you@example.com',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.alternate_email_rounded),
+                  decoration: InputDecoration(
+                    labelText: tr('Email address'),
+                    hintText: tr('you@example.com'),
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.alternate_email_rounded),
                   ),
                 ),
                 if (errorText != null) ...[
@@ -323,7 +324,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 onPressed: isSending
                     ? null
                     : () => Navigator.of(dialogContext).pop(),
-                child: const Text('Cancel'),
+                child: Text(tr('Cancel')),
               ),
               FilledButton(
                 onPressed: isSending
@@ -382,7 +383,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Send reset link'),
+                    : Text(tr('Send reset link')),
               ),
             ],
           ),
@@ -399,8 +400,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     const ink = Color(0xFF172235);
     return WindowsAuthLayout(
       eyebrow: 'Welcome back',
-      title: 'Sign in to Duhuze',
-      subtitle: 'Pick up where you left off and keep your network moving.',
+      title: tr('Sign in to Duhuze'),
+      subtitle: tr('Pick up where you left off and keep your network moving.'),
       footerPrompt: "New to Duhuze?",
       footerAction: 'Create account',
       onFooterTap: () => context.go(AppRoutes.register),
@@ -410,8 +411,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             AppTextField(
-              label: 'Email address',
-              hintText: 'you@example.com',
+              label: tr('Email address'),
+              hintText: tr('you@example.com'),
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
               fillColor: fieldFill,
@@ -432,8 +433,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             ),
             const SizedBox(height: 18),
             AppTextField(
-              label: 'Password',
-              hintText: 'Enter your password',
+              label: tr('Password'),
+              hintText: tr('Enter your password'),
               controller: _passwordController,
               obscureText: !_showPassword,
               fillColor: fieldFill,
@@ -466,7 +467,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               alignment: Alignment.centerRight,
               child: TextButton(
                 onPressed: _showForgotPasswordDialog,
-                child: const Text('Forgot password?'),
+                child: Text(tr('Forgot password?')),
               ),
             ),
             const SizedBox(height: 6),
@@ -478,22 +479,22 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               backgroundColor: const Color(0xFF1769AA),
             ),
             const SizedBox(height: 24),
-            const Row(
+            Row(
               children: [
-                Expanded(child: Divider(color: fieldBorder)),
+                const Expanded(child: const Divider(color: fieldBorder)),
                 Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
                   child: Text(
-                    'OR CONTINUE WITH',
-                    style: TextStyle(
-                      color: Color(0xFF8995A7),
+                    tr('OR CONTINUE WITH'),
+                    style: const TextStyle(
+                      color: const Color(0xFF8995A7),
                       fontSize: 10,
                       letterSpacing: 1,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
-                Expanded(child: Divider(color: fieldBorder)),
+                const Expanded(child: const Divider(color: fieldBorder)),
               ],
             ),
             const SizedBox(height: 18),
@@ -502,7 +503,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               child: OutlinedButton.icon(
                 onPressed: _isLoading ? null : _handleGoogleSignIn,
                 icon: Image.asset('assets/images/google.png', width: 19),
-                label: const Text('Continue with Google'),
+                label: Text(tr('Continue with Google')),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: ink,
                   side: const BorderSide(color: fieldBorder),
@@ -559,30 +560,30 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   children: [
                     const SizedBox(height: 60),
                     // Header
-                    const Center(
+                    Center(
                       child: Text(
-                        'Welcome back to Duhuze',
+                        tr('Welcome back to Duhuze'),
                         textAlign: TextAlign.center,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
-                          shadows: [
+                          shadows: const [
                             Shadow(
                               color: Colors.black45,
                               blurRadius: 10,
-                              offset: Offset(0, 2),
+                              offset: const Offset(0, 2),
                             ),
                           ],
                         ),
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Center(
+                    Center(
                       child: Text(
-                        'Sign in to spotlight your work',
+                        tr('Sign in to spotlight your work'),
                         textAlign: TextAlign.center,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 16,
                           color: Colors.white70,
                         ),
@@ -595,8 +596,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       child: Column(
                         children: [
                           AppTextField(
-                            label: 'Email Address',
-                            hintText: 'Enter your email',
+                            label: tr('Email Address'),
+                            hintText: tr('Enter your email'),
                             controller: _emailController,
                             fillColor: fieldFillColor,
                             textColor: Colors.white,
@@ -624,8 +625,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           ),
                           const SizedBox(height: 20),
                           AppTextField(
-                            label: 'Password',
-                            hintText: 'Enter your password',
+                            label: tr('Password'),
+                            hintText: tr('Enter your password'),
                             controller: _passwordController,
                             obscureText: !_showPassword,
                             fillColor: fieldFillColor,
@@ -680,9 +681,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               onPressed: () {
                                 _showForgotPasswordDialog();
                               },
-                              child: const Text(
-                                'Forgot Password?',
-                                style: TextStyle(
+                              child: Text(
+                                tr('Forgot Password?'),
+                                style: const TextStyle(
                                   color: AppColors.primary,
                                 ),
                               ),
@@ -690,24 +691,24 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           ),
                           const SizedBox(height: 32),
                           // Divider
-                          const Row(
+                          Row(
                             children: [
-                              Expanded(
-                                child: Divider(
+                              const Expanded(
+                                child: const Divider(
                                   color: AppColors.lightGrey,
                                 ),
                               ),
                               Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 16),
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
                                 child: Text(
-                                  'Or continue with',
-                                  style: TextStyle(
+                                  tr('Or continue with'),
+                                  style: const TextStyle(
                                     color: AppColors.grey,
                                   ),
                                 ),
                               ),
-                              Expanded(
-                                child: Divider(
+                              const Expanded(
+                                child: const Divider(
                                   color: AppColors.lightGrey,
                                 ),
                               ),
@@ -721,13 +722,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               _socialButton(
                                 onPressed: _handleGoogleSignIn,
                                 assetPath: 'assets/images/google.png',
-                                semanticLabel: 'Continue with Google',
+                                semanticLabel: tr('Continue with Google'),
                               ),
                               const SizedBox(width: 18),
                               _socialButton(
                                 onPressed: _handlePhoneSignIn,
                                 assetPath: 'assets/images/phone.png',
-                                semanticLabel: 'Continue with phone',
+                                semanticLabel: tr('Continue with phone'),
                               ),
                             ],
                           ),
@@ -736,9 +737,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Text(
-                                "Don't have an account? ",
-                                style: TextStyle(
+                              Text(
+                                tr("Don't have an account? "),
+                                style: const TextStyle(
                                   color: AppColors.grey,
                                 ),
                               ),
@@ -746,9 +747,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 onTap: () {
                                   context.push(AppRoutes.register);
                                 },
-                                child: const Text(
-                                  'Sign Up',
-                                  style: TextStyle(
+                                child: Text(
+                                  tr('Sign Up'),
+                                  style: const TextStyle(
                                     color: AppColors.primary,
                                     fontWeight: FontWeight.w600,
                                   ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 
 Future<void> showEmailVerificationNotice(
   BuildContext context, {
@@ -14,7 +15,7 @@ Future<void> showEmailVerificationNotice(
         color: Theme.of(dialogContext).colorScheme.primary,
         size: 34,
       ),
-      title: const Text('Verify your email'),
+      title: Text(tr('Verify your email')),
       content: Text(
         emailSent
             ? 'We sent a verification link to $email. Open the email and follow its link before signing in. Check your spam folder too.'
@@ -25,7 +26,7 @@ Future<void> showEmailVerificationNotice(
       actions: [
         FilledButton(
           onPressed: () => Navigator.of(dialogContext).pop(),
-          child: const Text('Continue to sign in'),
+          child: Text(tr('Continue to sign in')),
         ),
       ],
     ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'package:go_router/go_router.dart';
@@ -21,17 +22,17 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
 
   final List<OnboardingItem> _onboardingItems = [
     OnboardingItem(
-      title: 'Duhuze: Africa Connected',
+      title: tr('Duhuze: Africa Connected'),
       description: 'Share your posts and shine in a creator-first community.',
       icon: Icons.auto_awesome,
     ),
     OnboardingItem(
-      title: 'Discover & Follow',
+      title: tr('Discover & Follow'),
       description: 'Find creators, trends, and ideas worth saving.',
       icon: Icons.explore,
     ),
     OnboardingItem(
-      title: 'Connect & Share',
+      title: tr('Connect & Share'),
       description: 'Chat, collaborate, and grow your audience together.',
       icon: Icons.chat_bubble,
     ),
@@ -115,9 +116,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                     onPressed: () {
                       context.go(AppRoutes.login);
                     },
-                    child: const Text(
-                      'Skip',
-                      style: TextStyle(
+                    child: Text(
+                      tr('Skip'),
+                      style: const TextStyle(
                         fontSize: 16,
                         color: Colors.white70,
                       ),

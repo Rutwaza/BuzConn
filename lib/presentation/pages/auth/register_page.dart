@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:businessfinder/core/i18n/tr.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -56,7 +57,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         if (existingMethods.isNotEmpty) {
           throw FirebaseAuthException(
             code: 'email-already-in-use',
-            message: 'An account already exists with this email.',
+            message: tr('An account already exists with this email.'),
           );
         }
 
@@ -259,8 +260,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     const ink = Color(0xFF172235);
     return WindowsAuthLayout(
       eyebrow: 'Get started',
-      title: 'Create your account',
-      subtitle: 'Set up your Duhuze account and start building connections.',
+      title: tr('Create your account'),
+      subtitle: tr('Set up your Duhuze account and start building connections.'),
       footerPrompt: 'Already have an account?',
       footerAction: 'Sign in',
       onFooterTap: () => context.go(AppRoutes.login),
@@ -271,8 +272,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           children: [
             AppTextField(
               controller: _emailController,
-              label: 'Email address',
-              hintText: 'you@example.com',
+              label: tr('Email address'),
+              hintText: tr('you@example.com'),
               keyboardType: TextInputType.emailAddress,
               fillColor: fieldFill,
               textColor: ink,
@@ -293,7 +294,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
             const SizedBox(height: 15),
             AppTextField(
               controller: _passwordController,
-              label: 'Password',
+              label: tr('Password'),
               hintText: 'At least ${AppConstants.minPasswordLength} characters',
               obscureText: !_showPassword,
               fillColor: fieldFill,
@@ -325,8 +326,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
             const SizedBox(height: 15),
             AppTextField(
               controller: _confirmPasswordController,
-              label: 'Confirm password',
-              hintText: 'Re-enter your password',
+              label: tr('Confirm password'),
+              hintText: tr('Re-enter your password'),
               obscureText: !_showConfirmPassword,
               fillColor: fieldFill,
               textColor: ink,
@@ -366,22 +367,22 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
               backgroundColor: const Color(0xFF1769AA),
             ),
             const SizedBox(height: 22),
-            const Row(
+            Row(
               children: [
-                Expanded(child: Divider(color: fieldBorder)),
+                const Expanded(child: const Divider(color: fieldBorder)),
                 Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
                   child: Text(
-                    'OR SIGN UP WITH',
-                    style: TextStyle(
-                      color: Color(0xFF8995A7),
+                    tr('OR SIGN UP WITH'),
+                    style: const TextStyle(
+                      color: const Color(0xFF8995A7),
                       fontSize: 10,
                       letterSpacing: 1,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
-                Expanded(child: Divider(color: fieldBorder)),
+                const Expanded(child: const Divider(color: fieldBorder)),
               ],
             ),
             const SizedBox(height: 16),
@@ -390,7 +391,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
               child: OutlinedButton.icon(
                 onPressed: _isLoading ? null : _handleGoogleSignIn,
                 icon: Image.asset('assets/images/google.png', width: 19),
-                label: const Text('Continue with Google'),
+                label: Text(tr('Continue with Google')),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: ink,
                   side: const BorderSide(color: fieldBorder),
@@ -449,7 +450,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     const SizedBox(height: 80),
                     Center(
                       child: Text(
-                        'Join Duhuze',
+                        tr('Join Duhuze'),
                         textAlign: TextAlign.center,
                         style: Theme.of(context)
                             .textTheme
@@ -470,7 +471,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     const SizedBox(height: 8),
                     Center(
                       child: Text(
-                        'Connect with people, pages and businesses near you',
+                        tr('Connect with people, pages and businesses near you'),
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                               color: Colors.white70,
@@ -480,8 +481,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     const SizedBox(height: 48),
                     AppTextField(
                       controller: _emailController,
-                      label: 'Email',
-                      hintText: 'Enter your email',
+                      label: tr('Email'),
+                      hintText: tr('Enter your email'),
                       keyboardType: TextInputType.emailAddress,
                       fillColor: fieldFillColor,
                       textColor: Colors.white,
@@ -508,7 +509,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     const SizedBox(height: 16),
                     AppTextField(
                       controller: _passwordController,
-                      label: 'Password',
+                      label: tr('Password'),
                       hintText:
                           'At least ${AppConstants.minPasswordLength} characters',
                       obscureText: !_showPassword,
@@ -551,8 +552,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     const SizedBox(height: 16),
                     AppTextField(
                       controller: _confirmPasswordController,
-                      label: 'Confirm Password',
-                      hintText: 'Confirm your password',
+                      label: tr('Confirm Password'),
+                      hintText: tr('Confirm your password'),
                       obscureText: !_showConfirmPassword,
                       fillColor: fieldFillColor,
                       textColor: Colors.white,
@@ -597,20 +598,20 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                       isLoading: _isLoading,
                     ),
                     const SizedBox(height: 24),
-                    const Row(
+                    Row(
                       children: [
-                        Expanded(
-                          child: Divider(color: AppColors.lightGrey),
+                        const Expanded(
+                          child: const Divider(color: AppColors.lightGrey),
                         ),
                         Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
                           child: Text(
-                            'Or continue with',
-                            style: TextStyle(color: AppColors.grey),
+                            tr('Or continue with'),
+                            style: const TextStyle(color: AppColors.grey),
                           ),
                         ),
-                        Expanded(
-                          child: Divider(color: AppColors.lightGrey),
+                        const Expanded(
+                          child: const Divider(color: AppColors.lightGrey),
                         ),
                       ],
                     ),
@@ -621,13 +622,13 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                         _socialButton(
                           onPressed: _handleGoogleSignIn,
                           assetPath: 'assets/images/google.png',
-                          semanticLabel: 'Continue with Google',
+                          semanticLabel: tr('Continue with Google'),
                         ),
                         const SizedBox(width: 18),
                         _socialButton(
                           onPressed: _handlePhoneSignIn,
                           assetPath: 'assets/images/phone.png',
-                          semanticLabel: 'Continue with phone',
+                          semanticLabel: tr('Continue with phone'),
                         ),
                       ],
                     ),
@@ -636,7 +637,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'Already have an account? ',
+                          tr('Already have an account? '),
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         TextButton(
@@ -644,7 +645,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                             context.go(AppRoutes.login);
                           },
                           child: Text(
-                            'Sign In',
+                            tr('Sign In'),
                             style: Theme.of(context)
                                 .textTheme
                                 .bodyMedium

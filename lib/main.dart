@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'dart:ui';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -55,6 +56,7 @@ void main() async {
     PresenceService.instance.start();
     await PushNotificationService.instance.initialize();
     await ThemeModeService.instance.loadFromUser();
+    await LanguageService.instance.loadFromUser();
   });
 }
 
@@ -69,7 +71,7 @@ class MyApp extends ConsumerWidget {
         final themeMode =
             mode == AppThemeMode.dark ? ThemeMode.dark : ThemeMode.light;
         return MaterialApp.router(
-          title: 'Duhuze',
+          title: tr('Duhuze'),
           scaffoldMessengerKey: AppRouter.scaffoldMessengerKey,
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,

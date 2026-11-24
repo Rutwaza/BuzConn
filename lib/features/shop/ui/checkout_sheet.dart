@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/theme/colors.dart';
@@ -164,29 +165,29 @@ class _PaySheetState extends State<PaySheet> with WidgetsBindingObserver {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    'Your phone dialer opens with the code ready. Press call, then enter your MoMo PIN.',
+                  Text(
+                    tr('Your phone dialer opens with the code ready. Press call, then enter your MoMo PIN.'),
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: AppColors.grey),
+                    style: const TextStyle(fontSize: 12, color: AppColors.grey),
                   ),
                   TextButton(
                     onPressed: _busy
                         ? null
                         : () => _answer(() => _repo.buyerCancelled(o.id)),
-                    child: const Text('Cancel order'),
+                    child: Text(tr('Cancel order')),
                   ),
                 ] else ...[
-                  const Text('Did the payment go through?',
+                  Text(tr('Did the payment go through?'),
                       textAlign: TextAlign.center,
                       style:
-                          TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                          const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _txRef,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Transaction ID from the MoMo SMS (optional)',
-                      helperText: 'Helps the shop find your payment quickly.',
+                    decoration: InputDecoration(
+                      labelText: tr('Transaction ID from the MoMo SMS (optional)'),
+                      helperText: tr('Helps the shop find your payment quickly.'),
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -200,7 +201,7 @@ class _PaySheetState extends State<PaySheet> with WidgetsBindingObserver {
                           : () => _answer(
                               () => _repo.buyerPaid(o.id, txRef: _txRef.text)),
                       icon: const Icon(Icons.check_circle_rounded),
-                      label: const Text('Yes, I paid'),
+                      label: Text(tr('Yes, I paid')),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -208,7 +209,7 @@ class _PaySheetState extends State<PaySheet> with WidgetsBindingObserver {
                     Expanded(
                       child: OutlinedButton(
                         onPressed: _busy ? null : () => _pay(o),
-                        child: const Text('Try again'),
+                        child: Text(tr('Try again')),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -219,7 +220,7 @@ class _PaySheetState extends State<PaySheet> with WidgetsBindingObserver {
                         onPressed: _busy
                             ? null
                             : () => _answer(() => _repo.buyerCancelled(o.id)),
-                        child: const Text('No, cancel'),
+                        child: Text(tr('No, cancel')),
                       ),
                     ),
                   ]),

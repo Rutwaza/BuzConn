@@ -9,7 +9,7 @@ extension _ChatSharedPanel on _ChatPageState {
     if (items.isEmpty) {
       return _buildSharedTabEmptyState(
         icon: Icons.photo_library_outlined,
-        label: 'No media shared yet',
+        label: tr('No media shared yet'),
       );
     }
 
@@ -87,7 +87,7 @@ extension _ChatSharedPanel on _ChatPageState {
     if (items.isEmpty) {
       return _buildSharedTabEmptyState(
         icon: Icons.link_off_rounded,
-        label: 'No shared links yet',
+        label: tr('No shared links yet'),
       );
     }
 
@@ -146,7 +146,7 @@ extension _ChatSharedPanel on _ChatPageState {
                   ),
                 ),
                 IconButton(
-                  tooltip: 'Open link',
+                  tooltip: tr('Open link'),
                   onPressed: () => _openLink(url),
                   icon: const Icon(Icons.open_in_new_rounded, size: 18),
                 ),
@@ -165,7 +165,7 @@ extension _ChatSharedPanel on _ChatPageState {
     if (items.isEmpty) {
       return _buildSharedTabEmptyState(
         icon: Icons.folder_open_rounded,
-        label: 'No shared documents yet',
+        label: tr('No shared documents yet'),
       );
     }
 
@@ -235,7 +235,7 @@ extension _ChatSharedPanel on _ChatPageState {
                   ),
                 ),
                 Tooltip(
-                  message: 'Private link expires after 15 minutes',
+                  message: tr('Private link expires after 15 minutes'),
                   child: Icon(
                     Icons.lock_outline_rounded,
                     size: 18,

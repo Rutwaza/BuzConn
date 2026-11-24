@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:businessfinder/core/i18n/tr.dart';
 
 import 'package:flutter/material.dart';
 import 'package:businessfinder/features/posts/data/engagement_repository.dart';
@@ -231,7 +232,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
     } else {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open Google Maps')),
+        SnackBar(content: Text(tr('Could not open Google Maps'))),
       );
     }
   }
@@ -301,26 +302,26 @@ class _PostDetailPageState extends State<PostDetailPage> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Edit comment'),
+          title: Text(tr('Edit comment')),
           content: TextField(
             controller: controller,
             maxLines: 4,
             minLines: 1,
-            decoration: const InputDecoration(
-              hintText: 'Update your comment...',
+            decoration: InputDecoration(
+              hintText: tr('Update your comment...'),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text(tr('Cancel')),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(
                 context,
                 controller.text.trim(),
               ),
-              child: const Text('Save'),
+              child: Text(tr('Save')),
             ),
           ],
         );
@@ -342,16 +343,16 @@ class _PostDetailPageState extends State<PostDetailPage> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Delete comment'),
-          content: const Text('Remove this comment for everyone?'),
+          title: Text(tr('Delete comment')),
+          content: Text(tr('Remove this comment for everyone?')),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: Text(tr('Cancel')),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Delete'),
+              child: Text(tr('Delete')),
             ),
           ],
         );
@@ -391,7 +392,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
               const SizedBox(height: 8),
               ListTile(
                 leading: const Icon(Icons.reply_rounded),
-                title: const Text('Reply'),
+                title: Text(tr('Reply')),
                 onTap: () {
                   Navigator.pop(context);
                   setState(() {
@@ -403,7 +404,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
               if (currentUser != null && currentUser.uid == comment.userId)
                 ListTile(
                   leading: const Icon(Icons.edit),
-                  title: const Text('Edit comment'),
+                  title: Text(tr('Edit comment')),
                   onTap: () {
                     Navigator.pop(context);
                     _showEditCommentDialog(comment);
@@ -412,7 +413,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
               if (currentUser != null && currentUser.uid == comment.userId)
                 ListTile(
                   leading: const Icon(Icons.delete_outline),
-                  title: const Text('Delete comment'),
+                  title: Text(tr('Delete comment')),
                   onTap: () {
                     Navigator.pop(context);
                     _confirmDeleteComment(comment);
@@ -495,9 +496,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                const Text(
-                  'Share this post',
-                  style: TextStyle(
+                Text(
+                  tr('Share this post'),
+                  style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 18,
                   ),
@@ -568,20 +569,20 @@ class _PostDetailPageState extends State<PostDetailPage> {
                   children: [
                     _SheetAction(
                       icon: Icons.send_rounded,
-                      label: 'Send',
+                      label: tr('Send'),
                       onTap: () {
                         HapticFeedback.selectionClick();
                         Navigator.pop(sheetContext);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
+                          SnackBar(
                               content: Text(
-                                  'Open chat from feed to send this post')),
+                                  tr('Open chat from feed to send this post'))),
                         );
                       },
                     ),
                     _SheetAction(
                       icon: Icons.copy_rounded,
-                      label: 'Copy text',
+                      label: tr('Copy text'),
                       onTap: () async {
                         HapticFeedback.lightImpact();
                         await Clipboard.setData(
@@ -594,13 +595,13 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         if (!mounted) return;
                         Navigator.pop(sheetContext);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Caption copied')),
+                          SnackBar(content: Text(tr('Caption copied'))),
                         );
                       },
                     ),
                     _SheetAction(
                       icon: Icons.person_outline_rounded,
-                      label: 'Creator',
+                      label: tr('Creator'),
                       onTap: () {
                         HapticFeedback.selectionClick();
                         Navigator.pop(sheetContext);
@@ -615,14 +616,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
                     ),
                     _SheetAction(
                       icon: Icons.link_rounded,
-                      label: 'Copy ID',
+                      label: tr('Copy ID'),
                       onTap: () async {
                         HapticFeedback.lightImpact();
                         await Clipboard.setData(ClipboardData(text: post.id));
                         if (!mounted) return;
                         Navigator.pop(sheetContext);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Post ID copied')),
+                          SnackBar(content: Text(tr('Post ID copied'))),
                         );
                       },
                     ),
@@ -923,14 +924,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                 });
                               },
                               borderRadius: BorderRadius.circular(999),
-                              child: const Padding(
-                                padding: EdgeInsets.symmetric(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
                                   horizontal: 2,
                                   vertical: 2,
                                 ),
                                 child: Text(
-                                  'Reply',
-                                  style: TextStyle(
+                                  tr('Reply'),
+                                  style: const TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w700,
                                     color: AppColors.grey,
@@ -1106,7 +1107,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Post')),
+      appBar: AppBar(title: Text(tr('Post'))),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('posts')
@@ -1150,9 +1151,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
           Widget commentsHeader() {
             return Row(
               children: [
-                const Text(
-                  'Comments',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+                Text(
+                  tr('Comments'),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(width: 8),
                 Container(
@@ -1174,7 +1175,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                 ),
                 const Spacer(),
                 Text(
-                  'Newest first',
+                  tr('Newest first'),
                   style: TextStyle(
                     color: onSurfaceMuted,
                     fontSize: 12,
@@ -1195,14 +1196,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
                     .withValues(alpha: 0.35),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.mode_comment_outlined, color: AppColors.grey),
-                  SizedBox(width: 12),
+                  const Icon(Icons.mode_comment_outlined, color: AppColors.grey),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'No comments yet. Start the conversation.',
-                      style: TextStyle(color: AppColors.grey),
+                      tr('No comments yet. Start the conversation.'),
+                      style: const TextStyle(color: AppColors.grey),
                     ),
                   ),
                 ],
@@ -1353,9 +1354,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               color: Colors.white,
                               size: 18,
                             ),
-                          const Text(
-                            'Post',
-                            style: TextStyle(
+                          Text(
+                            tr('Post'),
+                            style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
                             ),

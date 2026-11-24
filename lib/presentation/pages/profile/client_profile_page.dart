@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -74,7 +75,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open dialer.')),
+        SnackBar(content: Text(tr('Could not open dialer.'))),
       );
     }
   }
@@ -101,7 +102,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
       if (businessesSnap.docs.isEmpty) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Create a page before messaging.')),
+            SnackBar(content: Text(tr('Create a page before messaging.'))),
           );
         }
         return;
@@ -176,7 +177,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Not now'),
+                      child: Text(tr('Not now')),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -185,11 +186,11 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                       onPressed: () {
                         Navigator.of(context).pop();
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Premium upgrade is coming soon!')),
+                          SnackBar(
+                              content: Text(tr('Premium upgrade is coming soon!'))),
                         );
                       },
-                      child: const Text('Go Premium'),
+                      child: Text(tr('Go Premium')),
                     ),
                   ),
                 ],
@@ -277,7 +278,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(title: Text(tr('Profile'))),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('users')
@@ -288,7 +289,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text('User not found'));
+            return Center(child: Text(tr('User not found')));
           }
 
           final data = snapshot.data!.data() as Map<String, dynamic>;
@@ -624,7 +625,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14)),
               ),
-              child: const Text('Edit Profile'),
+              child: Text(tr('Edit Profile')),
             ),
           if (!_isSelf && currentUserId != null)
             StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -671,7 +672,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('About',
+          Text(tr('About'),
               style: Theme.of(context)
                   .textTheme
                   .titleSmall
@@ -701,8 +702,8 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Who to follow',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          Text(tr('Who to follow'),
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
           const SizedBox(height: 12),
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
@@ -716,8 +717,8 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
               }
               final docs = snap.data?.docs ?? [];
               if (docs.isEmpty) {
-                return const Text('No suggestions right now.',
-                    style: TextStyle(color: AppColors.grey));
+                return Text(tr('No suggestions right now.'),
+                    style: const TextStyle(color: AppColors.grey));
               }
               return Column(
                 children: docs.map((doc) {
@@ -756,7 +757,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                                   : () => _followUser(currentUserId, userId),
                           style: FilledButton.styleFrom(
                               minimumSize: const Size(70, 30)),
-                          child: const Text('Follow'),
+                          child: Text(tr('Follow')),
                         ),
                       ],
                     ),
@@ -792,7 +793,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
           children: [
             Row(
               children: [
-                Text('Pages',
+                Text(tr('Pages'),
                     style: Theme.of(context)
                         .textTheme
                         .titleLarge
@@ -802,7 +803,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                   TextButton.icon(
                       onPressed: _createPage,
                       icon: const Icon(Icons.add_circle_outline),
-                      label: const Text('Add page')),
+                      label: Text(tr('Add page'))),
               ],
             ),
             const SizedBox(height: 10),
@@ -940,18 +941,18 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                                 }
                               },
                               itemBuilder: (context) => [
-                                const PopupMenuItem(
-                                    value: 'edit', child: Text('Edit')),
-                                const PopupMenuItem(
-                                    value: 'logo', child: Text('Update logo')),
+                                PopupMenuItem(
+                                    value: 'edit', child: Text(tr('Edit'))),
+                                PopupMenuItem(
+                                    value: 'logo', child: Text(tr('Update logo'))),
                                 PopupMenuItem(
                                     value: 'toggle',
                                     child: Text(isActive
                                         ? 'Hide page'
                                         : 'Unhide page')),
-                                const PopupMenuItem(
+                                PopupMenuItem(
                                     value: 'verify',
-                                    child: Text('Verify (Premium)')),
+                                    child: Text(tr('Verify (Premium)'))),
                               ],
                             ),
                         ],
@@ -1107,7 +1108,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Insights',
+              tr('Insights'),
               style: Theme.of(context)
                   .textTheme
                   .titleLarge
@@ -1152,9 +1153,9 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Creator Insights',
-                            style: TextStyle(
+                          Text(
+                            tr('Creator Insights'),
+                            style: const TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 16,
                             ),

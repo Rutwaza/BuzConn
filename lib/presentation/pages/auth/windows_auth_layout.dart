@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 
 class WindowsAuthLayout extends StatelessWidget {
   const WindowsAuthLayout({
@@ -105,15 +106,15 @@ class WindowsAuthLayout extends StatelessWidget {
               borderRadius: BorderRadius.circular(999),
               border: Border.all(color: Colors.white12),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.auto_awesome_rounded,
-                    size: 15, color: Color(0xFF77C6FF)),
-                SizedBox(width: 8),
+                const Icon(Icons.auto_awesome_rounded,
+                    size: 15, color: const Color(0xFF77C6FF)),
+                const SizedBox(width: 8),
                 Text(
-                  'BUSINESS, BUILT AROUND PEOPLE',
-                  style: TextStyle(
+                  tr('BUSINESS, BUILT AROUND PEOPLE'),
+                  style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 10,
                     letterSpacing: 1.15,
@@ -124,9 +125,9 @@ class WindowsAuthLayout extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          const Text(
-            'Make your next\nconnection count.',
-            style: TextStyle(
+          Text(
+            tr('Make your next\nconnection count.'),
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 42,
               height: 1.12,
@@ -135,10 +136,10 @@ class WindowsAuthLayout extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          const Text(
-            'Discover local businesses, meet new customers, and keep every conversation moving in one place.',
-            style: TextStyle(
-              color: Color(0xFFB5C3D7),
+          Text(
+            tr('Discover local businesses, meet new customers, and keep every conversation moving in one place.'),
+            style: const TextStyle(
+              color: const Color(0xFFB5C3D7),
               fontSize: 16,
               height: 1.65,
             ),
@@ -153,9 +154,9 @@ class WindowsAuthLayout extends StatelessWidget {
           _feature(Icons.trending_up_rounded, 'Grow with Duhuze',
               'Share your work with a community that cares.'),
           const Spacer(),
-          const Text(
-            'One place for discovery, conversations, and growth.',
-            style: TextStyle(color: Colors.white54, fontSize: 12),
+          Text(
+            tr('One place for discovery, conversations, and growth.'),
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
           ),
         ],
       ),
@@ -183,9 +184,9 @@ class WindowsAuthLayout extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        const Text(
-          'Duhuze',
-          style: TextStyle(
+        Text(
+          tr('Duhuze'),
+          style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w800,
             fontSize: 23,

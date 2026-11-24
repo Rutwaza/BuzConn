@@ -1,4 +1,5 @@
 import 'package:fl_chart/fl_chart.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
 import 'dart:io';
@@ -16,14 +17,14 @@ class AnalyticsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      return const Scaffold(
-        body: Center(child: Text('Please sign in.')),
+      return Scaffold(
+        body: Center(child: Text(tr('Please sign in.'))),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Insights'),
+        title: Text(tr('Insights')),
       ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
@@ -116,19 +117,19 @@ class AnalyticsPage extends StatelessWidget {
 
                           final cards = <Widget>[
                             _StatCard(
-                              title: 'Saved',
+                              title: tr('Saved'),
                               value: favoritesCount.toString(),
                               icon: Icons.bookmark,
                             ),
                             _StatCard(
-                              title: 'Chats',
+                              title: tr('Chats'),
                               value: chatDocs.length.toString(),
                               icon: Icons.chat_bubble_outline,
                               subtitle:
                                   unread > 0 ? '$unread unread' : 'All read',
                             ),
                             _StatCard(
-                              title: 'Notifications',
+                              title: tr('Notifications'),
                               value: unreadNotifs.toString(),
                               icon: Icons.notifications_none,
                               subtitle:
@@ -139,31 +140,31 @@ class AnalyticsPage extends StatelessWidget {
                           if (userType == 'business') {
                             cards.insertAll(0, [
                               _StatCard(
-                                title: 'Posts',
+                                title: tr('Posts'),
                                 value: postDocs.length.toString(),
                                 icon: Icons.article_outlined,
                                 footer: _MiniSparkline(values: dailyCounts),
                               ),
                               _StatCard(
-                                title: 'Likes',
+                                title: tr('Likes'),
                                 value: totalLikes.toString(),
                                 icon: Icons.star_border,
                                 footer: _ProgressLine(
                                   value: totalLikes,
                                   target: 1000,
                                   color: Colors.amber,
-                                  label: 'Target 1k',
+                                  label: tr('Target 1k'),
                                 ),
                               ),
                               _StatCard(
-                                title: 'Comments',
+                                title: tr('Comments'),
                                 value: totalComments.toString(),
                                 icon: Icons.comment_outlined,
                                 footer: _ProgressLine(
                                   value: totalComments,
                                   target: 500,
                                   color: Colors.lightBlueAccent,
-                                  label: 'Target 500',
+                                  label: tr('Target 500'),
                                 ),
                               ),
                             ]);
@@ -194,8 +195,8 @@ class AnalyticsPage extends StatelessWidget {
                                 final cardCount = cards.length < 4 ? cards.length : 4;
 
                                 final overviewPanel = _InsightSectionCard(
-                                  title: 'Activity trend',
-                                  subtitle: 'Posts published across the last 7 days',
+                                  title: tr('Activity trend'),
+                                  subtitle: tr('Posts published across the last 7 days'),
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
@@ -220,8 +221,8 @@ class AnalyticsPage extends StatelessWidget {
                                 );
 
                                 final engagementPanel = _InsightSectionCard(
-                                  title: 'Engagement mix',
-                                  subtitle: 'How likes and comments are split right now',
+                                  title: tr('Engagement mix'),
+                                  subtitle: tr('How likes and comments are split right now'),
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
@@ -274,9 +275,9 @@ class AnalyticsPage extends StatelessWidget {
                                                           fontWeight: FontWeight.w800,
                                                         ),
                                                   ),
-                                                  const Text(
-                                                    'total actions',
-                                                    style: TextStyle(
+                                                  Text(
+                                                    tr('total actions'),
+                                                    style: const TextStyle(
                                                       color: AppColors.grey,
                                                       fontSize: 12,
                                                     ),
@@ -299,9 +300,9 @@ class AnalyticsPage extends StatelessWidget {
                                             ),
                                           ),
                                           const SizedBox(width: 8),
-                                          const Text(
-                                            'Likes',
-                                            style: TextStyle(fontSize: 12),
+                                          Text(
+                                            tr('Likes'),
+                                            style: const TextStyle(fontSize: 12),
                                           ),
                                           const SizedBox(width: 16),
                                           Container(
@@ -313,27 +314,27 @@ class AnalyticsPage extends StatelessWidget {
                                             ),
                                           ),
                                           const SizedBox(width: 8),
-                                          const Text(
-                                            'Comments',
-                                            style: TextStyle(fontSize: 12),
+                                          Text(
+                                            tr('Comments'),
+                                            style: const TextStyle(fontSize: 12),
                                           ),
                                         ],
                                       ),
                                       const SizedBox(height: 16),
                                       _MetricRow(
-                                        label: 'Likes per post',
+                                        label: tr('Likes per post'),
                                         value: avgLikesPerPost.toStringAsFixed(1),
                                         color: Colors.amber,
                                       ),
                                       const SizedBox(height: 10),
                                       _MetricRow(
-                                        label: 'Comments per post',
+                                        label: tr('Comments per post'),
                                         value: avgCommentsPerPost.toStringAsFixed(1),
                                         color: Colors.lightBlueAccent,
                                       ),
                                       const SizedBox(height: 10),
                                       _MetricRow(
-                                        label: 'Unread chats',
+                                        label: tr('Unread chats'),
                                         value: unread.toString(),
                                         color: Colors.green,
                                       ),
@@ -431,25 +432,25 @@ class AnalyticsPage extends StatelessWidget {
                                                       Expanded(
                                                         flex: 4,
                                                         child: _InsightSectionCard(
-                                                          title: 'Quick pulse',
+                                                          title: tr('Quick pulse'),
                                                           subtitle:
-                                                              'A fast desktop summary',
+                                                              tr('A fast desktop summary'),
                                                           child: Column(
                                                             children: [
                                                               _MetricRow(
-                                                                label: 'Unread notifications',
+                                                                label: tr('Unread notifications'),
                                                                 value: unreadNotifs.toString(),
                                                                 color: AppColors.primary,
                                                               ),
                                                               const SizedBox(height: 10),
                                                               _MetricRow(
-                                                                label: 'Open chats',
+                                                                label: tr('Open chats'),
                                                                 value: chatDocs.length.toString(),
                                                                 color: Colors.deepPurple,
                                                               ),
                                                               const SizedBox(height: 10),
                                                               _MetricRow(
-                                                                label: 'Published posts',
+                                                                label: tr('Published posts'),
                                                                 value: postDocs.length.toString(),
                                                                 color: Colors.orange,
                                                               ),
@@ -464,7 +465,7 @@ class AnalyticsPage extends StatelessWidget {
                                                         CrossAxisAlignment.start,
                                                     children: [
                                                       Text(
-                                                        'Insights overview',
+                                                        tr('Insights overview'),
                                                         style: Theme.of(context)
                                                             .textTheme
                                                             .titleLarge
@@ -473,9 +474,9 @@ class AnalyticsPage extends StatelessWidget {
                                                             ),
                                                       ),
                                                       const SizedBox(height: 8),
-                                                      const Text(
-                                                        'Your stats, posts, and activity in one place.',
-                                                        style: TextStyle(
+                                                      Text(
+                                                        tr('Your stats, posts, and activity in one place.'),
+                                                        style: const TextStyle(
                                                           color: AppColors.grey,
                                                         ),
                                                       ),
@@ -526,9 +527,9 @@ class AnalyticsPage extends StatelessWidget {
                                           ],
                                           const SizedBox(height: 16),
                                           _InsightSectionCard(
-                                            title: 'Your posts',
+                                            title: tr('Your posts'),
                                             subtitle:
-                                                'Browse your recent content and saved items',
+                                                tr('Browse your recent content and saved items'),
                                             child: Column(
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
@@ -892,7 +893,7 @@ class _RecentPostsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (postDocs.isEmpty) {
-      return const Center(child: Text('No posts yet.'));
+      return Center(child: Text(tr('No posts yet.')));
     }
 
     final sorted = [...postDocs]
@@ -927,7 +928,7 @@ class _SavedPostsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (favoriteDocs.isEmpty) {
-      return const Center(child: Text('No saved posts.'));
+      return Center(child: Text(tr('No saved posts.')));
     }
 
     final ids = favoriteDocs
@@ -939,7 +940,7 @@ class _SavedPostsList extends StatelessWidget {
         .toList();
 
     if (ids.isEmpty) {
-      return const Center(child: Text('No saved posts.'));
+      return Center(child: Text(tr('No saved posts.')));
     }
 
     final limited = ids.take(10).toList();
@@ -951,7 +952,7 @@ class _SavedPostsList extends StatelessWidget {
       builder: (context, snap) {
         final docs = snap.data?.docs ?? [];
         if (docs.isEmpty) {
-          return const Center(child: Text('No saved posts.'));
+          return Center(child: Text(tr('No saved posts.')));
         }
         return ListView.separated(
           itemCount: docs.length,

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -193,7 +194,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'Go Premium',
+                            tr('Go Premium'),
                             style: Theme.of(context)
                                 .textTheme
                                 .titleLarge
@@ -201,8 +202,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            'Free accounts can create up to 2 pages. '
-                            'Upgrade to unlock more pages and reach more fans.',
+                            tr('Free accounts can create up to 2 pages. Upgrade to unlock more pages and reach more fans.'),
                             textAlign: TextAlign.center,
                             style: Theme.of(context)
                                 .textTheme
@@ -218,15 +218,15 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                                   : Colors.black.withValues(alpha: 0.04),
                               borderRadius: BorderRadius.circular(16),
                             ),
-                            child: const Row(
+                            child: Row(
                               children: [
-                                Icon(Icons.check_circle,
+                                const Icon(Icons.check_circle,
                                     color: AppColors.primary, size: 18),
-                                SizedBox(width: 8),
+                                const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    'Unlimited pages • Priority review • Featured boost',
-                                    style: TextStyle(fontSize: 12),
+                                    tr('Unlimited pages • Priority review • Featured boost'),
+                                    style: const TextStyle(fontSize: 12),
                                   ),
                                 ),
                               ],
@@ -244,7 +244,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
-                                  child: const Text('Not now'),
+                                  child: Text(tr('Not now')),
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -253,9 +253,9 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                                   onPressed: () {
                                     Navigator.of(context).pop();
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
+                                      SnackBar(
                                         content: Text(
-                                          'Premium upgrade coming soon!',
+                                          tr('Premium upgrade coming soon!'),
                                         ),
                                       ),
                                     );
@@ -265,7 +265,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
-                                  child: const Text('Go Premium'),
+                                  child: Text(tr('Go Premium')),
                                 ),
                               ),
                             ],
@@ -362,8 +362,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Page saved successfully!'),
+              SnackBar(
+                content: Text(tr('Page saved successfully!')),
                 backgroundColor: Colors.green,
               ),
             );
@@ -379,7 +379,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to create page. Please try again.')),
+            SnackBar(content: Text(tr('Failed to create page. Please try again.'))),
           );
         }
       }
@@ -515,7 +515,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
     if (address.isEmpty) {
       if (showFeedback && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Add your address first')),
+          SnackBar(content: Text(tr('Add your address first'))),
         );
       }
       return;
@@ -538,9 +538,9 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
     } catch (_) {
       if (mounted && showFeedback) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'Could not find that address yet. Try a fuller address or use current location.',
+              tr('Could not find that address yet. Try a fuller address or use current location.'),
             ),
           ),
         );
@@ -622,7 +622,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
     final text = data?.text?.trim() ?? '';
     if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Clipboard is empty')),
+        SnackBar(content: Text(tr('Clipboard is empty'))),
       );
       return;
     }
@@ -790,7 +790,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Build your Duhuze page',
+                            tr('Build your Duhuze page'),
                             style: Theme.of(context)
                                 .textTheme
                                 .titleMedium
@@ -798,7 +798,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            'Show your work, connect with fans, and share updates.',
+                            tr('Show your work, connect with fans, and share updates.'),
                             style: Theme.of(context)
                                 .textTheme
                                 .bodySmall
@@ -816,7 +816,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Page basics',
+                      tr('Page basics'),
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w700,
                           ),
@@ -824,8 +824,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                     const SizedBox(height: 12),
                     AppTextField(
                       controller: _businessNameController,
-                      label: 'Page Name',
-                      hintText: 'Your creator name or brand',
+                      label: tr('Page Name'),
+                      hintText: tr('Your creator name or brand'),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
                           return 'Please enter your page name';
@@ -835,7 +835,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Category',
+                      tr('Category'),
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
@@ -873,8 +873,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                     const SizedBox(height: 16),
                     AppTextField(
                       controller: _descriptionController,
-                      label: 'Bio',
-                      hintText: 'Describe your work and style...',
+                      label: tr('Bio'),
+                      hintText: tr('Describe your work and style...'),
                       maxLines: 3,
                       maxLength: 500,
                       validator: (value) {
@@ -893,7 +893,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Location',
+                      tr('Location'),
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w700,
                           ),
@@ -901,8 +901,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                     const SizedBox(height: 12),
                     AppTextField(
                       controller: _addressController,
-                      label: 'Address',
-                      hintText: 'City, street, building, or venue',
+                      label: tr('Address'),
+                      hintText: tr('City, street, building, or venue'),
                       maxLines: 2,
                       textCapitalization: TextCapitalization.words,
                     ),
@@ -915,26 +915,26 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                           onPressed:
                               _isResolvingLocation ? null : _pinLocationFromAddress,
                           icon: const Icon(Icons.search_rounded),
-                          label: const Text('Pin from address'),
+                          label: Text(tr('Pin from address')),
                         ),
                         OutlinedButton.icon(
                           onPressed:
                               _isResolvingLocation ? null : _useCurrentLocation,
                           icon: const Icon(Icons.my_location_rounded),
-                          label: const Text('Use current location'),
+                          label: Text(tr('Use current location')),
                         ),
                         OutlinedButton.icon(
                           onPressed: _pasteMapsLink,
                           icon: const Icon(Icons.paste_rounded),
-                          label: const Text('Paste map link'),
+                          label: Text(tr('Paste map link')),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
                     AppTextField(
                       controller: _googleMapsLinkController,
-                      label: 'Google Maps Link (optional)',
-                      hintText: 'Auto-filled after pinning, or paste your link',
+                      label: tr('Google Maps Link (optional)'),
+                      hintText: tr('Auto-filled after pinning, or paste your link'),
                       keyboardType: TextInputType.url,
                       onChanged: (value) {
                         final point = _extractPointFromMapsLink(value);
@@ -1025,7 +1025,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Tip: exact coordinates work better than just pasting an external link.',
+                      tr('Tip: exact coordinates work better than just pasting an external link.'),
                       style: Theme.of(context)
                           .textTheme
                           .bodySmall
@@ -1040,7 +1040,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Contact',
+                      tr('Contact'),
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w700,
                           ),
@@ -1048,7 +1048,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                     const SizedBox(height: 12),
                     AppTextField(
                       controller: _phoneController,
-                      label: 'Contact Phone',
+                      label: tr('Contact Phone'),
                       hintText: '+1 (555) 123-4567',
                       keyboardType: TextInputType.phone,
                       validator: (value) {
@@ -1061,7 +1061,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                     const SizedBox(height: 16),
                     AppTextField(
                       controller: _momoCodeController,
-                      label: 'MoMo Pay merchant code (optional)',
+                      label: tr('MoMo Pay merchant code (optional)'),
                       hintText: 'e.g. 123456',
                       keyboardType: TextInputType.number,
                       validator: (value) {
@@ -1076,22 +1076,21 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                     const SizedBox(height: 12),
                     AppTextField(
                       controller: _momoNameController,
-                      label: 'Name registered on MoMo Pay',
-                      hintText: 'The name MTN shows to customers',
+                      label: tr('Name registered on MoMo Pay'),
+                      hintText: tr('The name MTN shows to customers'),
                     ),
-                    const Padding(
-                      padding: EdgeInsets.only(top: 6),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
                       child: Text(
-                        'With a MoMo Pay code your customers can buy from your Shop. '
-                        'Money goes straight to your MoMo; Duhuze never holds it.',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                        tr('With a MoMo Pay code your customers can buy from your Shop. Money goes straight to your MoMo; Duhuze never holds it.'),
+                        style: const TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     ),
                     const SizedBox(height: 16),
                     AppTextField(
                       controller: _emailController,
-                      label: 'Contact Email',
-                      hintText: 'creator@example.com',
+                      label: tr('Contact Email'),
+                      hintText: tr('creator@example.com'),
                       keyboardType: TextInputType.emailAddress,
                       validator: (value) {
                         if (value == null || value.isEmpty) {
@@ -1118,7 +1117,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Your page will be reviewed before it becomes visible to the community. This usually takes 24-48 hours.',
+                        tr('Your page will be reviewed before it becomes visible to the community. This usually takes 24-48 hours.'),
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ),
@@ -1154,7 +1153,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                       borderRadius: BorderRadius.circular(24),
                     ),
                   ),
-                  child: const Text('Skip for now'),
+                  child: Text(tr('Skip for now')),
                 ),
               ),
             ],

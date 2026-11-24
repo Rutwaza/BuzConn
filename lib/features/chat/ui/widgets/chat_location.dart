@@ -121,7 +121,7 @@ class _LocationMessageCard extends StatelessWidget {
                   foregroundColor: isMe ? Colors.white : AppColors.error,
                   visualDensity: VisualDensity.compact,
                 ),
-                child: const Text('Stop sharing'),
+                child: Text(tr('Stop sharing')),
               ),
             ),
         ],

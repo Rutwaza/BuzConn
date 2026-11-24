@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -433,7 +434,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         if (url == null) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Upload failed. Try again.')),
+              SnackBar(content: Text(tr('Upload failed. Try again.'))),
             );
           }
           continue;
@@ -527,7 +528,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      return const Scaffold(body: Center(child: Text('Please sign in.')));
+      return Scaffold(body: Center(child: Text(tr('Please sign in.'))));
     }
 
     return StreamBuilder<DocumentSnapshot>(
@@ -679,7 +680,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   isIncomingMessageRequest || isRejectedMessageRequest
                       ? null
                       : _startAudioCall,
-              tooltip: 'Audio call',
+              tooltip: tr('Audio call'),
             ),
             const SizedBox(width: 6),
             _ChatActionButton(
@@ -688,7 +689,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   isIncomingMessageRequest || isRejectedMessageRequest
                       ? null
                       : _startVideoCall,
-              tooltip: 'Video call',
+              tooltip: tr('Video call'),
             ),
             PopupMenuButton<String>(
               icon: Container(
@@ -719,8 +720,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     );
                   } else if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('No media yet'),
+                      SnackBar(
+                        content: Text(tr('No media yet')),
                       ),
                     );
                   }
@@ -736,8 +737,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           .reloadAfterClear();
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Chat cleared'),
+                          SnackBar(
+                            content: Text(tr('Chat cleared')),
                             backgroundColor: Colors.green,
                           ),
                         );
@@ -758,30 +759,30 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     !isBusinessOwner &&
                     chatData['businessId'] != null) {
                   items.add(
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'profile',
-                      child: Text('View profile'),
+                      child: Text(tr('View profile')),
                     ),
                   );
                 }
                 if (_hasIncomingCall || _hasActiveCall) {
                   items.add(
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'join',
-                      child: Text('Join call'),
+                      child: Text(tr('Join call')),
                     ),
                   );
                 }
                 items.add(
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'media',
-                    child: Text('Media'),
+                    child: Text(tr('Media')),
                   ),
                 );
                 items.add(
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'clear',
-                    child: Text('Clear chat'),
+                    child: Text(tr('Clear chat')),
                   ),
                 );
                 return items;
@@ -853,7 +854,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                             _TypingDots(color: typingColor),
                             const SizedBox(width: 8),
                             Text(
-                              'typing...',
+                              tr('typing...'),
                               style: TextStyle(
                                 color: typingColor,
                                 fontWeight: FontWeight.w600,
@@ -954,14 +955,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text(
-                            'Message request',
-                            style: TextStyle(fontWeight: FontWeight.w800),
+                          Text(
+                            tr('Message request'),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                           const SizedBox(height: 4),
-                          const Text(
-                            'Approve this request before replying or calling.',
-                            style: TextStyle(color: AppColors.grey),
+                          Text(
+                            tr('Approve this request before replying or calling.'),
+                            style: const TextStyle(color: AppColors.grey),
                           ),
                           const SizedBox(height: 10),
                           Row(
@@ -974,7 +975,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                     accept: false,
                                   ),
                                   icon: const Icon(Icons.close_rounded),
-                                  label: const Text('Reject'),
+                                  label: Text(tr('Reject')),
                                 ),
                               ),
                               const SizedBox(width: 10),
@@ -986,7 +987,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                     accept: true,
                                   ),
                                   icon: const Icon(Icons.check_rounded),
-                                  label: const Text('Approve'),
+                                  label: Text(tr('Approve')),
                                 ),
                               ),
                             ],
@@ -996,10 +997,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     ),
                   )
                 else if (isRejectedMessageRequest)
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(12, 0, 12, 10),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                     child: Center(
-                      child: Text('This message request was declined.'),
+                      child: Text(tr('This message request was declined.')),
                     ),
                   )
                 else
@@ -1112,7 +1113,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                           : Colors.black87,
                                     ),
                                     decoration: InputDecoration(
-                                      hintText: 'Encrypted message...',
+                                      hintText: tr('Encrypted message...'),
                                       hintStyle: TextStyle(
                                         color: isDark
                                             ? Colors.white54
@@ -1370,9 +1371,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
             Widget content;
             if (deleted) {
-              content = const Text(
-                'Message deleted',
-                style: TextStyle(
+              content = Text(
+                tr('Message deleted'),
+                style: const TextStyle(
                   fontStyle: FontStyle.italic,
                   color: AppColors.grey,
                 ),
@@ -1632,7 +1633,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                         fileName: fileName,
                       ),
                       icon: const Icon(Icons.download_rounded, size: 16),
-                      label: const Text('Download'),
+                      label: Text(tr('Download')),
                     ),
                   ),
                 ],
@@ -1891,7 +1892,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (!hasPermission) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Microphone permission required.')),
+          SnackBar(content: Text(tr('Microphone permission required.'))),
         );
       }
       return;
@@ -2015,7 +2016,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       if (url == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Upload failed. Try again.')),
+            SnackBar(content: Text(tr('Upload failed. Try again.'))),
           );
         }
         return;
@@ -2109,7 +2110,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         if (url == null) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Upload failed. Try again.')),
+              SnackBar(content: Text(tr('Upload failed. Try again.'))),
             );
           }
           continue;
@@ -2419,7 +2420,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                   ? null
                                   : () => context.push(profileRoute),
                               icon: const Icon(Icons.person_outline_rounded),
-                              label: const Text('View profile'),
+                              label: Text(tr('View profile')),
                               style: FilledButton.styleFrom(
                                 backgroundColor: AppColors.primary,
                                 foregroundColor: Colors.white,
@@ -2635,18 +2636,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               ListTile(
                 leading: const Icon(Icons.my_location_rounded,
                     color: AppColors.primary),
-                title: const Text('Send my current location'),
+                title: Text(tr('Send my current location')),
                 onTap: () => Navigator.of(context).pop(Duration.zero),
               ),
               const Divider(height: 1),
               live('15 min', const Duration(minutes: 15)),
               live('1 hour', const Duration(hours: 1)),
               live('8 hours', const Duration(hours: 8)),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                 child: Text(
-                  'Live location moves while Duhuze is open. You can stop it any time.',
-                  style: TextStyle(color: AppColors.grey, fontSize: 12),
+                  tr('Live location moves while Duhuze is open. You can stop it any time.'),
+                  style: const TextStyle(color: AppColors.grey, fontSize: 12),
                 ),
               ),
             ],
@@ -2663,9 +2664,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     if (user == null) return;
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Finding your location…'),
-        duration: Duration(seconds: 2),
+      SnackBar(
+        content: Text(tr('Finding your location…')),
+        duration: const Duration(seconds: 2),
       ),
     );
     try {
@@ -2710,7 +2711,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             children: [
               ListTile(
                 leading: const Icon(Icons.photo),
-                title: const Text('Photo'),
+                title: Text(tr('Photo')),
                 onTap: () {
                   Navigator.of(context).pop();
                   _sendMedia(ImageSource.gallery, isVideo: false);
@@ -2718,7 +2719,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.videocam),
-                title: const Text('Video'),
+                title: Text(tr('Video')),
                 onTap: () {
                   Navigator.of(context).pop();
                   _sendMedia(ImageSource.gallery, isVideo: true);
@@ -2726,7 +2727,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.insert_drive_file),
-                title: const Text('Document'),
+                title: Text(tr('Document')),
                 onTap: () {
                   Navigator.of(context).pop();
                   _sendDocument();
@@ -2735,8 +2736,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               ListTile(
                 leading: const Icon(Icons.location_on_rounded,
                     color: AppColors.primary),
-                title: const Text('Location'),
-                subtitle: const Text('Send where you are, or share it live'),
+                title: Text(tr('Location')),
+                subtitle: Text(tr('Send where you are, or share it live')),
                 onTap: () {
                   Navigator.of(context).pop();
                   _showLocationSheet();
@@ -2872,7 +2873,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No app found to open this link.')),
+        SnackBar(content: Text(tr('No app found to open this link.'))),
       );
     }
   }
@@ -2892,18 +2893,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             children: [
               ListTile(
                 leading: const Icon(Icons.reply),
-                title: const Text('Reply'),
+                title: Text(tr('Reply')),
                 onTap: () => Navigator.pop(context, 'reply'),
               ),
               if (isMe) ...[
                 ListTile(
                   leading: const Icon(Icons.edit),
-                  title: const Text('Edit'),
+                  title: Text(tr('Edit')),
                   onTap: () => Navigator.pop(context, 'edit'),
                 ),
                 ListTile(
                   leading: const Icon(Icons.delete),
-                  title: const Text('Delete'),
+                  title: Text(tr('Delete')),
                   onTap: () => Navigator.pop(context, 'delete'),
                 ),
               ],
@@ -2945,7 +2946,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Edit message'),
+        title: Text(tr('Edit message')),
         content: TextField(
           controller: controller,
           maxLines: 3,
@@ -2956,11 +2957,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(tr('Cancel')),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Save'),
+            child: Text(tr('Save')),
           ),
         ],
       ),
@@ -2971,18 +2972,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Clear chat'),
-            content: const Text(
-              'Messages will be removed from this chat for you. The other person keeps their copy. Continue?',
+            title: Text(tr('Clear chat')),
+            content: Text(
+              tr('Messages will be removed from this chat for you. The other person keeps their copy. Continue?'),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
+                child: Text(tr('Cancel')),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('Clear'),
+                child: Text(tr('Clear')),
               ),
             ],
           ),
@@ -3223,9 +3224,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                         await _declineCall();
                       },
                       icon: const Icon(Icons.call_end, color: Colors.red),
-                      label: const Text(
-                        'Decline',
-                        style: TextStyle(color: Colors.red),
+                      label: Text(
+                        tr('Decline'),
+                        style: const TextStyle(color: Colors.red),
                       ),
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Colors.red),
@@ -3242,7 +3243,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       icon: Icon(_incomingCallType == 'audio'
                           ? Icons.call
                           : Icons.videocam),
-                      label: const Text('Answer'),
+                      label: Text(tr('Answer')),
                     ),
                   ),
                 ],

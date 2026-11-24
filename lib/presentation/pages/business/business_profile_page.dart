@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:businessfinder/features/shop/ui/catalog_page.dart';
 import 'dart:io';
 
@@ -78,12 +79,12 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (!businessSnapshot.hasData || !businessSnapshot.data!.exists) {
-            return const Center(child: Text('Page not found'));
+            return Center(child: Text(tr('Page not found')));
           }
 
           final raw = businessSnapshot.data!.data();
           if (raw == null) {
-            return const Center(child: Text('Page not found'));
+            return Center(child: Text(tr('Page not found')));
           }
           final business = raw as Map<String, dynamic>;
           final name = business['name'] ?? 'Page';
@@ -253,11 +254,11 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Align(
+                                Align(
                                   alignment: Alignment.center,
                                   child: Text(
-                                    'About this page',
-                                    style: TextStyle(
+                                    tr('About this page'),
+                                    style: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w800,
                                     ),
@@ -269,7 +270,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                   runSpacing: 8,
                                   children: [
                                     _StatPill(
-                                      label: 'Followers',
+                                      label: tr('Followers'),
                                       value: followersCount,
                                     ),
                                     ElevatedButton.icon(
@@ -320,7 +321,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                         );
                                       },
                                       icon: const Icon(Icons.people_outline_rounded),
-                                      label: const Text('View followers'),
+                                      label: Text(tr('View followers')),
                                     ),
                                   ],
                                 ),
@@ -333,7 +334,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                     Expanded(
                                       child: _buildInfoLine(
                                         icon: Icons.category_outlined,
-                                        label: 'Category',
+                                        label: tr('Category'),
                                         value: category.toString(),
                                       ),
                                     ),
@@ -344,7 +345,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                     Expanded(
                                       child: _buildInfoLine(
                                         icon: Icons.call_outlined,
-                                        label: 'Phone',
+                                        label: tr('Phone'),
                                         value: phone.toString(),
                                       ),
                                     ),
@@ -358,7 +359,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                   constraints: const BoxConstraints(maxWidth: 360),
                                   child: _buildInfoLine(
                                     icon: Icons.email_outlined,
-                                    label: 'Email',
+                                    label: tr('Email'),
                                     value: email,
                                   ),
                                 ),
@@ -368,7 +369,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                               const SizedBox(height: 10),
                               _buildInfoLine(
                                 icon: Icons.place_outlined,
-                                label: 'Address',
+                                label: tr('Address'),
                                 value: address,
                               ),
                             ],
@@ -408,9 +409,9 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
                     if (posts.isEmpty) {
-                      return const Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Center(child: Text('No posts yet')),
+                      return Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Center(child: Text(tr('No posts yet'))),
                       );
                     }
 
@@ -436,9 +437,9 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                 ),
                               ),
                               const SizedBox(width: 6),
-                              const Text(
-                                'avg likes',
-                                style: TextStyle(color: AppColors.grey),
+                              Text(
+                                tr('avg likes'),
+                                style: const TextStyle(color: AppColors.grey),
                               ),
                             ],
                           ),
@@ -588,7 +589,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                             ),
                             const SizedBox(width: 10),
                             Text(
-                              'Business profile',
+                              tr('Business profile'),
                               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -683,7 +684,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                           OutlinedButton.icon(
                                             onPressed: () => _dialPhone(context, phone),
                                             icon: const Icon(Icons.call_rounded),
-                                            label: const Text('Call'),
+                                            label: Text(tr('Call')),
                                           ),
                                         ElevatedButton.icon(
                                           onPressed: () => _openBusinessChat(ownerId),
@@ -713,9 +714,9 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text(
-                                      'Quick stats',
-                                      style: TextStyle(
+                                    Text(
+                                      tr('Quick stats'),
+                                      style: const TextStyle(
                                         fontWeight: FontWeight.w800,
                                         fontSize: 15,
                                       ),
@@ -723,19 +724,19 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                     const SizedBox(height: 12),
                                     _buildInfoLine(
                                       icon: Icons.grid_view_rounded,
-                                      label: 'Posts',
+                                      label: tr('Posts'),
                                       value: posts.length.toString(),
                                     ),
                                     const SizedBox(height: 10),
                                     _buildInfoLine(
                                       icon: Icons.favorite_border_rounded,
-                                      label: 'Avg likes',
+                                      label: tr('Avg likes'),
                                       value: avgLikes.toStringAsFixed(1),
                                     ),
                                     const SizedBox(height: 10),
                                     _buildInfoLine(
                                       icon: Icons.play_circle_outline_rounded,
-                                      label: 'Videos',
+                                      label: tr('Videos'),
                                       value: videoPosts.toString(),
                                     ),
                                   ],
@@ -756,7 +757,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                     children: [
                                       Expanded(
                                         child: _desktopMetricCard(
-                                          title: 'Total likes',
+                                          title: tr('Total likes'),
                                           value: _formatCompactNumber(totalLikes),
                                           subtitle: 'Across ${posts.length} published posts',
                                           icon: Icons.favorite_border_rounded,
@@ -765,18 +766,18 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: _desktopMetricCard(
-                                          title: 'Media posts',
+                                          title: tr('Media posts'),
                                           value: mediaPosts.toString(),
-                                          subtitle: 'Photos and videos combined',
+                                          subtitle: tr('Photos and videos combined'),
                                           icon: Icons.perm_media_rounded,
                                         ),
                                       ),
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: _desktopMetricCard(
-                                          title: 'Videos',
+                                          title: tr('Videos'),
                                           value: videoPosts.toString(),
-                                          subtitle: 'Motion content on the page',
+                                          subtitle: tr('Motion content on the page'),
                                           icon: Icons.play_circle_outline_rounded,
                                         ),
                                       ),
@@ -803,16 +804,16 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                                 crossAxisAlignment:
                                                     CrossAxisAlignment.start,
                                                 children: [
-                                                  const Text(
-                                                    'Recent posts',
-                                                    style: TextStyle(
+                                                  Text(
+                                                    tr('Recent posts'),
+                                                    style: const TextStyle(
                                                       fontSize: 18,
                                                       fontWeight: FontWeight.w800,
                                                     ),
                                                   ),
                                                   const SizedBox(height: 4),
                                                   Text(
-                                                    'A cleaner desktop gallery for this business page.',
+                                                    tr('A cleaner desktop gallery for this business page.'),
                                                     style: TextStyle(
                                                       color: isDark
                                                           ? Colors.white70
@@ -843,15 +844,15 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                                   : Colors.black.withValues(alpha: 0.02),
                                               borderRadius: BorderRadius.circular(16),
                                             ),
-                                            child: const Column(
+                                            child: Column(
                                               children: [
-                                                Icon(
+                                                const Icon(
                                                   Icons.photo_library_outlined,
                                                   color: AppColors.grey,
                                                   size: 32,
                                                 ),
-                                                SizedBox(height: 10),
-                                                Text('No posts yet'),
+                                                const SizedBox(height: 10),
+                                                Text(tr('No posts yet')),
                                               ],
                                             ),
                                           )
@@ -957,11 +958,11 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          const Align(
+                                          Align(
                                             alignment: Alignment.center,
                                             child: Text(
-                                              'About this page',
-                                              style: TextStyle(
+                                              tr('About this page'),
+                                              style: const TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w800,
                                               ),
@@ -973,7 +974,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                           runSpacing: 8,
                                           children: [
                                             _StatPill(
-                                              label: 'Followers',
+                                              label: tr('Followers'),
                                               value: followersCount,
                                             ),
                                             if (!isOwner && currentUserId != null)
@@ -1019,7 +1020,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                                 );
                                               },
                                               icon: const Icon(Icons.people_outline_rounded),
-                                              label: const Text('View followers'),
+                                              label: Text(tr('View followers')),
                                             ),
                                           ],
                                         ),
@@ -1031,7 +1032,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                                 Expanded(
                                                   child: _buildInfoLine(
                                                     icon: Icons.category_outlined,
-                                                    label: 'Category',
+                                                    label: tr('Category'),
                                                     value: category,
                                                   ),
                                                 ),
@@ -1041,7 +1042,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                                 Expanded(
                                                   child: _buildInfoLine(
                                                     icon: Icons.call_outlined,
-                                                    label: 'Phone',
+                                                    label: tr('Phone'),
                                                     value: phone,
                                                   ),
                                                 ),
@@ -1056,7 +1057,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                                   const BoxConstraints(maxWidth: 320),
                                               child: _buildInfoLine(
                                                 icon: Icons.email_outlined,
-                                                label: 'Email',
+                                                label: tr('Email'),
                                                 value: email,
                                               ),
                                             ),
@@ -1066,7 +1067,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                           const SizedBox(height: 10),
                                           _buildInfoLine(
                                             icon: Icons.place_outlined,
-                                            label: 'Address',
+                                            label: tr('Address'),
                                             value: address,
                                           ),
                                         ],
@@ -1121,9 +1122,9 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
         children: [
           Row(
             children: [
-              const Text(
-                'Location',
-                style: TextStyle(
+              Text(
+                tr('Location'),
+                style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
                 ),
@@ -1133,7 +1134,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                 TextButton.icon(
                   onPressed: () => _openBusinessLocation(business),
                   icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                  label: const Text('Open full map'),
+                  label: Text(tr('Open full map')),
                   style: TextButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -1418,7 +1419,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open the map location.')),
+        SnackBar(content: Text(tr('Could not open the map location.'))),
       );
     }
   }
@@ -1598,7 +1599,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
     );
     if (!ok && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open dialer.')),
+        SnackBar(content: Text(tr('Could not open dialer.'))),
       );
     }
   }

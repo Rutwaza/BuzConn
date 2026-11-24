@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -183,8 +184,8 @@ class _ChatListPageState extends State<ChatListPage> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      return const Scaffold(
-        body: Center(child: Text('Please sign in.')),
+      return Scaffold(
+        body: Center(child: Text(tr('Please sign in.'))),
       );
     }
 
@@ -192,10 +193,10 @@ class _ChatListPageState extends State<ChatListPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Inbox'),
+        title: Text(tr('Inbox')),
         actions: [
           IconButton(
-            tooltip: 'Archived',
+            tooltip: tr('Archived'),
             icon: Icon(
               _filter == _InboxFilter.archived
                   ? Icons.archive
@@ -255,22 +256,22 @@ class _ChatListPageState extends State<ChatListPage> {
                             ),
                           ),
                           const SizedBox(width: 12),
-                          const Expanded(
+                          Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Your social inbox',
-                                  style: TextStyle(
+                                  tr('Your social inbox'),
+                                  style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 16,
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                                SizedBox(height: 4),
+                                const SizedBox(height: 4),
                                 Text(
-                                  'Stay close to creators, friends, and fresh conversations.',
-                                  style: TextStyle(
+                                  tr('Stay close to creators, friends, and fresh conversations.'),
+                                  style: const TextStyle(
                                     color: Colors.white70,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -290,7 +291,7 @@ class _ChatListPageState extends State<ChatListPage> {
                         });
                       },
                       decoration: InputDecoration(
-                        hintText: 'Search messages',
+                        hintText: tr('Search messages'),
                         prefixIcon: const Icon(Icons.search_rounded),
                         suffixIcon: _searchQuery.isEmpty
                             ? null
@@ -343,9 +344,9 @@ class _ChatListPageState extends State<ChatListPage> {
                     if (docs.isEmpty) {
                       return _buildEmptyState(
                         icon: Icons.forum_outlined,
-                        title: 'No conversations yet',
+                        title: tr('No conversations yet'),
                         subtitle:
-                            'Start chatting from a profile or page to see your inbox come alive.',
+                            tr('Start chatting from a profile or page to see your inbox come alive.'),
                       );
                     }
 
@@ -901,8 +902,8 @@ class _ChatListPageState extends State<ChatListPage> {
               ListTile(
                 leading: Icon(isHidden ? Icons.unarchive : Icons.archive),
                 title: Text(isHidden ? 'Unhide chat' : 'Archive chat'),
-                subtitle: const Text(
-                  'Tidy your inbox without deleting the conversation.',
+                subtitle: Text(
+                  tr('Tidy your inbox without deleting the conversation.'),
                 ),
                 onTap: () => Navigator.pop(context, 'toggle'),
               ),
@@ -974,7 +975,7 @@ class _DesktopChatShell extends StatelessWidget {
             child: Row(
               children: [
                 IconButton(
-                  tooltip: 'Back to inbox',
+                  tooltip: tr('Back to inbox'),
                   onPressed: onBackToList,
                   icon: const Icon(Icons.arrow_back_rounded),
                 ),
@@ -1027,9 +1028,9 @@ class _DesktopChatShell extends StatelessWidget {
                     color: AppColors.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: const Text(
-                    'Desktop chat',
-                    style: TextStyle(
+                  child: Text(
+                    tr('Desktop chat'),
+                    style: const TextStyle(
                       color: AppColors.primary,
                       fontWeight: FontWeight.w700,
                     ),
@@ -1087,9 +1088,9 @@ class _DesktopInboxPanelState extends State<_DesktopInboxPanel> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Desktop Inbox',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                Text(
+                  tr('Desktop Inbox'),
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -1103,18 +1104,18 @@ class _DesktopInboxPanelState extends State<_DesktopInboxPanel> {
                 _desktopAction(
                   index: 0,
                   icon: Icons.travel_explore_rounded,
-                  title: 'Discover people to message',
+                  title: tr('Discover people to message'),
                   subtitle:
-                      'Jump into profiles, pages, and fresh conversations.',
+                      tr('Jump into profiles, pages, and fresh conversations.'),
                   onTap: widget.onDiscover,
                 ),
                 const SizedBox(height: 12),
                 _desktopAction(
                   index: 1,
                   icon: Icons.edit_rounded,
-                  title: 'Compose a new message',
+                  title: tr('Compose a new message'),
                   subtitle:
-                      'Use search to start a direct or creator conversation.',
+                      tr('Use search to start a direct or creator conversation.'),
                   onTap: widget.onCompose,
                 ),
                 const SizedBox(height: 18),
@@ -1124,20 +1125,20 @@ class _DesktopInboxPanelState extends State<_DesktopInboxPanel> {
                     color: AppColors.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(22),
                   ),
-                  child: const Column(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Desktop feel',
-                        style: TextStyle(
+                        tr('Desktop feel'),
+                        style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           color: AppColors.primary,
                         ),
                       ),
-                      SizedBox(height: 8),
+                      const SizedBox(height: 8),
                       Text(
-                        'Hover targets, wider reading space, and a calmer two-pane inbox make the social flow feel more natural on Windows.',
-                        style: TextStyle(
+                        tr('Hover targets, wider reading space, and a calmer two-pane inbox make the social flow feel more natural on Windows.'),
+                        style: const TextStyle(
                           color: AppColors.grey,
                           fontWeight: FontWeight.w600,
                         ),
@@ -1551,13 +1552,13 @@ class _ChatPreviewCard extends StatelessWidget {
               const SizedBox(width: 10),
               if (isMessageRequest) ...[
                 _requestAction(
-                  tooltip: 'Approve request',
+                  tooltip: tr('Approve request'),
                   icon: Icons.check_rounded,
                   color: const Color(0xFF198754),
                   onPressed: onApproveRequest,
                 ),
                 _requestAction(
-                  tooltip: 'Reject request',
+                  tooltip: tr('Reject request'),
                   icon: Icons.close_rounded,
                   color: const Color(0xFFB3261E),
                   onPressed: onRejectRequest,
@@ -1570,9 +1571,9 @@ class _ChatPreviewCard extends StatelessWidget {
                     color: AppColors.primary,
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: const Text(
-                    'New',
-                    style: TextStyle(
+                  child: Text(
+                    tr('New'),
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 11,
                       fontWeight: FontWeight.w800,

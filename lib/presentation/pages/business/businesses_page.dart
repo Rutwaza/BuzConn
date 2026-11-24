@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
@@ -91,15 +92,15 @@ class _BusinessesPageState extends State<BusinessesPage> {
                         : Colors.black.withOpacity(0.04),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.check_circle,
+                      const Icon(Icons.check_circle,
                           color: AppColors.primary, size: 18),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Unlimited pages • Priority review • Featured boost',
-                          style: TextStyle(fontSize: 12),
+                          tr('Unlimited pages • Priority review • Featured boost'),
+                          style: const TextStyle(fontSize: 12),
                         ),
                       ),
                     ],
@@ -116,7 +117,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: const Text('Not now'),
+                        child: Text(tr('Not now')),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -125,8 +126,8 @@ class _BusinessesPageState extends State<BusinessesPage> {
                         onPressed: () {
                           Navigator.of(context).pop();
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Premium upgrade coming soon!'),
+                            SnackBar(
+                              content: Text(tr('Premium upgrade coming soon!')),
                             ),
                           );
                         },
@@ -135,7 +136,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: const Text('Go Premium'),
+                        child: Text(tr('Go Premium')),
                       ),
                     ),
                   ],
@@ -159,9 +160,9 @@ class _BusinessesPageState extends State<BusinessesPage> {
 
   void _showPremiumDialog() {
     _showPremiumStyledDialog(
-      title: 'Go Premium',
+      title: tr('Go Premium'),
       message:
-          'Free accounts can create up to 2 pages. Upgrade to add more.',
+          tr('Free accounts can create up to 2 pages. Upgrade to add more.'),
     );
   }
 
@@ -250,15 +251,14 @@ class _BusinessesPageState extends State<BusinessesPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Page'),
-        content: const Text(
-          'This will hide the page from your profile and followers. '
-          'You can re-enable it later.',
+        title: Text(tr('Delete Page')),
+        content: Text(
+          tr('This will hide the page from your profile and followers. You can re-enable it later.'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            child: Text(tr('Cancel')),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -273,7 +273,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
                 Navigator.of(context).pop();
               }
             },
-            child: const Text('Delete'),
+            child: Text(tr('Delete')),
           ),
         ],
       ),
@@ -282,8 +282,8 @@ class _BusinessesPageState extends State<BusinessesPage> {
 
   void _showPremiumVerifyDialog() {
     _showPremiumStyledDialog(
-      title: 'Premium Required',
-      message: 'Page verification is available on Premium. Upgrade to verify.',
+      title: tr('Premium Required'),
+      message: tr('Page verification is available on Premium. Upgrade to verify.'),
     );
   }
 
@@ -302,9 +302,9 @@ class _BusinessesPageState extends State<BusinessesPage> {
         children: [
           const Icon(Icons.storefront, size: 64, color: AppColors.grey),
           const SizedBox(height: 12),
-          const Text('You have no pages yet'),
+          Text(tr('You have no pages yet')),
           const SizedBox(height: 8),
-          const Text('Set up your first creator page'),
+          Text(tr('Set up your first creator page')),
           const SizedBox(height: 12),
           ElevatedButton(
             onPressed: _onCreateNewBusiness,
@@ -312,7 +312,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
               backgroundColor: scheme.primary,
               foregroundColor: scheme.onPrimary,
             ),
-            child: const Text('Create your page'),
+            child: Text(tr('Create your page')),
           ),
         ],
       ),
@@ -325,12 +325,12 @@ class _BusinessesPageState extends State<BusinessesPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Pages'),
+        title: Text(tr('My Pages')),
         actions: [
           IconButton(
             onPressed: _onCreateNewBusiness,
             icon: const Icon(Icons.add),
-            tooltip: 'Create Page',
+            tooltip: tr('Create Page'),
           ),
           IconButton(
             onPressed: () {
@@ -344,7 +344,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
         ],
       ),
       body: user == null
-          ? const Center(child: Text('Please sign in to manage pages.'))
+          ? Center(child: Text(tr('Please sign in to manage pages.')))
           : StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('businesses')
@@ -369,11 +369,11 @@ class _BusinessesPageState extends State<BusinessesPage> {
                       children: [
                         const Icon(Icons.business, size: 64, color: AppColors.grey),
                         const SizedBox(height: 12),
-                        const Text('No pages yet'),
+                        Text(tr('No pages yet')),
                         const SizedBox(height: 12),
                         ElevatedButton(
                           onPressed: _onCreateNewBusiness,
-                          child: const Text('Create your first page'),
+                          child: Text(tr('Create your first page')),
                         ),
                       ],
                     ),
@@ -423,22 +423,22 @@ class _BusinessesPageState extends State<BusinessesPage> {
                               _showPremiumVerifyDialog();
                             }
                           },
-                          itemBuilder: (context) => const [
+                          itemBuilder: (context) => [
                             PopupMenuItem(
                               value: 'edit',
-                              child: Text('Edit'),
+                              child: Text(tr('Edit')),
                             ),
                             PopupMenuItem(
                               value: 'logo',
-                              child: Text('Update Logo'),
+                              child: Text(tr('Update Logo')),
                             ),
                             PopupMenuItem(
                               value: 'verify',
-                              child: Text('Verify (Premium)'),
+                              child: Text(tr('Verify (Premium)')),
                             ),
                             PopupMenuItem(
                               value: 'delete',
-                              child: Text('Delete'),
+                              child: Text(tr('Delete')),
                             ),
                           ],
                         ),
@@ -467,19 +467,19 @@ class _BusinessesPageState extends State<BusinessesPage> {
                           }
                           final inactiveDocs = inactiveSnapshot.data?.docs ?? [];
                           if (inactiveDocs.isEmpty) {
-                            return const Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Text('No inactive pages.'),
+                            return Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Text(tr('No inactive pages.')),
                             );
                           }
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Padding(
-                                padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                                 child: Text(
-                                  'Inactive Pages',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                  tr('Inactive Pages'),
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
                                 ),
                               ),
                               ...inactiveDocs.map((doc) {
@@ -490,10 +490,10 @@ class _BusinessesPageState extends State<BusinessesPage> {
                                   child: ListTile(
                                     leading: const Icon(Icons.business_outlined),
                                     title: Text(data['name'] ?? 'Unnamed Page'),
-                                    subtitle: const Text('Inactive'),
+                                    subtitle: Text(tr('Inactive')),
                                     trailing: TextButton(
                                       onPressed: () => _restoreBusiness(doc.id),
-                                      child: const Text('Restore'),
+                                      child: Text(tr('Restore')),
                                     ),
                                   ),
                                 );
@@ -537,7 +537,7 @@ class _BusinessesPageState extends State<BusinessesPage> {
                   style: TextButton.styleFrom(
                     foregroundColor: scheme.primary,
                   ),
-                  child: const Text('Add New'),
+                  child: Text(tr('Add New')),
                 ),
               ],
             ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:businessfinder/core/services/video_compressor.dart';
 import 'package:businessfinder/features/posts/logic/reel_prefetcher.dart';
 import 'package:businessfinder/features/posts/data/engagement_repository.dart';
@@ -97,7 +98,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Follow update failed')),
+        SnackBar(content: Text(tr('Follow update failed'))),
       );
     }
   }
@@ -215,7 +216,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Follow update failed')),
+        SnackBar(content: Text(tr('Follow update failed'))),
       );
     }
   }
@@ -351,7 +352,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       debugPrint('Failed to load feed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to load feed')),
+          SnackBar(content: Text(tr('Failed to load feed'))),
         );
       }
     } finally {
@@ -524,19 +525,19 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           _FeedTabButton(
-            label: 'For You',
+            label: tr('For You'),
             isActive: _feedMode == 'forYou',
             compact: true,
             onTap: () => _toggleFeedMode('forYou'),
           ),
           _FeedTabButton(
-            label: 'Reels',
+            label: tr('Reels'),
             isActive: _feedMode == 'reels',
             compact: true,
             onTap: () => _toggleFeedMode('reels'),
           ),
           _FeedTabButton(
-            label: 'Following',
+            label: tr('Following'),
             isActive: _feedMode == 'following',
             compact: true,
             onTap: () => _toggleFeedMode('following'),
@@ -771,7 +772,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     const Icon(Icons.chat_bubble_outline),
                     const SizedBox(width: 8),
                     Text(
-                      'Add a comment',
+                      tr('Add a comment'),
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
@@ -784,7 +785,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                   minLines: 2,
                   maxLines: 5,
                   decoration: InputDecoration(
-                    hintText: 'Write something nice...',
+                    hintText: tr('Write something nice...'),
                     filled: true,
                     fillColor: isDark
                         ? Colors.white.withOpacity(0.06)
@@ -803,7 +804,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                         Navigator.of(context).pop();
                         _commentController.clear();
                       },
-                      child: const Text('Cancel'),
+                      child: Text(tr('Cancel')),
                     ),
                     const Spacer(),
                     ElevatedButton.icon(
@@ -820,7 +821,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                         }
                       },
                       icon: const Icon(Icons.send),
-                      label: const Text('Post'),
+                      label: Text(tr('Post')),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 18,
@@ -938,30 +939,30 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 _signOut();
               }
             },
-            itemBuilder: (context) => const [
+            itemBuilder: (context) => [
               PopupMenuItem<String>(
                 value: 'profile',
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.person_outline),
-                  title: Text('Profile'),
+                  leading: const Icon(Icons.person_outline),
+                  title: Text(tr('Profile')),
                 ),
               ),
               PopupMenuItem<String>(
                 value: 'settings',
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.settings_outlined),
-                  title: Text('Settings'),
+                  leading: const Icon(Icons.settings_outlined),
+                  title: Text(tr('Settings')),
                 ),
               ),
-              PopupMenuDivider(),
+              const PopupMenuDivider(),
               PopupMenuItem<String>(
                 value: 'logout',
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.logout, color: Colors.redAccent),
-                  title: Text('Logout'),
+                  leading: const Icon(Icons.logout, color: Colors.redAccent),
+                  title: Text(tr('Logout')),
                 ),
               ),
             ],
@@ -983,15 +984,15 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 .where((post) => post.media.any((item) => item.isVideo))
                 .toList();
             if (reelPosts.isEmpty && !_isLoading) {
-              reelsContent = const Center(
+              reelsContent = Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.video_library, size: 64, color: AppColors.grey),
-                    SizedBox(height: 14),
-                    Text('No reels yet', style: TextStyle(fontSize: 18)),
-                    SizedBox(height: 6),
-                    Text('Video posts will appear here once creators upload.'),
+                    const Icon(Icons.video_library, size: 64, color: AppColors.grey),
+                    const SizedBox(height: 14),
+                    Text(tr('No reels yet'), style: const TextStyle(fontSize: 18)),
+                    const SizedBox(height: 6),
+                    Text(tr('Video posts will appear here once creators upload.')),
                   ],
                 ),
               );
@@ -1399,7 +1400,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                               onPressed: _showCreateOptions,
                                               icon: const Icon(Icons.add),
                                               label:
-                                                  const Text('Create a post'),
+                                                  Text(tr('Create a post')),
                                             ),
                                           ],
                                         ),
@@ -1868,7 +1869,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     Expanded(
                       child: _bottomNavigationItem(
                         icon: Icons.home_rounded,
-                        label: 'Home',
+                        label: tr('Home'),
                         selected: true,
                         onTap: () {
                           if (_feedMode != 'forYou') {
@@ -1884,14 +1885,14 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     Expanded(
                       child: _bottomNavigationItem(
                         icon: Icons.search_rounded,
-                        label: 'Discover',
+                        label: tr('Discover'),
                         onTap: () => context.push(AppRoutes.search),
                       ),
                     ),
                     Expanded(
                       child: _bottomNavigationItem(
                         icon: Icons.add_rounded,
-                        label: 'Create',
+                        label: tr('Create'),
                         emphasized: true,
                         onTap: _showCreateOptions,
                       ),
@@ -1899,14 +1900,14 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     Expanded(
                       child: _bottomNavigationItem(
                         icon: Icons.message_rounded,
-                        label: 'Messages',
+                        label: tr('Messages'),
                         onTap: () => context.push(AppRoutes.chats),
                       ),
                     ),
                     Expanded(
                       child: _bottomNavigationItem(
                         icon: Icons.person_rounded,
-                        label: 'Profile',
+                        label: tr('Profile'),
                         onTap: currentUser == null
                             ? () => context.go(AppRoutes.profile)
                             : () => context.push(
@@ -2018,15 +2019,15 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                   ),
                 ),
                 Text(
-                  'Create',
+                  tr('Create'),
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  'Choose what you want to publish.',
-                  style: TextStyle(color: AppColors.grey),
+                Text(
+                  tr('Choose what you want to publish.'),
+                  style: const TextStyle(color: AppColors.grey),
                 ),
                 const SizedBox(height: 14),
                 ListTile(
@@ -2035,8 +2036,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     backgroundColor: AppColors.primary,
                     child: Icon(Icons.post_add_rounded, color: Colors.white),
                   ),
-                  title: const Text('Create post'),
-                  subtitle: const Text('Share your next spotlight post'),
+                  title: Text(tr('Create post')),
+                  subtitle: Text(tr('Share your next spotlight post')),
                   onTap: () => Navigator.of(context).pop('post'),
                 ),
                 ListTile(
@@ -2048,8 +2049,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                       color: AppColors.primary,
                     ),
                   ),
-                  title: const Text('Create page'),
-                  subtitle: const Text('Set up a new creator or business page'),
+                  title: Text(tr('Create page')),
+                  subtitle: Text(tr('Set up a new creator or business page')),
                   onTap: () => Navigator.of(context).pop('page'),
                 ),
               ],
@@ -2116,22 +2117,22 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                   ),
                 ),
                 Text(
-                  'Duhuze Feed',
+                  tr('Duhuze Feed'),
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  'Pick the vibe you want to scroll right now.',
-                  style: TextStyle(color: AppColors.grey),
+                Text(
+                  tr('Pick the vibe you want to scroll right now.'),
+                  style: const TextStyle(color: AppColors.grey),
                 ),
                 const SizedBox(height: 14),
                 _feedModeTile(
                   context: context,
                   icon: Icons.auto_awesome,
-                  title: 'For You',
-                  subtitle: 'Trending picks, fresh posts, and discovery energy',
+                  title: tr('For You'),
+                  subtitle: tr('Trending picks, fresh posts, and discovery energy'),
                   selected: _feedMode == 'forYou',
                   onTap: () => Navigator.of(context).pop('forYou'),
                 ),
@@ -2139,8 +2140,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 _feedModeTile(
                   context: context,
                   icon: Icons.video_collection,
-                  title: 'Reels',
-                  subtitle: 'Vertical scrolling video-only experience',
+                  title: tr('Reels'),
+                  subtitle: tr('Vertical scrolling video-only experience'),
                   selected: _feedMode == 'reels',
                   onTap: () => Navigator.of(context).pop('reels'),
                 ),
@@ -2148,9 +2149,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 _feedModeTile(
                   context: context,
                   icon: Icons.favorite_border,
-                  title: 'Following',
+                  title: tr('Following'),
                   subtitle:
-                      'Only the pages and creators you chose to keep up with',
+                      tr('Only the pages and creators you chose to keep up with'),
                   selected: _feedMode == 'following',
                   onTap: () => Navigator.of(context).pop('following'),
                 ),
@@ -2288,7 +2289,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  'Share this post',
+                  tr('Share this post'),
                   style: Theme.of(sheetContext).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w800,
                       ),
@@ -2297,7 +2298,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 _ShareSheetPreview(post: post),
                 const SizedBox(height: 14),
                 Text(
-                  'Quick actions',
+                  tr('Quick actions'),
                   style: Theme.of(sheetContext).textTheme.labelLarge?.copyWith(
                         color: AppColors.grey,
                         fontWeight: FontWeight.w700,
@@ -2310,7 +2311,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                   children: [
                     _ShareSheetAction(
                       icon: Icons.copy_rounded,
-                      label: 'Copy text',
+                      label: tr('Copy text'),
                       onTap: () async {
                         HapticFeedback.lightImpact();
                         await Clipboard.setData(
@@ -2323,13 +2324,13 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                         if (!mounted) return;
                         Navigator.of(sheetContext).pop();
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Caption copied')),
+                          SnackBar(content: Text(tr('Caption copied'))),
                         );
                       },
                     ),
                     _ShareSheetAction(
                       icon: Icons.send_rounded,
-                      label: 'Send',
+                      label: tr('Send'),
                       onTap: () {
                         HapticFeedback.selectionClick();
                         Navigator.of(sheetContext).pop();
@@ -2338,7 +2339,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     ),
                     _ShareSheetAction(
                       icon: Icons.person_outline_rounded,
-                      label: 'Open creator',
+                      label: tr('Open creator'),
                       onTap: () {
                         HapticFeedback.selectionClick();
                         Navigator.of(sheetContext).pop();
@@ -2353,14 +2354,14 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     ),
                     _ShareSheetAction(
                       icon: Icons.link_rounded,
-                      label: 'Copy ID',
+                      label: tr('Copy ID'),
                       onTap: () async {
                         HapticFeedback.lightImpact();
                         await Clipboard.setData(ClipboardData(text: post.id));
                         if (!mounted) return;
                         Navigator.of(sheetContext).pop();
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Post ID copied')),
+                          SnackBar(content: Text(tr('Post ID copied'))),
                         );
                       },
                     ),
@@ -2381,12 +2382,12 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
         await launchUrl(url, mode: LaunchMode.externalApplication);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open Google Maps')),
+          SnackBar(content: Text(tr('Could not open Google Maps'))),
         );
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location not available')),
+        SnackBar(content: Text(tr('Location not available'))),
       );
     }
   }
@@ -2406,7 +2407,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
               const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
           contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           titlePadding: const EdgeInsets.only(top: 12),
-          title: const Center(child: Text('Edit Post')),
+          title: Center(child: Text(tr('Edit Post'))),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -2414,9 +2415,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
               children: [
                 TextField(
                   controller: controller,
-                  decoration: const InputDecoration(
-                    hintText: 'Update your post...',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    hintText: tr('Update your post...'),
+                    border: const OutlineInputBorder(),
                   ),
                   maxLines: 4,
                   maxLength: 300,
@@ -2493,7 +2494,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                 setLocalState(() => pickingMedia = false);
                               },
                         icon: const Icon(Icons.photo),
-                        label: const Text('Pick image'),
+                        label: Text(tr('Pick image')),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -2516,7 +2517,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                 setLocalState(() => pickingMedia = false);
                               },
                         icon: const Icon(Icons.photo_camera),
-                        label: const Text('Take photo'),
+                        label: Text(tr('Take photo')),
                       ),
                     ),
                   ],
@@ -2543,7 +2544,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                 setLocalState(() => pickingMedia = false);
                               },
                         icon: const Icon(Icons.video_library),
-                        label: const Text('Pick video'),
+                        label: Text(tr('Pick video')),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -2566,7 +2567,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                 setLocalState(() => pickingMedia = false);
                               },
                         icon: const Icon(Icons.videocam),
-                        label: const Text('Record video'),
+                        label: Text(tr('Record video')),
                       ),
                     ),
                   ],
@@ -2583,7 +2584,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                       });
                     },
                     icon: const Icon(Icons.delete_outline),
-                    label: const Text('Remove media'),
+                    label: Text(tr('Remove media')),
                   ),
                 ),
               ],
@@ -2593,7 +2594,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: const Text('Cancel'),
+              child: Text(tr('Cancel')),
             ),
             ElevatedButton(
               onPressed: () async {
@@ -2638,7 +2639,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                   Navigator.of(context).pop();
                 }
               },
-              child: const Text('Save'),
+              child: Text(tr('Save')),
             ),
           ],
         ),
@@ -2650,12 +2651,12 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Post'),
-        content: const Text('Are you sure you want to delete this post?'),
+        title: Text(tr('Delete Post')),
+        content: Text(tr('Are you sure you want to delete this post?')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            child: Text(tr('Cancel')),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -2664,7 +2665,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 Navigator.of(context).pop();
               }
             },
-            child: const Text('Delete'),
+            child: Text(tr('Delete')),
           ),
         ],
       ),
@@ -3007,9 +3008,9 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
                                   color: Colors.white.withOpacity(0.15),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: const Text(
-                                  'REEL',
-                                  style: TextStyle(
+                                child: Text(
+                                  tr('REEL'),
+                                  style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w800,
                                     fontSize: 11,
@@ -3569,9 +3570,9 @@ class _RefreshingSpotlightPillState extends State<_RefreshingSpotlightPill>
           ),
         ),
         const SizedBox(width: 10),
-        const Text(
-          'Refreshing',
-          style: TextStyle(
+        Text(
+          tr('Refreshing'),
+          style: const TextStyle(
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -3629,15 +3630,15 @@ class _InlineFollowSuggestionsCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Suggested follows',
+                      tr('Suggested follows'),
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w800,
                           ),
                     ),
                     const SizedBox(height: 2),
-                    const Text(
-                      'Fresh creators and pages for you',
-                      style: TextStyle(
+                    Text(
+                      tr('Fresh creators and pages for you'),
+                      style: const TextStyle(
                         color: AppColors.grey,
                         fontSize: 12,
                       ),
@@ -3648,7 +3649,7 @@ class _InlineFollowSuggestionsCard extends StatelessWidget {
               IconButton(
                 onPressed: onDismiss,
                 icon: const Icon(Icons.close_rounded),
-                tooltip: 'Dismiss suggestions',
+                tooltip: tr('Dismiss suggestions'),
               ),
             ],
           ),
@@ -3735,7 +3736,7 @@ class _InlineFollowSuggestionsCard extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(999),
                               ),
                             ),
-                            child: const Text('Follow'),
+                            child: Text(tr('Follow')),
                           ),
                         ),
                       ],
@@ -3983,14 +3984,14 @@ class PostCard extends StatelessWidget {
                               onDelete();
                             }
                           },
-                          itemBuilder: (context) => const [
+                          itemBuilder: (context) => [
                             PopupMenuItem(
                               value: 'edit',
-                              child: Text('Edit'),
+                              child: Text(tr('Edit')),
                             ),
                             PopupMenuItem(
                               value: 'delete',
-                              child: Text('Delete'),
+                              child: Text(tr('Delete')),
                             ),
                           ],
                         ),
@@ -4069,7 +4070,7 @@ class PostCard extends StatelessWidget {
                               width: 32, height: 32),
                           icon: const Icon(Icons.location_on),
                           onPressed: onLocationTap,
-                          tooltip: 'Open location',
+                          tooltip: tr('Open location'),
                         ),
                       _AnimatedActionIcon(
                         active: isSaved,
@@ -4091,7 +4092,7 @@ class PostCard extends StatelessWidget {
                 child: IconButton(
                   icon: const Icon(Icons.send),
                   onPressed: onMessage,
-                  tooltip: 'Message creator',
+                  tooltip: tr('Message creator'),
                 ),
               ),
           ],
@@ -4353,9 +4354,9 @@ class _AnimatedSpotlightWordmarkState extends State<_AnimatedSpotlightWordmark>
             ],
             stops: const [0, 0.38, 0.56, 1],
           ).createShader(bounds),
-          child: const Text(
-            'Duhuze',
-            style: TextStyle(
+          child: Text(
+            tr('Duhuze'),
+            style: const TextStyle(
               fontWeight: FontWeight.w900,
               letterSpacing: -0.35,
               fontSize: 21,
@@ -4399,13 +4400,13 @@ class _DesktopSpotlightRail extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Duhuze on desktop',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              Text(
+                tr('Duhuze on desktop'),
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
               Text(
-                'A wider social view for your feed, conversations, and creator flow.',
+                tr('A wider social view for your feed, conversations, and creator flow.'),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: AppColors.grey,
                     ),
@@ -4436,13 +4437,13 @@ class _DesktopSpotlightRail extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Reels tuned for you',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                Text(
+                  tr('Reels tuned for you'),
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Swipe through short videos, and stay in flow. New reels refresh automatically.',
+                  tr('Swipe through short videos, and stay in flow. New reels refresh automatically.'),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: AppColors.grey,
                       ),
@@ -4453,13 +4454,13 @@ class _DesktopSpotlightRail extends StatelessWidget {
                     FilledButton.icon(
                       onPressed: onOpenMessages,
                       icon: const Icon(Icons.chat_bubble_outline),
-                      label: const Text('Inbox'),
+                      label: Text(tr('Inbox')),
                     ),
                     const SizedBox(width: 8),
                     FilledButton.icon(
                       onPressed: onOpenDiscover,
                       icon: const Icon(Icons.notifications_none),
-                      label: const Text('Updates'),
+                      label: Text(tr('Updates')),
                     ),
                   ],
                 ),
@@ -4471,14 +4472,14 @@ class _DesktopSpotlightRail extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Follow recommendations',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              Text(
+                tr('Follow recommendations'),
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 10),
               if (recommendedCreators.isEmpty)
                 Text(
-                  'No recommendations yet. Check again in a moment.',
+                  tr('No recommendations yet. Check again in a moment.'),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: AppColors.grey,
                       ),
@@ -4538,7 +4539,7 @@ class _DesktopSpotlightRail extends StatelessWidget {
                                   height: 30,
                                   child: FilledButton(
                                     onPressed: () => onFollowCreator(post),
-                                    child: const Text('Follow'),
+                                    child: Text(tr('Follow')),
                                   ),
                                 ),
                               ],
@@ -4621,19 +4622,19 @@ class _DesktopSpotlightDock extends StatelessWidget {
           const SizedBox(height: 10),
           _DesktopDockButton(
             icon: Icons.travel_explore_rounded,
-            label: 'Discover',
+            label: tr('Discover'),
             onTap: onOpenDiscover,
           ),
           const SizedBox(height: 10),
           _DesktopDockButton(
             icon: Icons.chat_bubble_rounded,
-            label: 'Inbox',
+            label: tr('Inbox'),
             onTap: onOpenMessages,
           ),
           const Spacer(),
           _DesktopDockButton(
             icon: Icons.add_box_rounded,
-            label: 'Create',
+            label: tr('Create'),
             active: true,
             filled: true,
             onTap: onCreatePost,

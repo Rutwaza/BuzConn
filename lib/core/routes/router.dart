@@ -1,4 +1,5 @@
 import 'package:go_router/go_router.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 
 import '../constants/app_constants.dart';
 import 'package:businessfinder/presentation/pages/splash/splash_page.dart';
@@ -100,8 +101,8 @@ class AppRouter {
                 );
               }
               if (!snapshot.data!.exists) {
-                return const Scaffold(
-                  body: Center(child: Text('Post not found')),
+                return Scaffold(
+                  body: Center(child: Text(tr('Post not found'))),
                 );
               }
               final post = Post.fromFirestore(snapshot.data!);

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
@@ -14,12 +15,12 @@ class FavoritesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      return const Scaffold(body: Center(child: Text('Please sign in.')));
+      return Scaffold(body: Center(child: Text(tr('Please sign in.'))));
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Saved'),
+        title: Text(tr('Saved')),
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
@@ -34,7 +35,7 @@ class FavoritesPage extends StatelessWidget {
           }
           final docs = snap.data?.docs ?? [];
           if (docs.isEmpty) {
-            return const Center(child: Text('No saved posts yet.'));
+            return Center(child: Text(tr('No saved posts yet.')));
           }
           return ListView.separated(
             padding: const EdgeInsets.all(12),
@@ -167,8 +168,8 @@ class FavoritesPage extends StatelessWidget {
     return Card(
       child: ListTile(
         leading: const Icon(Icons.error_outline, color: AppColors.grey),
-        title: const Text('Post deleted'),
-        subtitle: const Text('This post is no longer available.'),
+        title: Text(tr('Post deleted')),
+        subtitle: Text(tr('This post is no longer available.')),
         trailing: IconButton(
           icon: const Icon(Icons.delete),
           onPressed: () => _unsave(userId, postId),
@@ -178,18 +179,18 @@ class FavoritesPage extends StatelessWidget {
   }
 
   Widget _loadingCard() {
-    return const Card(
+    return Card(
       child: Padding(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            SizedBox(
+            const SizedBox(
               width: 24,
               height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: const CircularProgressIndicator(strokeWidth: 2),
             ),
-            SizedBox(width: 12),
-            Expanded(child: Text('Loading...')),
+            const SizedBox(width: 12),
+            Expanded(child: Text(tr('Loading...'))),
           ],
         ),
       ),

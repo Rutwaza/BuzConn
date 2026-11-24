@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -14,7 +15,7 @@ class PageFollowersPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      appBar: AppBar(title: const Text('Page Followers')),
+      appBar: AppBar(title: Text(tr('Page Followers'))),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('page_follows')
@@ -26,7 +27,7 @@ class PageFollowersPage extends StatelessWidget {
           }
           final docs = snap.data?.docs ?? [];
           if (docs.isEmpty) {
-            return const Center(child: Text('No followers yet'));
+            return Center(child: Text(tr('No followers yet')));
           }
 
           return ListView.separated(

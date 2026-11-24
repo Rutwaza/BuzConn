@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:businessfinder/core/i18n/tr.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -229,18 +230,18 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Change password'),
+        title: Text(tr('Change password')),
         content: TextField(
           controller: controller,
           obscureText: true,
-          decoration: const InputDecoration(
-            hintText: 'New password',
+          decoration: InputDecoration(
+            hintText: tr('New password'),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(tr('Cancel')),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -261,23 +262,23 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
                 if (mounted) {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Password updated.'),
+                    SnackBar(
+                      content: Text(tr('Password updated.')),
                     ),
                   );
                 }
               } on FirebaseAuthException {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
+                    SnackBar(
                       content:
-                          Text('Failed to update password. Please re-login.'),
+                          Text(tr('Failed to update password. Please re-login.')),
                     ),
                   );
                 }
               }
             },
-            child: const Text('Update'),
+            child: Text(tr('Update')),
           ),
         ],
       ),
@@ -291,7 +292,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
     final pickerBg = isDark ? const Color(0xFF0F131B) : Colors.white;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Edit Profile'),
+        title: Text(tr('Edit Profile')),
         automaticallyImplyLeading: false,
         centerTitle: true,
       ),
@@ -375,7 +376,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
 
               const SizedBox(height: 20),
               Text(
-                'About you',
+                tr('About you'),
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -384,8 +385,8 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
 
               AppTextField(
                 controller: _nameController,
-                label: 'Display Name',
-                hintText: 'How people see you',
+                label: tr('Display Name'),
+                hintText: tr('How people see you'),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
                     return 'Please enter your name';
@@ -399,8 +400,8 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
               // Email
               AppTextField(
                 controller: _emailController,
-                label: 'Email (optional)',
-                hintText: 'Email address, if you want to add one',
+                label: tr('Email (optional)'),
+                hintText: tr('Email address, if you want to add one'),
                 keyboardType: TextInputType.emailAddress,
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) return null;
@@ -417,8 +418,8 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
               // Phone Number
               AppTextField(
                 controller: _phoneController,
-                label: 'Phone (optional)',
-                hintText: 'Phone number',
+                label: tr('Phone (optional)'),
+                hintText: tr('Phone number'),
                 keyboardType: TextInputType.phone,
                 prefixIcon: CountryCodePicker(
                   initialSelection: _dialCode,
@@ -430,7 +431,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
                   dialogBackgroundColor: pickerBg,
                   dialogTextStyle: TextStyle(color: pickerTextColor),
                   searchDecoration: InputDecoration(
-                    hintText: 'Search country',
+                    hintText: tr('Search country'),
                     hintStyle: TextStyle(
                       color: pickerTextColor.withOpacity(0.6),
                     ),
@@ -464,8 +465,8 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
               // Bio
               AppTextField(
                 controller: _bioController,
-                label: 'Bio',
-                hintText: 'Tell people about you...',
+                label: tr('Bio'),
+                hintText: tr('Tell people about you...'),
                 maxLines: 3,
                 maxLength: 200,
               ),
@@ -492,7 +493,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Text('Change Password'),
+                      child: Text(tr('Change Password')),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -510,7 +511,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Text('Back'),
+                      child: Text(tr('Back')),
                     ),
                   ),
                 ],

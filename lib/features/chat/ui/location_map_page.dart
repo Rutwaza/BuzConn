@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:businessfinder/core/i18n/tr.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -100,11 +101,11 @@ class _LocationMapPageState extends State<LocationMapPage> {
         final loc = data?['location'];
         if (loc is! Map) {
           return Scaffold(
-            appBar: AppBar(title: const Text('Location')),
+            appBar: AppBar(title: Text(tr('Location'))),
             body: Center(
               child: snap.connectionState == ConnectionState.waiting
                   ? const CircularProgressIndicator()
-                  : const Text('This location is no longer available.'),
+                  : Text(tr('This location is no longer available.')),
             ),
           );
         }
@@ -180,14 +181,14 @@ class _LocationMapPageState extends State<LocationMapPage> {
                 child: Column(children: [
                   FloatingActionButton.small(
                     heroTag: 'them',
-                    tooltip: 'Show both',
+                    tooltip: tr('Show both'),
                     onPressed: () => _fitBoth(them),
                     child: const Icon(Icons.zoom_out_map_rounded),
                   ),
                   const SizedBox(height: 10),
                   FloatingActionButton.small(
                     heroTag: 'me',
-                    tooltip: 'Where am I',
+                    tooltip: tr('Where am I'),
                     onPressed: _me == null ? null : () => _map.move(_me!, 17),
                     child: const Icon(Icons.my_location_rounded),
                   ),
@@ -235,13 +236,13 @@ class _LocationMapPageState extends State<LocationMapPage> {
                             },
                             style: TextButton.styleFrom(
                                 foregroundColor: AppColors.error),
-                            child: const Text('Stop'),
+                            child: Text(tr('Stop')),
                           )
                         else if (!isMine)
                           FilledButton.icon(
                             onPressed: () => _directions(them),
                             icon: const Icon(Icons.directions_rounded),
-                            label: const Text('Directions'),
+                            label: Text(tr('Directions')),
                           ),
                       ]),
                     ),

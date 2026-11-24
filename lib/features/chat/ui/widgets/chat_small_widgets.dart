@@ -91,10 +91,10 @@ class _ChatStatusLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isTyping) {
-      return const Text(
-        'typing...',
+      return Text(
+        tr('typing...'),
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(
+        style: const TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w700,
           color: AppColors.primary,

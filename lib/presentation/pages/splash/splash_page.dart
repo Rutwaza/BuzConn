@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -92,7 +93,7 @@ class _SplashPageState extends ConsumerState<SplashPage> {
             const SizedBox(height: 8),
             // Tagline
             Text(
-              'Africa Connected.',
+              tr('Africa Connected.'),
               style: TextStyle(
                 fontSize: 16,
                 color: AppColors.white.withOpacity(0.8),

@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -62,7 +63,7 @@ class _CatalogPageState extends State<CatalogPage> {
         title: Text('${widget.businessName} · Shop'),
         actions: [
           IconButton(
-            tooltip: 'Orders',
+            tooltip: tr('Orders'),
             icon: const Icon(Icons.receipt_long_rounded),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => OrdersPage(startOnShopTab: widget.isOwner),
@@ -74,7 +75,7 @@ class _CatalogPageState extends State<CatalogPage> {
           ? FloatingActionButton.extended(
               onPressed: () => _edit(),
               icon: const Icon(Icons.add_rounded),
-              label: const Text('Add product'),
+              label: Text(tr('Add product')),
             )
           : null,
       body: StreamBuilder<List<Product>>(
@@ -88,12 +89,12 @@ class _CatalogPageState extends State<CatalogPage> {
           return Column(
             children: [
               if (widget.isOwner && !widget.hasMomoCode)
-                const MaterialBanner(
+                MaterialBanner(
                   content: Text(
-                      'Add your MoMo Pay code in Edit page so customers can pay you.'),
-                  leading: Icon(Icons.info_outline_rounded,
+                      tr('Add your MoMo Pay code in Edit page so customers can pay you.')),
+                  leading: const Icon(Icons.info_outline_rounded,
                       color: AppColors.warning),
-                  actions: [SizedBox.shrink()],
+                  actions: const [SizedBox.shrink()],
                 ),
               Expanded(
                 child: products.isEmpty
@@ -206,8 +207,8 @@ class _ProductTile extends StatelessWidget {
                     Container(
                       color: Colors.black45,
                       alignment: Alignment.center,
-                      child: const Text('Out of stock',
-                          style: TextStyle(
+                      child: Text(tr('Out of stock'),
+                          style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700)),
                     ),
@@ -236,14 +237,14 @@ class _ProductTile extends StatelessWidget {
                   ? TextButton.icon(
                       onPressed: onEdit,
                       icon: const Icon(Icons.edit_rounded, size: 18),
-                      label: const Text('Edit'),
+                      label: Text(tr('Edit')),
                     )
                   : qty == 0
                       ? TextButton.icon(
                           onPressed: p.inStock ? onAdd : null,
                           icon: const Icon(Icons.add_shopping_cart_rounded,
                               size: 18),
-                          label: const Text('Add'),
+                          label: Text(tr('Add')),
                         )
                       : Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -354,10 +355,10 @@ class _ProductEditorState extends State<_ProductEditor> {
                   ),
                   alignment: Alignment.center,
                   child: _image != null
-                      ? const Column(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.check_circle_rounded,
+                      ? Column(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.check_circle_rounded,
                               color: AppColors.success, size: 36),
-                          Text('Photo chosen'),
+                          Text(tr('Photo chosen')),
                         ])
                       : p?.imageUrl != null
                           ? ClipRRect(
@@ -367,12 +368,12 @@ class _ProductEditorState extends State<_ProductEditor> {
                                   fit: BoxFit.cover,
                                   width: double.infinity),
                             )
-                          : const Column(
+                          : Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                  Icon(Icons.add_a_photo_rounded,
+                                  const Icon(Icons.add_a_photo_rounded,
                                       color: AppColors.primary, size: 34),
-                                  Text('Add a photo'),
+                                  Text(tr('Add a photo')),
                                 ]),
                 ),
               ),
@@ -380,15 +381,15 @@ class _ProductEditorState extends State<_ProductEditor> {
               TextFormField(
                 controller: _name,
                 maxLength: 80,
-                decoration: const InputDecoration(labelText: 'Name'),
+                decoration: InputDecoration(labelText: tr('Name')),
                 validator: (v) =>
                     (v ?? '').trim().isEmpty ? 'Enter a name' : null,
               ),
               TextFormField(
                 controller: _price,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                    labelText: 'Price', suffixText: 'RWF'),
+                decoration: InputDecoration(
+                    labelText: tr('Price'), suffixText: 'RWF'),
                 validator: (v) {
                   final n =
                       int.tryParse((v ?? '').replaceAll(RegExp(r'[^0-9]'), ''));
@@ -402,13 +403,13 @@ class _ProductEditorState extends State<_ProductEditor> {
                 maxLines: 3,
                 maxLength: 500,
                 decoration:
-                    const InputDecoration(labelText: 'Description (optional)'),
+                    InputDecoration(labelText: tr('Description (optional)')),
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: _inStock,
                 onChanged: (v) => setState(() => _inStock = v),
-                title: const Text('In stock'),
+                title: Text(tr('In stock')),
               ),
               const SizedBox(height: 8),
               Row(children: [
@@ -425,7 +426,7 @@ class _ProductEditorState extends State<_ProductEditor> {
                             nav.pop();
                           },
                     icon: const Icon(Icons.delete_outline_rounded),
-                    label: const Text('Delete'),
+                    label: Text(tr('Delete')),
                   ),
                 const Spacer(),
                 FilledButton(
@@ -435,7 +436,7 @@ class _ProductEditorState extends State<_ProductEditor> {
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Save'),
+                      : Text(tr('Save')),
                 ),
               ]),
             ],
