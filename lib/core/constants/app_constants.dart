@@ -33,7 +33,7 @@ class AppConstants {
   // If MTN changes the menu, only this line needs to change.
   // Public website (Firebase Hosting, files in site/): privacy policy, terms,
   // account deletion and child safety pages used by the app and Google Play.
-  static const String websiteUrl = 'https://duhuze.web.app';
+  static const String websiteUrl = 'https://duhuze-rw.web.app';
 
   static const String momoPayUssd = '*182*8*1*{code}*{amount}#';
   

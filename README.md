@@ -38,7 +38,7 @@ by `deploy.ps1` as Firebase Hosting, refuses while `CHANGE_ME` placeholders rema
 
 Everything users and Google Play see is **Duhuze**: app name, icon, app id
 `rw.duhuze.app` (after `tools/register-android-app.ps1`), website
-**https://duhuze.web.app** (Firebase Hosting site `duhuze`), store listing.
+**https://duhuze-rw.web.app** (Firebase Hosting site `duhuze`), store listing.
 
 These old names stay **on purpose**. They are invisible to users, and changing them would break things:
 

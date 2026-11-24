@@ -65,10 +65,10 @@ hosted free on Firebase Hosting.
 2. Read `site/privacy.html` once, completely. It must match what the app does.
 3. Run `.\deploy.ps1`. It refuses to publish the website while any `CHANGE_ME` is left.
 4. Check in a browser:
-   - https://duhuze.web.app/privacy
-   - https://duhuze.web.app/terms
-   - https://duhuze.web.app/delete-account
-   - https://duhuze.web.app/child-safety
+   - https://duhuze-rw.web.app/privacy
+   - https://duhuze-rw.web.app/terms
+   - https://duhuze-rw.web.app/delete-account
+   - https://duhuze-rw.web.app/child-safety
 
 The app links to these pages from Settings and the sign-up screen
 (`AppConstants.websiteUrl`). If you later buy a domain (e.g. duhuze.rw),
