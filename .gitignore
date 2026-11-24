@@ -133,3 +133,6 @@ app.*.map.json
 
 # Last deployed commit (deploy.ps1)
 .deploy-state
+
+# Decrypted ghost archive exports (scripts/open-ghost-archive.js)
+functions/ghost-exports/

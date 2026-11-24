@@ -4,39 +4,115 @@ Duhuze ("let's connect", Africa Connected; formerly SpotLight/BussFinder) is a F
 
 This README is the setup and release handoff for the current repository. It describes the configuration found in this checkout, including gaps that must be closed before a public release. Do not treat a successful debug run as a production readiness check.
 
-## Phase 1 changes (security + rename), November 2026
+## Duhuze handbook: read this first
 
-What changed and what you must do once:
+The short version of everything important. Details are further down.
 
-1. **Deploy rules and the new functions** (from the repo root):
+### Where we are (November 2026)
 
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\deploy.ps1
-   ```
+| Phase | What | State |
+| --- | --- | --- |
+| 1 | Security rules, rename to Duhuze, admin claim | Live |
+| 2 | Fast chat (no transactions, offline cache, paging), likes/comments as subcollections, RTDB presence/typing | Live |
+| 3 | Video compression, reel preloading, server feeds (Reels, Following timelines, trending), keyword search, unread badge | Live |
+| 4 | Location in chat (live + background), ghost archive, Shop + MoMo Pay | Code done, **deploy + test on phones** |
+| 4 (next) | Status, Kinyarwanda, lite mode | Not started |
 
-   Deploy the functions **before or together with** the new app build: the new app no longer creates notifications or edits comments itself, the server does (`functions/social.js`).
+Work happens on the Git branch `phase-1`; `main` is the old app.
 
-2. **Give yourself admin with a custom claim**, then sign out and in again:
+### Deploying (always use the script)
 
-   ```powershell
-   cd functions
-   gcloud auth application-default login
-   node scripts/set-admin.js nelsonjembe99@gmail.com
-   ```
+```powershell
+cd C:\Users\Nexon\Desktop\PROJECTS\BussFinder\bussinessfinder
+powershell -ExecutionPolicy Bypass -File .\deploy.ps1 -DryRun   # show the plan only
+powershell -ExecutionPolicy Bypass -File .\deploy.ps1           # deploy what changed
+powershell -ExecutionPolicy Bypass -File .\deploy.ps1 -All      # everything (slow, ~15 min)
+powershell -ExecutionPolicy Bypass -File .\deploy.ps1 -Functions createOrder,onOrderWritten
+```
 
-   After that, delete the email fallback in `firestore.rules` (`isSuperAdmin`) and `SUPER_ADMIN_EMAILS` in `functions/index.js`.
+- It only deploys what changed since the commit saved in `.deploy-state` (a local file, not in Git). Rules, indexes and database rules go by file; functions go by the file they live in (`functions/scripts/function-map.js` lists them).
+- Everything is redeployed when `functions/package*.json` or `setGlobalOptions` in `functions/index.js` changes.
+- Functions go up 4 at a time with a pause. Google's per-region **CPU quota** fails a deploy of ~30 functions at once ("Quota exceeded for total allowable CPU"). That is also why `setGlobalOptions` uses `cpu: "gcf_gen1"`, `memory: "256MiB"`, `maxInstances: 10`. Raise these only when traffic needs it.
+- If a deploy fails, the old version keeps running, so the app does not break. Re-run with the `-Functions` list the script prints.
+- Lost `.deploy-state`? The script deploys everything once and starts again from there.
 
-3. **Move old push tokens to the private collection** (once): `node scripts/move-fcm-tokens.js` from `functions/`.
+### ⚠ Critical: ghost message archive
 
-4. **Run the rules tests** any time you change `firestore.rules` (needs Java):
+Ghost messages disappear from the chat after the receiver reads them, but the server keeps an **encrypted copy**.
 
-   ```powershell
-   cd rules-tests
-   npm install
-   npm test
-   ```
+| What | Where |
+| --- | --- |
+| Encrypted copies | Firestore collection `ghost_archive` (doc id `chatId_messageId`). Rules: nobody can read or write from the app. |
+| The key | Google Secret Manager → secret **`GHOST_ARCHIVE_KEY`** (Google Cloud console → Security → Secret Manager, project `bussinessfinder-327f5`). Made once by `deploy.ps1`. |
+| Code | `functions/ghost.js` (`archiveGhostMessage` trigger, `decryptGhostArchive` admin callable) |
+| Log of every opening | Firestore `admin_events`, type `ghost_archive_opened` |
 
-Summary of the rules: only the server creates notifications; comments change only through `postCommentAction`; a like may only add or remove your own id; counters go up by one; you can only send, edit or delete your own messages (ghost messages may be removed by the receiver); "Clear chat" hides messages for you only (`chats/{id}.clearedAt.{uid}`); push tokens live in `users_private/{uid}`; users cannot change `isActive`, `username`, `apps` or `role` on their own profile.
+**To open a chat's ghost messages** (only for a safety report or legal request):
+
+```powershell
+cd functions
+gcloud auth application-default login     # once
+firebase login                            # the script reads the key with the CLI
+node scripts/open-ghost-archive.js --users alice@example.com bob@example.com --reason "report #12"
+# or, if you know the chat id (Firestore -> chats):
+node scripts/open-ghost-archive.js --chat <chatId> --reason "police letter 2026/44"
+```
+
+It prints the messages and saves them in `functions/ghost-exports/` (not in Git). Delete that file when the case is closed.
+
+**Rules for the key:**
+- **Never delete or replace `GHOST_ARCHIVE_KEY`.** Without it, the archive can never be read again. A new key does not open old copies.
+- Do not copy the key into chats, files or this README.
+- The privacy policy must say: *ghost messages disappear from your chat, but Duhuze keeps an encrypted copy that can only be opened for safety reports or legal requests.* (Have it checked against Rwanda's data protection law before launch.)
+- Only messages sent after the archive went live are saved; older ghosts are gone.
+
+### ⚠ Critical: payments (MoMo now, gateway later)
+
+**Today (no gateway):** businesses enter their **MoMo Pay merchant code** and the name registered on MoMo (Edit page → `businesses/{id}.momoCode`, `momoName`).
+1. The buyer picks products in the Shop. The server function `createOrder` builds the order with the **real prices** from the catalog.
+2. The phone dialer opens with `*182*8*1*CODE*AMOUNT#`. The template is `AppConstants.momoPayUssd`. **Check this format on a real MTN line**; if MTN does not take the amount, use `'*182*8*1*{code}#'`.
+3. The buyer enters the PIN in MTN's pop-up, then taps "Yes, I paid" (optionally with the transaction ID from the SMS) or "Cancel".
+4. The shop checks its own MoMo SMS and taps **Received ✓** or **Not received**.
+
+Nothing is verified automatically, and Duhuze never holds money. Android does not let apps read the USSD reply, and Google Play does not allow reading SMS.
+
+Order states (rules allow only these moves): `pending_payment → paid_claimed → confirmed`, `paid_claimed → not_received → paid_claimed`, and `pending_payment/not_received → cancelled`.
+
+**When Duhuze is ready for a real gateway**, the plug-in points are already there:
+
+- [ ] Pick a provider that sends a MoMo/Airtel "push" to the buyer and calls our server back (webhook). Candidates to compare: MTN MoMo Open API (Collections), Paypack, Flutterwave, IremboPay. Compare fees, settlement time, KYC for merchants, sandbox.
+- [ ] Copy `functions/payments/gateway-template.js` to `functions/payments/<provider>.js` and fill in `startPayment` and `parseWebhook`.
+- [ ] Store its keys: `firebase functions:secrets:set <PROVIDER>_KEY` (never in code).
+- [ ] Register it in `functions/payments/index.js` and set `DEFAULT_PROVIDER` in `functions/shop.js`.
+- [ ] Add an HTTPS webhook function in `shop.js` that checks the signature and sets the order to `confirmed` (or `failed`). Add `failed` to the rules and to `OrderStatus` in the app.
+- [ ] In the app, add a class next to `MomoUssdPayment` in `lib/features/shop/data/payment_methods.dart` with `automatic = true`, and return it from `PaymentMethods.current`. The pay sheet should then wait for the server instead of asking "Did it go through?".
+- [ ] Decide whether shops still get paid directly (marketplace split) or Duhuze collects and pays out. The second makes Duhuze hold money, which needs a licence; ask a lawyer first.
+
+### Other things that must not be forgotten
+
+- [ ] **Admin:** run `node scripts/set-admin.js nelsonjembe99@gmail.com` (from `functions/`), sign out and in, then remove the email fallback (`isSuperAdmin` in `firestore.rules`, `SUPER_ADMIN_EMAILS` in `functions/index.js` and `functions/ghost.js`).
+- [ ] **One-time jobs:** when Firestore `_maintenance/phase2` and `_maintenance/phase3` both show `done: true`, delete `phase2Maintenance` (social.js) and `phase3Maintenance` (feed.js), then deploy.
+- [ ] **Map tiles:** chat maps use OpenStreetMap's free server (`AppConstants.mapTileUrl`). Switch to a paid provider (MapTiler, Stadia, …) before a big launch.
+- [ ] **Live location:** works in the background through an Android foreground service (`lib/features/chat/data/live_location_service.dart`). It stops if the user swipes the app away, and resumes when that chat is opened again. Google Play will ask why the app uses `FOREGROUND_SERVICE_LOCATION`; the answer is "live location sharing in chat".
+- [ ] **App id:** still `com.example.bussinessfinder`. Planned `rw.duhuze.app`, which needs a new Android app registered in Firebase and a new `google-services.json`.
+- [ ] **Separate dev and production Firebase projects** before real users arrive.
+- [ ] **Firebase Functions SDK:** `firebase-functions` is on v5 (deploy warns "outdated"). Upgrade it with care, because it has breaking changes.
+- [ ] **Rules tests:** run them after every change to `firestore.rules` (`cd rules-tests; npm test`, needs Java).
+
+### Where the data lives
+
+| Collection | What | Who writes |
+| --- | --- | --- |
+| `users`, `users_private` | Profiles; push tokens + unread counter (private) | Owner (server fields locked) / server |
+| `businesses`, `businesses/{id}/products` | Pages incl. `momoCode`; shop catalog | Business owner |
+| `orders` | Shop orders | `createOrder` (server), then buyer/owner status moves |
+| `posts`, `posts/{id}/likes`, `posts/{id}/comments` | Feed content | Users; counters by server |
+| `timelines/{uid}/items` | Following feed | Server only |
+| `chats/{id}/messages` | Messages (incl. `location`, live location fields) | Participants |
+| `ghost_archive` | Encrypted ghost copies | Server only, nobody reads from the app |
+| `notifications` | In-app + push notifications | Server only |
+| `admin_events` | Admin actions log | Server only |
+| Realtime DB `status/{uid}`, `typing/{chatId}/{uid}` | Online + typing | Each user for themselves |
 
 
 ## Project ownership and services
@@ -54,7 +130,8 @@ These are account identifiers only. Passwords, recovery codes, API secrets, serv
 - Firebase client options: `lib/firebase_options.dart`
 - Firestore rules: `firestore.rules`
 - Realtime Database rules: `database.rules.json`
-- Cloud Functions (Node.js 22): `functions/`
+- Cloud Functions (Node.js 22): `functions/` (`index.js` media/push/admin, `social.js` likes/comments/notifications, `feed.js` feeds/search, `ghost.js` ghost archive, `shop.js` + `payments/` shop and payments, `scripts/` owner tools)
+- Deploy script: `deploy.ps1`; security-rules tests: `rules-tests/`
 - Android app: `android/`
 - Windows desktop runner and Inno Setup installer: `windows/`
 - R2 configuration guide: [`R2_SETUP.md`](R2_SETUP.md)
@@ -194,38 +271,21 @@ flutter pub get
 
 ## Firebase deployment
 
-Install the Firebase CLI and authenticate with the Firebase owner/deployment account. Confirm project selection before deploying:
+Use `deploy.ps1` (see **Deploying** at the top). It signs in, deploys only what changed, and avoids the CPU quota problem. Before the first deploy, confirm the project:
 
 ```powershell
 firebase login
-firebase projects:list
 firebase use bussinessfinder-327f5
 ```
 
-Deploy rules separately when appropriate:
+Manual commands, if you ever need them:
 
 ```powershell
-firebase deploy --only firestore:rules,database --project bussinessfinder-327f5
+firebase deploy --only firestore:rules,firestore:indexes,database --project bussinessfinder-327f5
+firebase deploy --only functions:createOrder,functions:onOrderWritten --project bussinessfinder-327f5
 ```
 
-Deploy only the media functions after R2 configuration is complete:
-
-```powershell
-firebase deploy --only functions:createR2UploadUrl,functions:createR2DownloadUrl --project bussinessfinder-327f5
-```
-
-Push/call notification functions currently include `sendNotificationDocumentPush` and `sendIncomingCallPush`; inspect the exports in `functions/index.js` and Firebase Console before changing/deleting deployed functions. Firebase does not permit changing a deployed function from one trigger type to another under the same name; a trigger change may require deploying a new name and deliberately migrating/deleting the old function.
-
-For a full Functions deployment, install dependencies and inspect all exports first:
-
-```powershell
-Set-Location functions
-npm ci
-Set-Location ..
-firebase deploy --only functions --project bussinessfinder-327f5
-```
-
-`functions/index.js` now only contains Duhuze functions, so a full deployment is safe; Firebase will ask before deleting any function that is no longer in the source. Use a separate Firebase staging project for risky rules or backend changes. Never deploy test rules that allow unrestricted reads/writes.
+Avoid `firebase deploy --only functions` with no names: it updates all ~32 functions at once and hits the CPU quota. Firebase does not let a deployed function change trigger type under the same name; deploy a new name, move callers, then delete the old one. Never deploy test rules that allow unrestricted reads/writes.
 
 ## Build artifacts
 
