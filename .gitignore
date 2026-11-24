@@ -140,3 +140,6 @@ functions/ghost-exports/
 # Release builds (tools/build-release.ps1) and backups
 release/
 android/app/google-services.json.bak
+
+# Firebase CLI hosting cache
+.firebase/

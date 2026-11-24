@@ -60,7 +60,7 @@ if ($All) {
   if ($changed -contains 'firestore.rules') { $targets += 'firestore:rules' }
   if ($changed -contains 'firestore.indexes.json') { $targets += 'firestore:indexes' }
   if ($changed -contains 'database.rules.json') { $targets += 'database' }
-  if ($changed | Where-Object { $_ -like 'site/*' }) { $targets += 'hosting' }
+  if (($changed | Where-Object { $_ -like 'site/*' }) -or ($changed -contains 'firebase.json')) { $targets += 'hosting' }
   $everything = ($changed | Where-Object { $_ -match '^functions/package(-lock)?\.json$' }).Count -gt 0
   if ($changed -contains 'functions/index.js') {
     $diff = if ($last) { git diff $last -- functions/index.js } else { '' }
