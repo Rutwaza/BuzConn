@@ -15,6 +15,9 @@ const db = admin.firestore();
 
 // Server-side social features (notifications, comments). See social.js.
 Object.assign(exports, require("./social"));
+// Feed, reels, search and unread counters (Phase 3). See feed.js.
+const {_internals: _feedInternals, ...feedFunctions} = require("./feed");
+Object.assign(exports, feedFunctions);
 
 const R2_ACCOUNT_ID = defineString("R2_ACCOUNT_ID");
 const R2_PUBLIC_BUCKET_NAME = defineString("R2_PUBLIC_BUCKET_NAME");

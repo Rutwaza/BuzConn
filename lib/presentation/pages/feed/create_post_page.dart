@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/services/video_compressor.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
@@ -47,7 +48,10 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
   String? _selectedBusinessId;
   bool _postAsProfile = true;
 
-  static const int _maxVideoSizeBytes = 10 * 1024 * 1024;
+  // Phase 3: videos are compressed on the phone (VideoCompressor), so people
+  // can pick bigger originals. The upload itself must still be <= 20 MB.
+  static const int _maxPickedVideoBytes = 300 * 1024 * 1024;
+  static const int _maxVideoSizeBytes = 20 * 1024 * 1024;
 
   @override
   void dispose() {
@@ -175,7 +179,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
       final picked = result.files
           .where((file) => file.path != null)
           .where((file) {
-            final isAllowed = file.size <= _maxVideoSizeBytes;
+            final isAllowed = file.size <= _maxPickedVideoBytes;
             if (!isAllowed) {
               oversizedVideos
                   .add('${file.name} (${_formatFileSize(file.size)})');
@@ -221,8 +225,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
         title: const Text('Video too large'),
         content: Text(
           hasMore
-              ? 'Some selected videos are above 10 MB and can’t be uploaded right now.\n\nExamples: $preview'
-              : 'Videos above 10 MB can’t be uploaded right now.\n\n$preview\n\nPlease compress or trim the video and try again.',
+              ? 'Some selected videos are too large (over 300 MB).\n\nExamples: $preview'
+              : 'This video is too large (over 300 MB).\n\n$preview\n\nPlease trim it and try again.',
         ),
         actions: [
           TextButton(
@@ -239,7 +243,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
     for (final item
         in _selectedMedia.where((m) => m.type == PostMediaType.video)) {
       final size = await item.file.length();
-      if (size > _maxVideoSizeBytes) {
+      if (size > _maxPickedVideoBytes) {
         final name = item.file.uri.pathSegments.isNotEmpty
             ? item.file.uri.pathSegments.last
             : 'video';
@@ -271,8 +275,10 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
     }
   }
 
-  Future<String?> _uploadVideo(File videoFile) async {
+  Future<String?> _uploadVideo(File originalFile) async {
     try {
+      // Shrink to 720p on the phone first (Android/iOS).
+      final videoFile = await VideoCompressor.compress(originalFile);
       final size = await videoFile.length();
       if (size > _maxVideoSizeBytes) {
         debugPrint(
@@ -284,11 +290,15 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
       final bytes = await videoFile.readAsBytes();
       final path =
           '${user?.uid ?? 'anon'}/${DateTime.now().millisecondsSinceEpoch}.mp4';
-      return await R2StorageService.instance.uploadVideo(
+      final url = await R2StorageService.instance.uploadVideo(
         bucket: 'post-videos',
         path: path,
         bytes: bytes,
       );
+      if (videoFile.path != originalFile.path) {
+        await VideoCompressor.cleanUp();
+      }
+      return url;
     } catch (e) {
       debugPrint('Error uploading video: $e');
       return null;

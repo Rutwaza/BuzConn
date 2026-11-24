@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/services/video_compressor.dart';
+import 'package:businessfinder/features/posts/logic/reel_prefetcher.dart';
 import 'package:businessfinder/features/posts/data/engagement_repository.dart';
 import 'package:businessfinder/features/chat/data/presence_service.dart';
 import 'package:flutter/services.dart';
@@ -223,6 +225,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       _posts.clear();
       _lastDoc = null;
       _followingFallbackLastDoc = null;
+      _timelineLastDoc = null;
       _hasMore = true;
       _didJumpToPost = false;
       _inlineSuggestionsDismissed = false;
@@ -311,38 +314,34 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       _isLoading = true;
     });
     try {
+      // Phase 3: each tab asks Firestore exactly for what it shows.
+      //  - Following: my own timeline list (filled by the server).
+      //  - Reels: only video posts (hasVideo == true).
+      //  - For You: highest trendingScore first (scored by the server).
       if (_feedMode == 'following') {
-        if (_followingPageIds.isEmpty && _followingUserIds.isEmpty) {
-          if (mounted) {
-            setState(() {
-              _hasMore = false;
-            });
-          } else {
-            _hasMore = false;
-          }
-          return;
+        final loaded = await _loadFollowingTimeline();
+        // Old accounts whose timeline is still being filled: use the old way.
+        if (!loaded &&
+            _posts.isEmpty &&
+            (_followingPageIds.isNotEmpty || _followingUserIds.isNotEmpty)) {
+          _hasMore = true;
+          await _loadFollowingFallback();
         }
-        await _loadFollowingFallback();
       } else {
-        Query<Map<String, dynamic>> query = FirebaseFirestore.instance
-            .collection('posts')
-            .orderBy('createdAt', descending: true)
-            .limit(_pageSize);
+        final posts = FirebaseFirestore.instance.collection('posts');
+        Query<Map<String, dynamic>> query = _feedMode == 'reels'
+            ? posts
+                .where('hasVideo', isEqualTo: true)
+                .orderBy('createdAt', descending: true)
+            : posts.orderBy('trendingScore', descending: true);
+        query = query.limit(_pageSize);
         if (_lastDoc != null) {
           query = query.startAfterDocument(_lastDoc!);
         }
         final snap = await query.get();
         if (snap.docs.isNotEmpty) {
           _lastDoc = snap.docs.last;
-          if (_feedMode == 'reels') {
-            final videoPosts = snap.docs
-                .map((doc) => Post.fromFirestore(doc))
-                .where((post) => post.media.any((m) => m.isVideo))
-                .toList();
-            _appendFilteredPosts(videoPosts);
-          } else {
-            _appendPosts(snap.docs);
-          }
+          _appendPosts(snap.docs);
         }
         if (snap.docs.length < _pageSize) {
           _hasMore = false;
@@ -362,6 +361,45 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
         });
       }
     }
+  }
+
+  DocumentSnapshot? _timelineLastDoc;
+
+  /// Reads timelines/{me}/items (newest first), then the posts themselves.
+  /// Returns false if the timeline had nothing at all.
+  Future<bool> _loadFollowingTimeline() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      _hasMore = false;
+      return false;
+    }
+    Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+        .collection('timelines')
+        .doc(uid)
+        .collection('items')
+        .orderBy('createdAt', descending: true)
+        .limit(_pageSize);
+    if (_timelineLastDoc != null) {
+      query = query.startAfterDocument(_timelineLastDoc!);
+    }
+    final items = await query.get();
+    if (items.docs.length < _pageSize) _hasMore = false;
+    if (items.docs.isEmpty) return _timelineLastDoc != null;
+    _timelineLastDoc = items.docs.last;
+
+    // Fetch the posts 30 at a time (Firestore's limit for whereIn).
+    final ids = items.docs.map((d) => d.id).toList();
+    final fetched = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    for (var i = 0; i < ids.length; i += 30) {
+      final chunk = ids.sublist(i, i + 30 > ids.length ? ids.length : i + 30);
+      final snap = await FirebaseFirestore.instance
+          .collection('posts')
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+      fetched.addAll(snap.docs);
+    }
+    _appendPosts(fetched); // deleted posts simply don't come back
+    return true;
   }
 
   Future<void> _loadFollowingFallback() async {
@@ -506,17 +544,6 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
         ],
       ),
     );
-  }
-
-  void _appendFilteredPosts(List<Post> nextPosts) {
-    final existingIds = _posts.map((p) => p.id).toSet();
-    final itemstoAdd =
-        nextPosts.where((post) => !existingIds.contains(post.id)).toList();
-    if (itemstoAdd.isEmpty) return;
-    setState(() {
-      _posts.addAll(itemstoAdd);
-      _posts.sort(_comparePostsForDisplay);
-    });
   }
 
   Future<void> _refreshFeed() async {
@@ -829,76 +856,70 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
           ValueListenableBuilder<Timestamp?>(
             valueListenable: _badgeClearedAt,
             builder: (context, clearedAt, _) {
-              return StreamBuilder<DocumentSnapshot>(
+              // Phase 3: one small counter document kept by the server
+              // (users_private/{uid}.unreadNotifications) instead of
+              // downloading every unread notification just to count them.
+              return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                 stream: currentUser == null
                     ? const Stream.empty()
                     : FirebaseFirestore.instance
-                        .collection('users')
+                        .collection('users_private')
                         .doc(currentUser.uid)
                         .snapshots(),
-                builder: (context, userSnap) {
-                  final userData =
-                      userSnap.data?.data() as Map<String, dynamic>?;
-                  final lastSeen =
-                      userData?['lastSeenNotificationsAt'] as Timestamp?;
-                  final effectiveClearedAt = clearedAt ?? lastSeen;
-                  return StreamBuilder<QuerySnapshot>(
-                    stream: currentUser == null
-                        ? const Stream.empty()
-                        : FirebaseFirestore.instance
-                            .collection('notifications')
-                            .where('toUserId', isEqualTo: currentUser.uid)
-                            .where('readAt', isEqualTo: null)
-                            .snapshots(),
-                    builder: (context, notifSnap) {
-                      final docs = notifSnap.data?.docs ?? [];
-                      final count = docs.where((d) {
-                        final data = d.data() as Map<String, dynamic>;
-                        if (data['hidden'] == true) return false;
-                        if (effectiveClearedAt == null) return true;
-                        final createdAt = data['createdAt'] as Timestamp?;
-                        if (createdAt == null) return true;
-                        return createdAt.compareTo(effectiveClearedAt) > 0;
-                      }).length;
-                      return IconButton(
-                        onPressed: () {
-                          _badgeClearedAt.value = Timestamp.now();
-                          unawaited(NotificationReadService.markAllRead()
-                              .catchError((Object error) {
-                            debugPrint('Could not clear notification badge: $error');
-                          }));
-                          context.push(AppRoutes.notifications);
-                        },
-                        icon: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            const Icon(Icons.notifications),
-                            if (count > 0)
-                              Positioned(
-                                right: -6,
-                                top: -6,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    count.toString(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                builder: (context, counterSnap) {
+                  final serverCount =
+                      (counterSnap.data?.data()?['unreadNotifications'] as num?)
+                              ?.toInt() ??
+                          0;
+                  // Just opened the notifications: show 0 until the server
+                  // catches up.
+                  final count = clearedAt != null &&
+                          DateTime.now()
+                                  .difference(clearedAt.toDate())
+                                  .inSeconds <
+                              10
+                      ? 0
+                      : (serverCount < 0 ? 0 : serverCount);
+                  {
+                    return IconButton(
+                      onPressed: () {
+                        _badgeClearedAt.value = Timestamp.now();
+                        unawaited(NotificationReadService.markAllRead()
+                            .catchError((Object error) {
+                          debugPrint(
+                              'Could not clear notification badge: $error');
+                        }));
+                        context.push(AppRoutes.notifications);
+                      },
+                      icon: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          const Icon(Icons.notifications),
+                          if (count > 0)
+                            Positioned(
+                              right: -6,
+                              top: -6,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  count.toString(),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
+                            ),
+                        ],
+                      ),
+                    );
+                  }
                 },
               );
             },
@@ -975,10 +996,24 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 ),
               );
             } else {
+              // Download the next 2 reels while this one plays.
+              void prefetchFrom(int index) {
+                ReelPrefetcher.prefetch(
+                  reelPosts
+                      .skip(index + 1)
+                      .take(2)
+                      .map((p) => p.media.firstWhere((m) => m.isVideo).url),
+                );
+              }
+
+              prefetchFrom(_reelsPageController.hasClients
+                  ? (_reelsPageController.page ?? 0).round()
+                  : 0);
               reelsContent = PageView.builder(
                 controller: _reelsPageController,
                 scrollDirection: Axis.vertical,
                 itemCount: reelPosts.length,
+                onPageChanged: prefetchFrom,
                 itemBuilder: (context, index) {
                   final post = reelPosts[index];
                   final videoMedia = post.media.firstWhere((m) => m.isVideo);
@@ -1516,8 +1551,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                               onDoubleTapLike: () {
                                                 final uid =
                                                     currentUser?.uid ?? '';
-                                                final alreadyLiked =
-                                                    LikeStore.instance.isLiked(post.id);
+                                                final alreadyLiked = LikeStore
+                                                    .instance
+                                                    .isLiked(post.id);
                                                 if (uid.isEmpty ||
                                                     alreadyLiked) {
                                                   return;
@@ -1552,8 +1588,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                                 );
                                               },
                                               onLike: () {
-                                                final currentlyLiked =
-                                                    LikeStore.instance.isLiked(post.id);
+                                                final currentlyLiked = LikeStore
+                                                    .instance
+                                                    .isLiked(post.id);
                                                 final uid =
                                                     currentUser?.uid ?? '';
                                                 if (uid.isNotEmpty) {
@@ -1753,39 +1790,40 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                   width: 300,
                   child: SingleChildScrollView(
                     child: _DesktopSpotlightRail(
-                    feedMode: _feedMode,
-                    followingCount:
-                        _followingPageIds.length + _followingUserIds.length,
-                    recommendedCreators: suggestionList,
-                    onOpenCreator: (post) {
-                      if (post.businessId.isNotEmpty) {
-                        context.push(
-                            AppRoutes.businessProfilePath(post.businessId));
-                      } else {
-                        context.push(AppRoutes.clientProfilePath(post.ownerId));
-                      }
-                    },
-                    onFollowCreator: (post) {
-                      if (post.businessId.isNotEmpty) {
-                        if (!_followingPageIds.contains(post.businessId)) {
-                          setState(() {
-                            _followingPageIds.add(post.businessId);
-                          });
+                      feedMode: _feedMode,
+                      followingCount:
+                          _followingPageIds.length + _followingUserIds.length,
+                      recommendedCreators: suggestionList,
+                      onOpenCreator: (post) {
+                        if (post.businessId.isNotEmpty) {
+                          context.push(
+                              AppRoutes.businessProfilePath(post.businessId));
+                        } else {
+                          context
+                              .push(AppRoutes.clientProfilePath(post.ownerId));
                         }
-                        _toggleFollowPage(post.businessId, false);
-                      } else {
-                        if (!_followingUserIds.contains(post.ownerId)) {
-                          setState(() {
-                            _followingUserIds.add(post.ownerId);
-                          });
+                      },
+                      onFollowCreator: (post) {
+                        if (post.businessId.isNotEmpty) {
+                          if (!_followingPageIds.contains(post.businessId)) {
+                            setState(() {
+                              _followingPageIds.add(post.businessId);
+                            });
+                          }
+                          _toggleFollowPage(post.businessId, false);
+                        } else {
+                          if (!_followingUserIds.contains(post.ownerId)) {
+                            setState(() {
+                              _followingUserIds.add(post.ownerId);
+                            });
+                          }
+                          _toggleFollowUser(post.ownerId, false);
                         }
-                        _toggleFollowUser(post.ownerId, false);
-                      }
-                    },
-                    onSwitchFeed: () => _showFeedModePicker(),
-                    onOpenDiscover: () => context.push(AppRoutes.search),
-                    onCreatePost: _showCreateOptions,
-                    onOpenMessages: () => context.push(AppRoutes.chats),
+                      },
+                      onSwitchFeed: () => _showFeedModePicker(),
+                      onOpenDiscover: () => context.push(AppRoutes.search),
+                      onCreatePost: _showCreateOptions,
+                      onOpenMessages: () => context.push(AppRoutes.chats),
                     ),
                   ),
                 ),
@@ -2668,8 +2706,10 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     }
   }
 
-  Future<String?> _uploadVideo(File videoFile) async {
+  Future<String?> _uploadVideo(File originalFile) async {
     try {
+      // Shrink to 720p on the phone first (Android/iOS).
+      final videoFile = await VideoCompressor.compress(originalFile);
       final user = FirebaseAuth.instance.currentUser;
       final bytes = await videoFile.readAsBytes();
       final path =
@@ -2739,8 +2779,7 @@ class _AutoPlayVideoPreview extends StatefulWidget {
   State<_AutoPlayVideoPreview> createState() => _AutoPlayVideoPreviewState();
 }
 
-class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview>
-    {
+class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
   static final ValueNotifier<bool> _globalMuted = ValueNotifier<bool>(true);
   static _AutoPlayVideoPreviewState? _activePreview;
 
@@ -2764,8 +2803,13 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview>
     _globalMuted.addListener(_handleGlobalMuteChanged);
   }
 
-  void _initVideoPlayer() {
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+  Future<void> _initVideoPlayer() async {
+    // Play from the phone if ReelPrefetcher already downloaded this reel.
+    final cached = await ReelPrefetcher.cachedFile(widget.url);
+    if (!mounted) return;
+    _controller = (cached != null
+        ? VideoPlayerController.file(cached)
+        : VideoPlayerController.networkUrl(Uri.parse(widget.url)))
       ..initialize().then((_) {
         if (mounted) {
           setState(() => _initialized = true);

@@ -18,7 +18,7 @@ service cloud.firestore {
     // Fields only the server (Cloud Functions) may change.
     function postServerFields() {
       return ['likes', 'comments', 'ownerId', 'likeCount', 'commentCount',
-        'engagementMigrated'];
+        'engagementMigrated', 'trendingScore', 'searchKeywords', 'hasVideo'];
     }
 
     // Only the current user's own id is added to or removed from `likes`
@@ -131,7 +131,8 @@ service cloud.firestore {
     // Fields only the server/admin may set: account status, the unique
     // username (claimUsername function) and app access.
     function userServerFields() {
-      return ['isActive', 'username', 'usernameLower', 'apps', 'admin', 'role'];
+      return ['isActive', 'username', 'usernameLower', 'apps', 'admin', 'role',
+        'searchKeywords'];
     }
 
     match /users/{userId} {
@@ -151,8 +152,19 @@ service cloud.firestore {
 
     match /businesses/{businessId} {
       allow read: if true;
-      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow update, delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid
+        && !request.resource.data.keys().hasAny(['searchKeywords']);
+      // searchKeywords are made by the server (functions/feed.js).
+      allow update: if isSignedIn() && resource.data.ownerId == request.auth.uid
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['searchKeywords']);
+      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Phase 3: each user's Following feed, filled by the server only.
+    match /timelines/{userId}/items/{postId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
     }
 
     // Notifications are created only by Cloud Functions (functions/social.js).
@@ -173,7 +185,8 @@ service cloud.firestore {
         && request.resource.data.get('likes', []).size() == 0
         && request.resource.data.get('comments', []).size() == 0
         && request.resource.data.get('likeCount', 0) == 0
-        && request.resource.data.get('commentCount', 0) == 0;
+        && request.resource.data.get('commentCount', 0) == 0
+        && !request.resource.data.keys().hasAny(['trendingScore', 'searchKeywords']);
       // likeCount/commentCount are kept by Cloud Functions only.
       allow update: if isOwnerPostEdit() || isCounterBump();
       allow delete: if isPostOwner();

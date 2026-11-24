@@ -75,12 +75,73 @@ class _SearchPageState extends State<SearchPage> {
 
   Future<void> _ensurePostsLoaded(String query) async {
     if (_filter != SearchFilter.posts && _filter != SearchFilter.all) return;
+    if (query.length >= 2) {
+      _lastPostQuery = query;
+      _keywordSearch(query);
+      return;
+    }
     if (_lastPostQuery == query && _postResults.isNotEmpty) return;
     _lastPostQuery = query;
     _postResults.clear();
     _postLastDoc = null;
     _hasMorePosts = true;
     await _loadMorePosts();
+  }
+
+  // Phase 3: real search. The server stores word beginnings in
+  // `searchKeywords` on users, pages and posts (functions/feed.js), so we can
+  // ask Firestore for matches instead of filtering the first page on the
+  // phone. The list then narrows further as the user keeps typing.
+  String _keywordQueryDone = '';
+  String _keywordQueryRunning = '';
+
+  Future<void> _keywordSearch(String query) async {
+    if (query == _keywordQueryDone || query == _keywordQueryRunning) return;
+    _keywordQueryRunning = query;
+    // Wait for the user to stop typing for a moment.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (!mounted || _controller.text.trim().toLowerCase() != query) {
+      if (_keywordQueryRunning == query) _keywordQueryRunning = '';
+      return;
+    }
+    final firstWord = query.split(RegExp(r'\s+')).first;
+    final key =
+        firstWord.length > 15 ? firstWord.substring(0, 15) : firstWord;
+    final db = FirebaseFirestore.instance;
+    Query<Map<String, dynamic>> byKeyword(String collection) => db
+        .collection(collection)
+        .where('searchKeywords', arrayContains: key)
+        .limit(30);
+    try {
+      final results = await Future.wait([
+        byKeyword('businesses').get(),
+        byKeyword('users').get(),
+        byKeyword('posts').get(),
+      ]);
+      if (!mounted || _controller.text.trim().toLowerCase() != query) return;
+      setState(() {
+        _businessResults
+          ..clear()
+          ..addAll(results[0]
+              .docs
+              .where((d) => d.data()['isActive'] != false)
+              .map((d) => {...d.data(), 'id': d.id}));
+        _userResults
+          ..clear()
+          ..addAll(results[1].docs.map((d) => {...d.data(), 'id': d.id}));
+        _postResults
+          ..clear()
+          ..addAll(results[2].docs.map(Post.fromFirestore));
+        _hasMoreBusinesses = false;
+        _hasMoreUsers = false;
+        _hasMorePosts = false;
+      });
+      _keywordQueryDone = query;
+    } catch (e) {
+      debugPrint('Keyword search failed: $e');
+    } finally {
+      if (_keywordQueryRunning == query) _keywordQueryRunning = '';
+    }
   }
 
   void _onResultsScroll() {
@@ -93,6 +154,13 @@ class _SearchPageState extends State<SearchPage> {
 
   Future<void> _ensureResultsLoaded(String query) async {
     if (_filter == SearchFilter.posts) return;
+    if (query.length >= 2) {
+      _lastResultQuery = query;
+      _lastResultFilter = _filter;
+      _keywordSearch(query);
+      return;
+    }
+    _keywordQueryDone = '';
     if (_lastResultQuery == query &&
         _lastResultFilter == _filter &&
         (_businessResults.isNotEmpty || _userResults.isNotEmpty)) {

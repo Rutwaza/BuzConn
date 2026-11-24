@@ -173,3 +173,16 @@ test("clear chat only saves my clear time; it no longer deletes for both", async
   await assertSucceeds(updateDoc(doc(as(BOB), "chats/alice_bob"), {"clearedAt.bob": serverTimestamp()}));
   await assertFails(deleteDoc(doc(as(BOB), "chats/alice_bob/messages/m1")));
 });
+
+// Phase 3 ---------------------------------------------------------------------
+test("feed scores, keywords and timelines are server-only", async () => {
+  await assertFails(updateDoc(doc(as(ALICE), "posts/p1"), {trendingScore: 999}));
+  await assertFails(setDoc(doc(as(EVE), "posts/p4"), {ownerId: EVE, trendingScore: 5}));
+  await assertFails(updateDoc(doc(as(ALICE), "users/alice"), {searchKeywords: ["spam"]}));
+  await assertFails(setDoc(doc(as(EVE), "timelines/eve/items/p1"), {postId: "p1"}));
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "timelines/eve/items/p1"), {postId: "p1"});
+  });
+  await assertSucceeds(getDoc(doc(as(EVE), "timelines/eve/items/p1")));
+  await assertFails(getDoc(doc(as(BOB), "timelines/eve/items/p1")));
+});

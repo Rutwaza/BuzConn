@@ -125,6 +125,8 @@ class PushNotificationService {
     _windowsNotificationsSub = _firestore
         .collection('notifications')
         .where('toUserId', isEqualTo: user.uid)
+        .orderBy('createdAt', descending: true)
+        .limit(20) // only new ones matter here
         .snapshots()
         .listen((snapshot) {
       if (isInitialSnapshot) {

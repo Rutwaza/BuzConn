@@ -103,6 +103,8 @@ class AnalyticsPage extends StatelessWidget {
                         stream: FirebaseFirestore.instance
                             .collection('notifications')
                             .where('toUserId', isEqualTo: user.uid)
+                            .orderBy('createdAt', descending: true)
+                            .limit(100)
                             .snapshots(),
                         builder: (context, notifSnap) {
                           final notifDocs = notifSnap.data?.docs ?? [];

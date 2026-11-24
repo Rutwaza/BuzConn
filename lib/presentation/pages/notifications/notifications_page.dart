@@ -125,9 +125,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
             : [],
       ),
       body: StreamBuilder<QuerySnapshot>(
+        // Newest 100 only (Phase 3); older ones are rarely opened.
         stream: FirebaseFirestore.instance
             .collection('notifications')
             .where('toUserId', isEqualTo: user.uid)
+            .orderBy('createdAt', descending: true)
+            .limit(100)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
