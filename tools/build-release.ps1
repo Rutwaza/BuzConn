@@ -29,13 +29,15 @@ if ($problems) {
 }
 
 # ---- Version -----------------------------------------------------------------
-$pubspec = Get-Content pubspec.yaml -Raw
+$pubspecPath = Join-Path $RepoRoot 'pubspec.yaml'
+# Read/write as UTF-8 explicitly (Windows PowerShell 5.1 defaults to ANSI).
+$pubspec = [IO.File]::ReadAllText($pubspecPath, [Text.Encoding]::UTF8)
 $m = [regex]::Match($pubspec, '(?m)^version:\s*(\d+\.\d+\.\d+)\+(\d+)')
 if (-not $m.Success) { throw 'pubspec.yaml has no "version: x.y.z+N" line.' }
 $name = $m.Groups[1].Value; $build = [int]$m.Groups[2].Value
 if ($Version) { $name = $Version; $build++ } elseif ($NextBuild) { $build++ }
 $pubspec = $pubspec.Remove($m.Index, $m.Length).Insert($m.Index, "version: $name+$build")
-Set-Content pubspec.yaml $pubspec -NoNewline
+[IO.File]::WriteAllText($pubspecPath, $pubspec, (New-Object Text.UTF8Encoding($false)))
 $tag = "$name+$build"
 Write-Host "== Building Duhuze $tag ==" -ForegroundColor Cyan
 
