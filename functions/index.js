@@ -8,10 +8,11 @@ const {defineSecret, defineString} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const {setGlobalOptions} = require("firebase-functions/v2");
 
-// Cap every function at 10 instances. Without this each function may reserve
+// Small, cheap instances. Without this every function asks for 1 full CPU and
 // up to 100 instances, and together they hit Google's per-region CPU quota
-// ("Quota exceeded for total allowable CPU"). Raise this when traffic grows.
-setGlobalOptions({maxInstances: 10});
+// ("Quota exceeded for total allowable CPU"). "gcf_gen1" gives each instance
+// a fraction of a CPU (like 1st-gen functions). Raise these when traffic grows.
+setGlobalOptions({maxInstances: 10, cpu: "gcf_gen1", memory: "256MiB"});
 
 admin.initializeApp();
 const db = admin.firestore();

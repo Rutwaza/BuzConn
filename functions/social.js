@@ -224,7 +224,7 @@ exports.onCommentLiked = onDocumentUpdated(
 const OWNER_EMAILS = ["nelsonjembe99@gmail.com"];
 
 exports.phase2Maintenance = onSchedule(
-  {region: REGION, schedule: "every 10 minutes", timeoutSeconds: 540},
+  {region: REGION, schedule: "every 10 minutes", timeoutSeconds: 540, memory: "512MiB"},
   async () => {
     const stateRef = db().collection("_maintenance").doc("phase2");
     const state = (await stateRef.get()).data() || {};

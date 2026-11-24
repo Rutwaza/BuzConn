@@ -1,5 +1,6 @@
-# Duhuze - deploy everything: Firestore rules + indexes, Realtime Database rules,
-# and ALL Cloud Functions. First deletes the old transport functions.
+# Duhuze - deploy Firestore rules + indexes, Realtime Database rules and all
+# Cloud Functions. Functions go up in small groups so Google's CPU quota for
+# starting new versions is never exceeded.
 #
 #   cd C:\Users\Nexon\Desktop\PROJECTS\BussFinder\bussinessfinder
 #   powershell -ExecutionPolicy Bypass -File .\deploy.ps1
@@ -15,27 +16,33 @@ Pop-Location
 Write-Host "`n== Firebase sign-in ==" -ForegroundColor Cyan
 firebase login   # says "Already logged in" if you are signed in
 
-# 1) Delete the old transport functions first: they still hold CPU quota.
-$old = @(
-  'approveAgencyApplication','assignAgencyStaffRole','assignRouteToBus',
-  'backfillDiscoveredBuses','backfillRouteSegments','bookSeat','bookSeatV1',
-  'createOrUpdateBus','createOrUpdateRoute','deleteRoute','expireBookings',
-  'getAgencyFinancialReport','getSystemFinanceBreakdown','markBusTurnaround',
-  'openAgencyByPassword','registerCardToUser','rejectAgencyApplication',
-  'releaseBookingSeat','releasePaidSeats','requestAgencyPasswordReset',
-  'requestCardStatusChange','requestDirection','resolveAgencyPasswordReset',
-  'resolveDirectionRequest','sendNotificationPush','setAgencyAccessPassword',
-  'setCardActive','submitAgencyApplication','syncDiscoveredBus','tapCard',
-  'topUpCard','unassignRouteFromBus','updateBankAccounts'
-)
-Write-Host "`n== Deleting old transport functions ==" -ForegroundColor Cyan
-firebase functions:delete @old --region us-central1 --force --project $project
+Write-Host "`n== Rules and indexes ==" -ForegroundColor Cyan
+firebase deploy --only firestore:rules,firestore:indexes,database --project $project
 
-# 2) Deploy everything (functions now capped at 10 instances each).
-Write-Host "`n== Deploying to $project ==" -ForegroundColor Cyan
-firebase deploy --only firestore:rules,firestore:indexes,database,functions --force --project $project
-if ($LASTEXITCODE -ne 0) {
-  Write-Host "`nDeploy failed: copy the red lines above and send them to Claude." -ForegroundColor Red
+$groups = @(
+  @('sendNotificationDocumentPush','sendIncomingCallPush','notifyOnChatMessage','notifyOnFollow'),
+  @('createR2UploadUrl','createR2DownloadUrl','claimUsername','getSystemCounts'),
+  @('onPostLiked','onPostUnliked','onCommentCreated','onCommentDeleted'),
+  @('onCommentLiked','onPostCreatedFeed','onPostEditedFeed','refreshTrendingScores'),
+  @('onUserFollowTimeline','onPageFollowTimeline','userSearchKeywords','pageSearchKeywords'),
+  @('countNotificationCreated','countNotificationUpdated','countNotificationDeleted'),
+  @('setEntityActive','exportEntityData','exportChatBetweenUsers'),
+  @('phase2Maintenance','phase3Maintenance')
+)
+$failed = @()
+$i = 0
+foreach ($g in $groups) {
+  $i++
+  Write-Host "`n== Functions group $i of $($groups.Count): $($g -join ', ') ==" -ForegroundColor Cyan
+  $only = ($g | ForEach-Object { "functions:$_" }) -join ','
+  firebase deploy --only $only --force --project $project
+  if ($LASTEXITCODE -ne 0) { $failed += $g }
+  Start-Sleep -Seconds 20   # let the CPU used by the health checks free up
+}
+
+if ($failed.Count -gt 0) {
+  Write-Host "`nThese functions failed: $($failed -join ', ')" -ForegroundColor Red
+  Write-Host "Run the script again (it is safe), or send the red lines to Claude." -ForegroundColor Red
   exit 1
 }
-Write-Host "`nDone." -ForegroundColor Green
+Write-Host "`nDone - everything deployed." -ForegroundColor Green

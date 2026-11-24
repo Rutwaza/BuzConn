@@ -114,7 +114,7 @@ function timelineItem(postId, post) {
 // ------------------------------------------------------------------ posts --
 
 exports.onPostCreatedFeed = onDocumentCreated(
-  {region: REGION, document: "posts/{postId}", timeoutSeconds: 300},
+  {region: REGION, document: "posts/{postId}", timeoutSeconds: 300, memory: "512MiB"},
   async (event) => {
     const post = event.data?.data();
     if (!post) return;
@@ -303,7 +303,7 @@ exports.countNotificationDeleted = onDocumentDeleted(
 // Runs every 10 minutes until `_maintenance/phase3.done == true`, then does
 // nothing. Delete it after that.
 exports.phase3Maintenance = onSchedule(
-  {region: REGION, schedule: "every 10 minutes", timeoutSeconds: 540},
+  {region: REGION, schedule: "every 10 minutes", timeoutSeconds: 540, memory: "512MiB"},
   async () => {
     const stateRef = db().collection("_maintenance").doc("phase3");
     const state = (await stateRef.get()).data() || {};
