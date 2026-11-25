@@ -26,7 +26,11 @@ function Read-KeyProperties {
 }
 
 function Get-Fingerprints($keytool, $keystore, $alias, $storePass) {
-  $out = & $keytool -list -v -keystore $keystore -alias $alias -storepass $storePass 2>&1 | Out-String
+  # keytool prints harmless warnings (e.g. "JKS uses a proprietary format") on
+  # stderr. Windows PowerShell 5.1 turns those into errors under 'Stop', so
+  # relax it here and read only the normal output.
+  $ErrorActionPreference = 'Continue'
+  $out = & $keytool -list -v -keystore $keystore -alias $alias -storepass $storePass 2>$null | Out-String
   $sha1 = [regex]::Match($out, 'SHA1:\s*([0-9A-F:]+)').Groups[1].Value
   $sha256 = [regex]::Match($out, 'SHA256:\s*([0-9A-F:]+)').Groups[1].Value
   if (-not $sha1) { throw "Could not read fingerprints from $keystore" }
