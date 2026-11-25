@@ -42,6 +42,51 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:540337503772:android:f45e341b13cda875d769d9",
+        "android_client_info": {
+          "package_name": "rw.duhuze.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "540337503772-30fo3q6i53kq0dfb7gkc3vptb977bl3s.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "rw.duhuze.app",
+            "certificate_hash": "68d8c41dd0f5a20d8d9d72d77de2820b47627a7e"
+          }
+        },
+        {
+          "client_id": "540337503772-i60pm1ntphl22nilsv3bao8tah7ik1mu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "rw.duhuze.app",
+            "certificate_hash": "71801c7307c41fbc27161ed33081dfdd81da9550"
+          }
+        },
+        {
+          "client_id": "540337503772-9jnkljb4pclng7rqv555mftk06p8gr8l.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDLTVlu8D53IRz2FIMUh6RkN3XbbQN-xuE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "540337503772-9jnkljb4pclng7rqv555mftk06p8gr8l.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"
