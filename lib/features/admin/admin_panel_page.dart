@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/colors.dart';
+import '../../core/widgets/desktop_width.dart';
 import 'admin_service.dart';
 
 /// The Admin panel: Reports, Users, Team. Only shown to staff (Settings and
@@ -53,9 +54,9 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
           ]),
         ),
         body: TabBarView(children: [
-          const _ReportsTab(),
-          const _UsersTab(),
-          if (isAdmin) const _TeamTab(),
+          const DesktopWidth(maxWidth: 960, child: _ReportsTab()),
+          const DesktopWidth(maxWidth: 960, child: _UsersTab()),
+          if (isAdmin) const DesktopWidth(maxWidth: 960, child: _TeamTab()),
         ]),
       ),
     );

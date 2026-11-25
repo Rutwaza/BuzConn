@@ -18,7 +18,14 @@ class StatusComposerPage extends StatefulWidget {
 }
 
 class _StatusComposerPageState extends State<StatusComposerPage> {
-  static const _colors = [0xFF3A6EA5, 0xFF0E1A2B, 0xFF14B8A6, 0xFFE5484D, 0xFF7B61FF, 0xFFE8B931];
+  static const _colors = [
+    0xFF3A6EA5,
+    0xFF0E1A2B,
+    0xFF14B8A6,
+    0xFFE5484D,
+    0xFF7B61FF,
+    0xFFE8B931
+  ];
   final _text = TextEditingController();
   Uint8List? _image;
   File? _video;
@@ -35,19 +42,22 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
   Future<void> _pick(ImageSource source, {required bool video}) async {
     final picker = ImagePicker();
     if (video) {
-      final f = await picker.pickVideo(source: source, maxDuration: const Duration(seconds: 60));
-      if (f != null) setState(() {
-  _video = File(f.path);
-  _image = null;
-});
+      final f = await picker.pickVideo(
+          source: source, maxDuration: const Duration(seconds: 60));
+      if (f != null)
+        setState(() {
+          _video = File(f.path);
+          _image = null;
+        });
     } else {
-      final f = await picker.pickImage(source: source, maxWidth: 1440, imageQuality: 80);
+      final f = await picker.pickImage(
+          source: source, maxWidth: 1440, imageQuality: 80);
       if (f != null) {
         final bytes = await f.readAsBytes();
         setState(() {
-  _image = bytes;
-  _video = null;
-});
+          _image = bytes;
+          _video = null;
+        });
       }
     }
   }
@@ -67,7 +77,8 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
       );
       nav.pop(true);
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('${tr('Upload failed. Try again.')} $e')));
+      messenger.showSnackBar(
+          SnackBar(content: Text('${tr('Upload failed. Try again.')} $e')));
       if (mounted) setState(() => _posting = false);
     }
   }
@@ -87,7 +98,8 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
               tooltip: tr('Colour'),
               icon: const Icon(Icons.palette_rounded),
               onPressed: () => setState(() {
-                _color = _colors[(_colors.indexOf(_color) + 1) % _colors.length];
+                _color =
+                    _colors[(_colors.indexOf(_color) + 1) % _colors.length];
               }),
             ),
         ],
@@ -100,9 +112,11 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
                   ? Image.memory(_image!, fit: BoxFit.contain)
                   : _video != null
                       ? Column(mainAxisSize: MainAxisSize.min, children: [
-                          const Icon(Icons.movie_rounded, color: Colors.white, size: 64),
+                          const Icon(Icons.movie_rounded,
+                              color: Colors.white, size: 64),
                           const SizedBox(height: 8),
-                          Text(tr('Video ready'), style: const TextStyle(color: Colors.white)),
+                          Text(tr('Video ready'),
+                              style: const TextStyle(color: Colors.white)),
                         ])
                       : Padding(
                           padding: const EdgeInsets.all(28),
@@ -112,10 +126,14 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
                             maxLines: null,
                             maxLength: 300,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w700),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 28,
+                                fontWeight: FontWeight.w700),
                             decoration: InputDecoration(
                               border: InputBorder.none,
-                              counterStyle: const TextStyle(color: Colors.white70),
+                              counterStyle:
+                                  const TextStyle(color: Colors.white70),
                               hintText: tr('Type a status'),
                               hintStyle: const TextStyle(color: Colors.white60),
                             ),
@@ -137,36 +155,51 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
                 ),
               ),
             ),
-          if (_posting) LinearProgressIndicator(value: _progress > 0 ? _progress : null),
+          if (_posting)
+            LinearProgressIndicator(value: _progress > 0 ? _progress : null),
           SafeArea(
             top: false,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 12, 10),
               child: Row(
                 children: [
-                  IconButton(
-                    tooltip: tr('Take photo'),
-                    onPressed: _posting ? null : () => _pick(ImageSource.camera, video: false),
-                    icon: const Icon(Icons.photo_camera_rounded, color: Colors.white),
-                  ),
+                  // Windows has no camera in image_picker: gallery only.
+                  if (!Platform.isWindows)
+                    IconButton(
+                      tooltip: tr('Take photo'),
+                      onPressed: _posting
+                          ? null
+                          : () => _pick(ImageSource.camera, video: false),
+                      icon: const Icon(Icons.photo_camera_rounded,
+                          color: Colors.white),
+                    ),
                   IconButton(
                     tooltip: tr('Photo'),
-                    onPressed: _posting ? null : () => _pick(ImageSource.gallery, video: false),
-                    icon: const Icon(Icons.photo_library_rounded, color: Colors.white),
+                    onPressed: _posting
+                        ? null
+                        : () => _pick(ImageSource.gallery, video: false),
+                    icon: const Icon(Icons.photo_library_rounded,
+                        color: Colors.white),
                   ),
                   IconButton(
                     tooltip: tr('Video'),
-                    onPressed: _posting ? null : () => _pick(ImageSource.gallery, video: true),
-                    icon: const Icon(Icons.videocam_rounded, color: Colors.white),
+                    onPressed: _posting
+                        ? null
+                        : () => _pick(ImageSource.gallery, video: true),
+                    icon:
+                        const Icon(Icons.videocam_rounded, color: Colors.white),
                   ),
                   if (!isText)
                     IconButton(
                       tooltip: tr('Text'),
-                      onPressed: _posting ? null : () => setState(() {
-  _image = null;
-  _video = null;
-}),
-                      icon: const Icon(Icons.text_fields_rounded, color: Colors.white),
+                      onPressed: _posting
+                          ? null
+                          : () => setState(() {
+                                _image = null;
+                                _video = null;
+                              }),
+                      icon: const Icon(Icons.text_fields_rounded,
+                          color: Colors.white),
                     ),
                   const Spacer(),
                   FloatingActionButton(

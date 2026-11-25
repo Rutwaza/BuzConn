@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:flutter/services.dart';
@@ -52,6 +54,7 @@ class _PaySheetState extends State<PaySheet> with WidgetsBindingObserver {
   bool _dialed = false;
   bool _askResult = false;
   bool _busy = false;
+  final bool _isDesktop = !(Platform.isAndroid || Platform.isIOS);
 
   @override
   void initState() {
@@ -153,7 +156,49 @@ class _PaySheetState extends State<PaySheet> with WidgetsBindingObserver {
                     style: const TextStyle(fontSize: 12, color: AppColors.grey),
                   ),
                 const SizedBox(height: 16),
-                if (!_askResult) ...[
+                if (!_askResult && _isDesktop) ...[
+                  // A computer cannot dial USSD: pay from your MTN phone.
+                  Text(tr('Pay from your phone'),
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                  const SizedBox(height: 8),
+                  Text('1. ${tr('On your MTN phone, dial:')}'),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppColors.primary),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(children: [
+                      Expanded(
+                        child: SelectableText(ussd,
+                            style: const TextStyle(
+                                fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: 1)),
+                      ),
+                      IconButton(
+                        tooltip: tr('Copy'),
+                        icon: const Icon(Icons.copy_rounded),
+                        onPressed: () => Clipboard.setData(ClipboardData(text: ussd)),
+                      ),
+                    ]),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('2. ${tr('Check the name MTN shows, then enter your MoMo PIN.')}'),
+                  Text('3. ${tr('Come back here when MTN confirms.')}'),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    height: 50,
+                    child: FilledButton.icon(
+                      onPressed: () => setState(() => _askResult = true),
+                      icon: const Icon(Icons.check_rounded),
+                      label: Text(tr('I have dialled it')),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _busy ? null : () => _answer(() => _repo.buyerCancelled(o.id)),
+                    child: Text(tr('Cancel order')),
+                  ),
+                ] else if (!_askResult) ...[
                   SizedBox(
                     height: 52,
                     child: FilledButton.icon(

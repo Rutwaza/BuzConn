@@ -419,22 +419,36 @@ Quick development APK (debug-signed, for your own phone only):
 flutter build apk --release
 ```
 
-### Windows release and installer
+### Windows (desktop) app
 
-Build the Windows app:
+Same Firebase project, same accounts and data as Android. Run it while developing:
 
 ```powershell
-flutter build windows --release --dart-define-from-file=windows_google_oauth.json
+flutter run -d windows --dart-define-from-file=windows_google_oauth.json
 ```
 
-Build the installer with Inno Setup 6 installed:
+Make the installer for other PCs (needs **Inno Setup 6**: https://jrsoftware.org/isdl.php):
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\installer\build_installer.ps1
 ```
 
-The installer script runs a Windows release build and produces `build/windows/installer-output/Duhuze-Setup-<version>-x64.exe`. If `windows_google_oauth.json` exists, it supplies the Windows OAuth Dart defines to that build. Update the version in `windows/installer/Duhuze.iss` when making a new installer. This is a Windows x64 setup executable containing the app and runtime files; it installs multiple files on the friend's PC. Sign the app and installer with a trusted code-signing certificate before broad distribution to reduce SmartScreen warnings. Windows OAuth review still applies.
+- Output: `build\windows\installer-output\Duhuze-Setup-<version>-x64.exe`. The version comes from `pubspec.yaml`, the same as Android (`tools\build-release.ps1 -NextBuild` raises it).
+- `windows_google_oauth.json` (not in Git) holds the Windows Google sign-in client; the script uses it automatically.
+- Publisher: **DUHUZE TECHS** (`windows/installer/Duhuze.iss`, `windows/runner/Runner.rc`). The hidden notification id `BuzConn.Duhuze` stays as it is: changing it would break toasts for people who already installed.
+- Before giving the installer to many people, sign `Duhuze.exe` and the setup with a code-signing certificate. Unsigned apps get a SmartScreen "unknown publisher" warning.
 
+**What works differently on Windows** (kept on purpose):
+
+| Feature | Windows | Why |
+| --- | --- | --- |
+| Online / typing | Works, through the Realtime Database REST API (`lib/features/chat/data/rtdb_rest.dart`). Desktop sends "online" every minute; a desktop quiet for 3 minutes shows offline; closing the window shows offline at once. | The `firebase_database` plugin has no Windows version. |
+| Push notifications | Windows toasts while the app is open (it listens to `notifications`). Nothing arrives when Duhuze is closed. | Firebase Cloud Messaging does not support Windows. |
+| Camera (take photo / record video) | Hidden. Pick files from the PC instead. | `image_picker` has no camera on Windows. |
+| Video | Plays with `media_kit` (feed, reels, status). Uploaded as-is, without compression. | `video_player`/`video_compress` have no Windows version. |
+| MoMo Pay | "Pay from your phone": shows the USSD code to dial on your MTN phone, then asks "Did the payment go through?" | A PC cannot dial USSD. |
+| Live location | Works while the app is open, using Windows Location (Settings → Privacy → Location must be on). Accuracy is Wi-Fi based. | No GPS on most PCs; no background mode. |
+| Status viewer | Arrow keys = next/back, Space = pause, Esc = close. | Desktop keyboard. |
 
 ## Troubleshooting notes
 

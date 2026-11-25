@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/widgets/desktop_width.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:intl/intl.dart';
 
@@ -55,12 +56,12 @@ class _OrderList extends StatelessWidget {
                 style: const TextStyle(color: AppColors.grey)),
           );
         }
-        return ListView.separated(
+        return DesktopWidth(child: ListView.separated(
           padding: const EdgeInsets.all(12),
           itemCount: orders.length,
           separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (_, i) => _OrderCard(order: orders[i], asShop: asShop),
-        );
+        ));
       },
     );
   }

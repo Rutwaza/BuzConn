@@ -479,4 +479,10 @@ const Map<String, String> rwStrings = {
   'Community rules': 'Amategeko y\'abakoresha',
   'How to report harm to children': 'Uko wamenyesha ihohoterwa ry\'abana',
   'This account is suspended. Contact Duhuze support.': 'Iyi konti yahagaritswe. Vugana na Duhuze.',
+  'Pay from your phone': 'Ishyura ukoresheje telefoni yawe',
+  'On your MTN phone, dial:': 'Kuri telefoni yawe ya MTN, kanda:',
+  'Check the name MTN shows, then enter your MoMo PIN.': 'Reba izina MTN ikwereka, hanyuma wandike PIN ya MoMo.',
+  'Come back here when MTN confirms.': 'Garuka hano MTN imaze kwemeza.',
+  'I have dialled it': 'Narakanze',
+  'Copy': 'Koporora',
 };

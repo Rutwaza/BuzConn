@@ -2396,7 +2396,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                         label: Text(tr('Pick image')),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    // Windows has no camera in image_picker: gallery only.
+                    if (!Platform.isWindows) ...[
+                      const SizedBox(width: 8),
                     Expanded(
                       child: TextButton.icon(
                         onPressed: pickingMedia
@@ -2419,6 +2421,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                         label: Text(tr('Take photo')),
                       ),
                     ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -2446,7 +2449,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                         label: Text(tr('Pick video')),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    // Windows has no camera in image_picker: gallery only.
+                    if (!Platform.isWindows) ...[
+                      const SizedBox(width: 8),
                     Expanded(
                       child: TextButton.icon(
                         onPressed: pickingMedia
@@ -2469,6 +2474,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                         label: Text(tr('Record video')),
                       ),
                     ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 12),

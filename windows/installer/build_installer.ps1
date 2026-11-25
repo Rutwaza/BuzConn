@@ -10,6 +10,12 @@ $payloadDir = Join-Path $repoRoot 'build\windows\x64\installer-payload'
 $scriptPath = Join-Path $PSScriptRoot 'Duhuze.iss'
 $oauthConfig = Join-Path $repoRoot 'windows_google_oauth.json'
 
+# Same version as the Android app (pubspec.yaml "version: 1.2.3+N").
+$pubspec = [IO.File]::ReadAllText((Join-Path $repoRoot 'pubspec.yaml'))
+$appVersion = [regex]::Match($pubspec, '(?m)^version:\s*(\d+\.\d+\.\d+)').Groups[1].Value
+if (-not $appVersion) { throw 'pubspec.yaml has no version line.' }
+Write-Output "Building Duhuze for Windows $appVersion"
+
 Push-Location $repoRoot
 try {
     if (-not $SkipBuild) {
@@ -78,12 +84,12 @@ try {
         throw 'Inno Setup 6 is required. Install it, or pass its ISCC.exe path with -InnoSetupCompiler.'
     }
 
-    & $InnoSetupCompiler $scriptPath
+    & $InnoSetupCompiler "/DAppVersion=$appVersion" $scriptPath
     if ($LASTEXITCODE -ne 0) {
         throw "Inno Setup compilation failed with exit code $LASTEXITCODE."
     }
 
-    $installer = Join-Path $repoRoot 'build\windows\installer-output\Duhuze-Setup-1.0.0-x64.exe'
+    $installer = Join-Path $repoRoot "build\windows\installer-output\Duhuze-Setup-$appVersion-x64.exe"
     if (-not (Test-Path $installer)) {
         throw "Installer compilation reported success but did not create $installer."
     }

@@ -1,6 +1,9 @@
 #define AppName "Duhuze"
-#define AppVersion "1.0.0"
-#define AppPublisher "BuzConn"
+; AppVersion comes from pubspec.yaml (build_installer.ps1 passes /DAppVersion=...).
+#ifndef AppVersion
+  #define AppVersion "1.0.0"
+#endif
+#define AppPublisher "DUHUZE TECHS"
 #define AppId "{{D926593C-9EBD-4E8B-A6DD-4905854EE387}"
 #define PayloadDir "..\..\build\windows\x64\installer-payload"
 

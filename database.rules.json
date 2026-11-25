@@ -12,6 +12,9 @@
         "lastChanged": {
           ".validate": "newData.isNumber()"
         },
+        "client": {
+          ".validate": "newData.isString() && (newData.val() === 'desktop' || newData.val() === 'mobile')"
+        },
         "$other": {
           ".validate": false
         }

@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:businessfinder/core/widgets/desktop_width.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -134,7 +135,7 @@ class _CatalogPageState extends State<CatalogPage> {
                       ),
               ),
               if (!widget.isOwner && total > 0)
-                SafeArea(
+                DesktopWidth(maxWidth: 520, child: SafeArea(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                     child: SizedBox(
@@ -154,7 +155,7 @@ class _CatalogPageState extends State<CatalogPage> {
                       ),
                     ),
                   ),
-                ),
+                )),
             ],
           );
         },
