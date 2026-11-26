@@ -187,7 +187,7 @@ class FavoritesPage extends StatelessWidget {
             const SizedBox(
               width: 24,
               height: 24,
-              child: const CircularProgressIndicator(strokeWidth: 2),
+              child: CircularProgressIndicator(strokeWidth: 2),
             ),
             const SizedBox(width: 12),
             Expanded(child: Text(tr('Loading...'))),

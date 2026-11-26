@@ -485,20 +485,20 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             const SizedBox(height: 24),
             Row(
               children: [
-                const Expanded(child: const Divider(color: fieldBorder)),
+                const Expanded(child: Divider(color: fieldBorder)),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   child: Text(
                     tr('OR CONTINUE WITH'),
                     style: const TextStyle(
-                      color: const Color(0xFF8995A7),
+                      color: Color(0xFF8995A7),
                       fontSize: 10,
                       letterSpacing: 1,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
-                const Expanded(child: const Divider(color: fieldBorder)),
+                const Expanded(child: Divider(color: fieldBorder)),
               ],
             ),
             const SizedBox(height: 18),
@@ -572,11 +572,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           fontSize: 32,
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
-                          shadows: const [
+                          shadows: [
                             Shadow(
                               color: Colors.black45,
                               blurRadius: 10,
-                              offset: const Offset(0, 2),
+                              offset: Offset(0, 2),
                             ),
                           ],
                         ),
@@ -698,7 +698,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           Row(
                             children: [
                               const Expanded(
-                                child: const Divider(
+                                child: Divider(
                                   color: AppColors.lightGrey,
                                 ),
                               ),
@@ -712,7 +712,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 ),
                               ),
                               const Expanded(
-                                child: const Divider(
+                                child: Divider(
                                   color: AppColors.lightGrey,
                                 ),
                               ),

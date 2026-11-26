@@ -298,8 +298,9 @@ class _StatusViewerPageState extends State<StatusViewerPage>
           onLongPressStart: (_) => _pause(true),
           onLongPressEnd: (_) => _pause(false),
           onVerticalDragEnd: (d) {
-            if ((d.primaryVelocity ?? 0) > 300)
+            if ((d.primaryVelocity ?? 0) > 300) {
               Navigator.of(context).maybePop();
+            }
           },
           child: Stack(
             fit: StackFit.expand,

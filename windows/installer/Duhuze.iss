@@ -35,8 +35,8 @@ Source: "{#PayloadDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\Duhuze"; Filename: "{app}\Duhuze.exe"; AppUserModelID: "BuzConn.Duhuze"
-Name: "{autodesktop}\Duhuze"; Filename: "{app}\Duhuze.exe"; Tasks: desktopicon; AppUserModelID: "BuzConn.Duhuze"
+Name: "{autoprograms}\Duhuze"; Filename: "{app}\Duhuze.exe"; AppUserModelID: "DuhuzeTechs.Duhuze"
+Name: "{autodesktop}\Duhuze"; Filename: "{app}\Duhuze.exe"; Tasks: desktopicon; AppUserModelID: "DuhuzeTechs.Duhuze"
 
 [Run]
 Filename: "{app}\Duhuze.exe"; Description: "Launch Duhuze"; Flags: nowait postinstall skipifsilent

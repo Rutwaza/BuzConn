@@ -110,7 +110,7 @@ class WindowsAuthLayout extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(Icons.auto_awesome_rounded,
-                    size: 15, color: const Color(0xFF77C6FF)),
+                    size: 15, color: Color(0xFF77C6FF)),
                 const SizedBox(width: 8),
                 Text(
                   tr('BUSINESS, BUILT AROUND PEOPLE'),
@@ -139,7 +139,7 @@ class WindowsAuthLayout extends StatelessWidget {
           Text(
             tr('Discover local businesses, meet new customers, and keep every conversation moving in one place.'),
             style: const TextStyle(
-              color: const Color(0xFFB5C3D7),
+              color: Color(0xFFB5C3D7),
               fontSize: 16,
               height: 1.65,
             ),

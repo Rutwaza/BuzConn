@@ -44,11 +44,12 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
     if (video) {
       final f = await picker.pickVideo(
           source: source, maxDuration: const Duration(seconds: 60));
-      if (f != null)
+      if (f != null) {
         setState(() {
           _video = File(f.path);
           _image = null;
         });
+      }
     } else {
       final f = await picker.pickImage(
           source: source, maxWidth: 1440, imageQuality: 80);

@@ -31,10 +31,12 @@ class _StatusBarState extends State<StatusBar> {
   Future<void> _load() async {
     try {
       final g = await _repo.loadGroups();
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
   _groups = g;
   _loaded = true;
 });
+      }
     } catch (_) {
       if (mounted) setState(() => _loaded = true);
     }

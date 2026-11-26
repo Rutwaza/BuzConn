@@ -372,20 +372,20 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
             const SizedBox(height: 22),
             Row(
               children: [
-                const Expanded(child: const Divider(color: fieldBorder)),
+                const Expanded(child: Divider(color: fieldBorder)),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   child: Text(
                     tr('OR SIGN UP WITH'),
                     style: const TextStyle(
-                      color: const Color(0xFF8995A7),
+                      color: Color(0xFF8995A7),
                       fontSize: 10,
                       letterSpacing: 1,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
-                const Expanded(child: const Divider(color: fieldBorder)),
+                const Expanded(child: Divider(color: fieldBorder)),
               ],
             ),
             const SizedBox(height: 16),
@@ -606,7 +606,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     Row(
                       children: [
                         const Expanded(
-                          child: const Divider(color: AppColors.lightGrey),
+                          child: Divider(color: AppColors.lightGrey),
                         ),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -616,7 +616,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                           ),
                         ),
                         const Expanded(
-                          child: const Divider(color: AppColors.lightGrey),
+                          child: Divider(color: AppColors.lightGrey),
                         ),
                       ],
                     ),

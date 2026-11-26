@@ -435,7 +435,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\installer\build_in
 
 - Output: `build\windows\installer-output\Duhuze-Setup-<version>-x64.exe`. The version comes from `pubspec.yaml`, the same as Android (`tools\build-release.ps1 -NextBuild` raises it).
 - `windows_google_oauth.json` (not in Git) holds the Windows Google sign-in client; the script uses it automatically.
-- Publisher: **DUHUZE TECHS** (`windows/installer/Duhuze.iss`, `windows/runner/Runner.rc`). The hidden notification id `BuzConn.Duhuze` stays as it is: changing it would break toasts for people who already installed.
+- Publisher: **DUHUZE TECHS** (`windows/installer/Duhuze.iss`, `windows/runner/Runner.rc`). The Windows notification id is `DuhuzeTechs.Duhuze` (app and installer shortcuts must match). It must stay **longer than 16 characters**: win_toast 0.4.0 crashes on shorter ids.
 - Before giving the installer to many people, sign `Duhuze.exe` and the setup with a code-signing certificate. Unsigned apps get a SmartScreen "unknown publisher" warning.
 
 **What works differently on Windows** (kept on purpose):

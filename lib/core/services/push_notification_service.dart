@@ -37,7 +37,10 @@ class PushNotificationService {
     if (Platform.isWindows) {
       try {
         _windowsToastReady = await WinToast.instance().initialize(
-          aumId: 'BuzConn.Duhuze',
+          // Must be MORE than 16 characters: win_toast 0.4.0 reads 16
+          // characters of a shorter id (out of range -> crash in debug builds).
+          // Same id as the installer shortcuts (windows/installer/Duhuze.iss).
+          aumId: 'DuhuzeTechs.Duhuze',
           displayName: 'Duhuze',
           iconPath: '',
           clsid: 'D926593C-9EBD-4E8B-A6DD-4905854EE387',
