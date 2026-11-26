@@ -32,6 +32,8 @@ dependencies:
   crypto: ^3.0.6
   image_picker: ^1.0.4
   cached_network_image: ^3.3.0
+  # Resize photos before upload on Windows (lib/core/services/image_shrinker.dart)
+  image: ^4.2.0
   flutter_cache_manager: ^3.4.1
   path_provider: ^2.1.1
   url_launcher: ^6.2.5

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/services/image_shrinker.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:businessfinder/core/services/video_compressor.dart';
 import 'package:flutter/services.dart';
@@ -262,7 +263,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
   Future<String?> _uploadImage(File imageFile) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
-      final bytes = await imageFile.readAsBytes();
+      final bytes =
+          await ImageShrinker.shrink(await imageFile.readAsBytes());
       final path =
           '${user?.uid ?? 'anon'}/${DateTime.now().millisecondsSinceEpoch}.jpg';
       return await R2StorageService.instance.uploadImage(
@@ -1326,7 +1328,9 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                     children: [
                       if (item.type == PostMediaType.image)
                         Image.file(item.file,
-                            fit: BoxFit.cover, width: double.infinity)
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            cacheWidth: 1200)
                       else if (selectedCover != null)
                         Image.memory(selectedCover,
                             fit: BoxFit.cover, width: double.infinity)
@@ -1502,7 +1506,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
                                 child: item.type == PostMediaType.image
-                                    ? Image.file(item.file, fit: BoxFit.cover)
+                                    ? Image.file(item.file,
+                                        fit: BoxFit.cover, cacheWidth: 320)
                                     : Container(
                                         decoration: const BoxDecoration(
                                           gradient: LinearGradient(
@@ -1690,7 +1695,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                 height: 220,
                 width: double.infinity,
                 child: _selectedMedia.first.type == PostMediaType.image
-                    ? Image.file(_selectedMedia.first.file, fit: BoxFit.cover)
+                    ? Image.file(_selectedMedia.first.file,
+                        fit: BoxFit.cover, cacheWidth: 1000)
                     : (_selectedVideoCover[_selectedMedia.first.file.path] !=
                                 null &&
                             _selectedVideoCover[_selectedMedia.first.file.path]!

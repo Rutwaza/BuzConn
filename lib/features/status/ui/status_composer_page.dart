@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/i18n/tr.dart';
+import '../../../core/services/image_shrinker.dart';
 import '../../../core/theme/colors.dart';
 import '../data/status_repository.dart';
 
@@ -39,26 +40,46 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
     super.dispose();
   }
 
+  /// Biggest video a status may have when it can't be compressed first
+  /// (Windows). Phones compress to 720p before upload.
+  static const _maxDesktopVideoBytes = 60 * 1024 * 1024;
+  bool _preparing = false;
+
   Future<void> _pick(ImageSource source, {required bool video}) async {
+    if (_preparing) return;
     final picker = ImagePicker();
+    final messenger = ScaffoldMessenger.of(context);
     if (video) {
       final f = await picker.pickVideo(
           source: source, maxDuration: const Duration(seconds: 60));
-      if (f != null) {
-        setState(() {
-          _video = File(f.path);
-          _image = null;
-        });
+      if (f == null || !mounted) return;
+      final file = File(f.path);
+      if (Platform.isWindows && await file.length() > _maxDesktopVideoBytes) {
+        messenger.showSnackBar(SnackBar(
+            content: Text(tr('This video is too big. Pick one under 60 MB.'))));
+        return;
       }
+      setState(() {
+        _video = file;
+        _image = null;
+      });
     } else {
       final f = await picker.pickImage(
           source: source, maxWidth: 1440, imageQuality: 80);
-      if (f != null) {
-        final bytes = await f.readAsBytes();
+      if (f == null || !mounted) return;
+      setState(() => _preparing = true);
+      try {
+        // Windows ignores maxWidth/imageQuality above, so the photo can be
+        // huge: shrink it in the background (the window stays responsive).
+        final raw = await f.readAsBytes();
+        final bytes = await ImageShrinker.shrink(raw, maxSide: 1440);
+        if (!mounted) return;
         setState(() {
           _image = bytes;
           _video = null;
         });
+      } finally {
+        if (mounted) setState(() => _preparing = false);
       }
     }
   }
@@ -109,37 +130,49 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
         children: [
           Expanded(
             child: Center(
-              child: _image != null
-                  ? Image.memory(_image!, fit: BoxFit.contain)
-                  : _video != null
-                      ? Column(mainAxisSize: MainAxisSize.min, children: [
-                          const Icon(Icons.movie_rounded,
-                              color: Colors.white, size: 64),
-                          const SizedBox(height: 8),
-                          Text(tr('Video ready'),
-                              style: const TextStyle(color: Colors.white)),
-                        ])
-                      : Padding(
-                          padding: const EdgeInsets.all(28),
-                          child: TextField(
-                            controller: _text,
-                            autofocus: true,
-                            maxLines: null,
-                            maxLength: 300,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 28,
-                                fontWeight: FontWeight.w700),
-                            decoration: InputDecoration(
-                              border: InputBorder.none,
-                              counterStyle:
-                                  const TextStyle(color: Colors.white70),
-                              hintText: tr('Type a status'),
-                              hintStyle: const TextStyle(color: Colors.white60),
+              child: _preparing
+                  ? Column(mainAxisSize: MainAxisSize.min, children: [
+                      const CircularProgressIndicator(color: Colors.white),
+                      const SizedBox(height: 12),
+                      Text(tr('Preparing photo…'),
+                          style: const TextStyle(color: Colors.white70)),
+                    ])
+                  : _image != null
+                      ? Image.memory(_image!,
+                          fit: BoxFit.contain,
+                          cacheHeight: (MediaQuery.sizeOf(context).height *
+                                  MediaQuery.devicePixelRatioOf(context))
+                              .round())
+                      : _video != null
+                          ? Column(mainAxisSize: MainAxisSize.min, children: [
+                              const Icon(Icons.movie_rounded,
+                                  color: Colors.white, size: 64),
+                              const SizedBox(height: 8),
+                              Text(tr('Video ready'),
+                                  style: const TextStyle(color: Colors.white)),
+                            ])
+                          : Padding(
+                              padding: const EdgeInsets.all(28),
+                              child: TextField(
+                                controller: _text,
+                                autofocus: true,
+                                maxLines: null,
+                                maxLength: 300,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w700),
+                                decoration: InputDecoration(
+                                  border: InputBorder.none,
+                                  counterStyle:
+                                      const TextStyle(color: Colors.white70),
+                                  hintText: tr('Type a status'),
+                                  hintStyle:
+                                      const TextStyle(color: Colors.white60),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
             ),
           ),
           if (!isText)
@@ -205,7 +238,7 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
                   const Spacer(),
                   FloatingActionButton(
                     backgroundColor: AppColors.secondary,
-                    onPressed: _posting ? null : _post,
+                    onPressed: _posting || _preparing ? null : _post,
                     child: const Icon(Icons.send_rounded, color: Colors.white),
                   ),
                 ],

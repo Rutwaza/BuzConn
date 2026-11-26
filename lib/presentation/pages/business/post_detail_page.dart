@@ -1144,7 +1144,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
           ];
           final threadedComments = _buildCommentThreads(mergedComments);
           final hasVideo = media.any((item) => item.isVideo);
-          final isDesktopWide = MediaQuery.of(context).size.width >= 1180;
+          final screen = MediaQuery.sizeOf(context);
+          // Windows: post on the left, comments on the right from 900 px.
+          final isDesktopWide =
+              screen.width >= (Platform.isWindows ? 900 : 1180);
+          final commentsWidth = screen.width >= 1180 ? 420.0 : 340.0;
+          final mediaHeight = isDesktopWide
+              ? (screen.height * 0.62).clamp(260.0, 640.0)
+              : 430.0;
           final onSurfaceMuted =
               Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55);
 
@@ -1449,7 +1456,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: SizedBox(
-                      height: isDesktopWide ? 500 : 430,
+                      height: mediaHeight,
                       child: PageView.builder(
                         controller: _controller,
                         itemCount: media.length,
@@ -1460,9 +1467,16 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         itemBuilder: (context, index) {
                           final item = media[index];
                           if (!item.isVideo) {
-                            return CachedNetworkImage(
-                              imageUrl: item.url,
-                              fit: BoxFit.cover,
+                            // Whole photo, never cropped.
+                            return ColoredBox(
+                              color: Colors.black,
+                              child: CachedNetworkImage(
+                                imageUrl: item.url,
+                                fit: BoxFit.contain,
+                                memCacheHeight: (mediaHeight *
+                                        MediaQuery.devicePixelRatioOf(context))
+                                    .round(),
+                              ),
                             );
                           }
                           return _buildVideoPage(item, index);
@@ -1611,7 +1625,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                   ),
                   const SizedBox(width: 18),
                   SizedBox(
-                    width: 420,
+                    width: commentsWidth,
                     child: Container(
                       decoration: BoxDecoration(
                         color: cardColor,

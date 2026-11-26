@@ -230,6 +230,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       _lastDoc = null;
       _followingFallbackLastDoc = null;
       _timelineLastDoc = null;
+      _olderPostsPhase = false;
+      _olderLastDoc = null;
       _hasMore = true;
       _didJumpToPost = false;
       _inlineSuggestionsDismissed = false;
@@ -338,17 +340,25 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 .where('hasVideo', isEqualTo: true)
                 .orderBy('createdAt', descending: true)
             : posts.orderBy('trendingScore', descending: true);
-        query = query.limit(_pageSize);
-        if (_lastDoc != null) {
-          query = query.startAfterDocument(_lastDoc!);
-        }
-        final snap = await query.get();
-        if (snap.docs.isNotEmpty) {
-          _lastDoc = snap.docs.last;
-          _appendPosts(snap.docs);
-        }
-        if (snap.docs.length < _pageSize) {
-          _hasMore = false;
+        if (!_olderPostsPhase) {
+          query = query.limit(_pageSize);
+          if (_lastDoc != null) {
+            query = query.startAfterDocument(_lastDoc!);
+          }
+          final snap = await query.get();
+          if (snap.docs.isNotEmpty) {
+            _lastDoc = snap.docs.last;
+            _appendPosts(snap.docs);
+          }
+          if (snap.docs.length < _pageSize) {
+            // Scored posts are finished. Older posts (made before the
+            // server started adding trendingScore / hasVideo) are left out
+            // by that query, so keep going through all posts by date.
+            _olderPostsPhase = true;
+            if (snap.docs.isEmpty) await _loadOlderPosts();
+          }
+        } else {
+          await _loadOlderPosts();
         }
       }
     } catch (e) {
@@ -368,6 +378,49 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   }
 
   DocumentSnapshot? _timelineLastDoc;
+
+  /// After the scored query runs out we read every post by date and keep
+  /// only the ones the first query could not see.
+  bool _olderPostsPhase = false;
+  DocumentSnapshot? _olderLastDoc;
+
+  Future<void> _loadOlderPosts() async {
+    final reels = _feedMode == 'reels';
+    for (var attempt = 0; attempt < 4; attempt++) {
+      Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+          .collection('posts')
+          .orderBy('createdAt', descending: true)
+          .limit(_pageSize * 2);
+      if (_olderLastDoc != null) {
+        query = query.startAfterDocument(_olderLastDoc!);
+      }
+      final snap = await query.get();
+      if (snap.docs.isEmpty) {
+        _hasMore = false;
+        return;
+      }
+      _olderLastDoc = snap.docs.last;
+      final missing = snap.docs.where((doc) {
+        final data = doc.data();
+        if (reels) {
+          // Only old videos without the hasVideo flag.
+          if (data.containsKey('hasVideo')) return false;
+          try {
+            return Post.fromFirestore(doc).media.any((m) => m.isVideo);
+          } catch (_) {
+            return false;
+          }
+        }
+        return !data.containsKey('trendingScore');
+      }).toList();
+      if (snap.docs.length < _pageSize * 2) _hasMore = false;
+      if (missing.isNotEmpty) {
+        _appendPosts(missing);
+        return;
+      }
+      if (!_hasMore) return;
+    }
+  }
 
   /// Reads timelines/{me}/items (newest first), then the posts themselves.
   /// Returns false if the timeline had nothing at all.
@@ -449,10 +502,17 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
 
   void _appendPosts(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     final existingIds = _posts.map((p) => p.id).toSet();
-    final nextPosts = docs
-        .map((doc) => Post.fromFirestore(doc))
-        .where((post) => !existingIds.contains(post.id))
-        .toList();
+    final nextPosts = <Post>[];
+    for (final doc in docs) {
+      try {
+        final post = Post.fromFirestore(doc);
+        if (!existingIds.contains(post.id)) nextPosts.add(post);
+      } catch (e) {
+        // A very old post with a shape we can't read: skip it, don't break
+        // the whole feed.
+        debugPrint('Skipped post ${doc.id}: $e');
+      }
+    }
     if (nextPosts.isEmpty) return;
     setState(() {
       _posts.addAll(nextPosts);
@@ -485,6 +545,33 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
         relationshipBoost +
         creatorLearningBoost +
         postLearningBoost;
+  }
+
+  /// The desktop layout (side menu, no bottom bar). Windows switches to it
+  /// from 700 px wide; the window can't get smaller than that anyway.
+  bool _useDesktopShell(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    return Platform.isWindows ? width >= 700 : width >= 1200;
+  }
+
+  void _stepReel(int direction) {
+    if (!_reelsPageController.hasClients) return;
+    final page = (_reelsPageController.page ?? 0).round() + direction;
+    if (page < 0) return;
+    _reelsPageController.animateToPage(
+      page,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _scrollFeedToTop() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 380),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   void _toggleFeedMode(String mode) {
@@ -849,7 +936,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
 
-    return Scaffold(
+    final scaffold = Scaffold(
       appBar: AppBar(
         titleSpacing: 12,
         title: const Padding(
@@ -978,7 +1065,11 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
               _isBootstrapping || (_isLoading && _posts.isEmpty);
           final posts = _posts;
           final screenWidth = MediaQuery.sizeOf(context).width;
-          final isDesktopWide = screenWidth >= 1200;
+          final isDesktopWide = _useDesktopShell(context);
+          // The right panel needs room; small windows drop it first and
+          // keep the menu + feed, instead of squeezing everything.
+          final showRightRail = screenWidth >= 1180;
+          final extendedDock = screenWidth >= 1440;
 
           // Build reels content if in reels mode
           Widget? reelsContent;
@@ -1017,7 +1108,11 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 controller: _reelsPageController,
                 scrollDirection: Axis.vertical,
                 itemCount: reelPosts.length,
-                onPageChanged: prefetchFrom,
+                onPageChanged: (index) {
+                  prefetchFrom(index);
+                  // Near the end: fetch more reels (old videos included).
+                  if (index >= reelPosts.length - 3) _loadMore();
+                },
                 itemBuilder: (context, index) {
                   final post = reelPosts[index];
                   final videoMedia = post.media.firstWhere((m) => m.isVideo);
@@ -1224,7 +1319,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
           final postKeys = <String, GlobalObjectKey>{};
           final feedContent = Column(
             children: [
-              if (_showModeTabs) _buildFeedModeTabs(),
+              if (_showModeTabs && !isDesktopWide) _buildFeedModeTabs(),
               // Phase 4: Status (24h stories) replaces the old highlights row.
               const StatusBar(),
               Expanded(
@@ -1639,32 +1734,42 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
           }
 
           return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 20, 18),
+            padding: EdgeInsets.fromLTRB(
+                12, 12, showRightRail ? 16 : 12, 12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(
-                  width: 92,
+                  width: extendedDock ? 228 : 96,
                   child: _DesktopSpotlightDock(
                     feedMode: _feedMode,
-                    onSwitchFeed: () => _showFeedModePicker(),
+                    extended: extendedDock,
+                    onFeedMode: _toggleFeedMode,
                     onOpenDiscover: () => context.push(AppRoutes.search),
                     onOpenMessages: () => context.push(AppRoutes.chats),
+                    onOpenNotifications: () =>
+                        context.push(AppRoutes.notifications),
+                    onOpenSaved: () => context.push(AppRoutes.favorites),
+                    onOpenProfile: currentUser == null
+                        ? () => context.go(AppRoutes.profile)
+                        : () => context.push(
+                            AppRoutes.clientProfilePath(currentUser.uid)),
+                    onOpenSettings: () => context.push(AppRoutes.settings),
                     onCreatePost: _showCreateOptions,
                   ),
                 ),
-                const SizedBox(width: 18),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Center(
                     child: ConstrainedBox(
                       constraints: BoxConstraints(
-                          maxWidth: _feedMode == 'reels' ? 640 : 920),
+                          maxWidth: _feedMode == 'reels' ? 600 : 720),
                       child: Container(
                         decoration: BoxDecoration(
                           color: Theme.of(context).brightness == Brightness.dark
                               ? const Color(0xFF10141C)
                               : Colors.white.withValues(alpha: 0.94),
-                          borderRadius: BorderRadius.circular(32),
+                          borderRadius: BorderRadius.circular(24),
                           border: Border.all(
                             color:
                                 Theme.of(context).brightness == Brightness.dark
@@ -1680,16 +1785,45 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                           ],
                         ),
                         clipBehavior: Clip.antiAlias,
-                        child: mainContent,
+                        child: Stack(
+                          children: [
+                            Positioned.fill(child: mainContent),
+                            if (_feedMode == 'reels' && reelsContent != null)
+                              Positioned(
+                                right: 12,
+                                top: 0,
+                                bottom: 0,
+                                child: Center(
+                                  child: _ReelStepButtons(
+                                    onUp: () => _stepReel(-1),
+                                    onDown: () => _stepReel(1),
+                                  ),
+                                ),
+                              ),
+                            if (_feedMode != 'reels' && _showModeTabs)
+                              Positioned(
+                                right: 16,
+                                bottom: 16,
+                                child: FloatingActionButton.small(
+                                  heroTag: 'feed_top',
+                                  tooltip: tr('Back to top'),
+                                  onPressed: _scrollFeedToTop,
+                                  child: const Icon(
+                                      Icons.keyboard_arrow_up_rounded),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 18),
-                SizedBox(
-                  width: 300,
-                  child: SingleChildScrollView(
-                    child: _DesktopSpotlightRail(
+                if (showRightRail) ...[
+                  const SizedBox(width: 16),
+                  SizedBox(
+                    width: 300,
+                    child: SingleChildScrollView(
+                      child: _DesktopSpotlightRail(
                       feedMode: _feedMode,
                       followingCount:
                           _followingPageIds.length + _followingUserIds.length,
@@ -1723,16 +1857,19 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                       onSwitchFeed: () => _showFeedModePicker(),
                       onOpenDiscover: () => context.push(AppRoutes.search),
                       onCreatePost: _showCreateOptions,
-                      onOpenMessages: () => context.push(AppRoutes.chats),
+                        onOpenMessages: () => context.push(AppRoutes.chats),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
             ),
           );
         },
       ),
-      bottomNavigationBar: SafeArea(
+      bottomNavigationBar: _useDesktopShell(context)
+          ? null
+          : SafeArea(
         top: false,
         child: Align(
           alignment: Alignment.center,
@@ -1823,6 +1960,57 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
           ),
         ),
       ),
+    );
+    if (!Platform.isWindows) return scaffold;
+    // Desktop keyboard shortcuts (shown in the side menu tooltips).
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.digit1): () =>
+            _toggleFeedMode('forYou'),
+        const SingleActivator(LogicalKeyboardKey.digit2): () =>
+            _toggleFeedMode('reels'),
+        const SingleActivator(LogicalKeyboardKey.digit3): () =>
+            _toggleFeedMode('following'),
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true):
+            _showCreateOptions,
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true): () =>
+            context.push(AppRoutes.search),
+        const SingleActivator(LogicalKeyboardKey.keyM, control: true): () =>
+            context.push(AppRoutes.chats),
+        const SingleActivator(LogicalKeyboardKey.f5): _refreshFeed,
+        const SingleActivator(LogicalKeyboardKey.keyR, control: true):
+            _refreshFeed,
+        const SingleActivator(LogicalKeyboardKey.home): _scrollFeedToTop,
+        const SingleActivator(LogicalKeyboardKey.arrowDown): () {
+          if (_feedMode == 'reels') {
+            _stepReel(1);
+          } else {
+            _scrollFeedBy(160);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowUp): () {
+          if (_feedMode == 'reels') {
+            _stepReel(-1);
+          } else {
+            _scrollFeedBy(-160);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.pageDown): () =>
+            _feedMode == 'reels' ? _stepReel(1) : _scrollFeedBy(600),
+        const SingleActivator(LogicalKeyboardKey.pageUp): () =>
+            _feedMode == 'reels' ? _stepReel(-1) : _scrollFeedBy(-600),
+      },
+      child: Focus(autofocus: true, child: scaffold),
+    );
+  }
+
+  void _scrollFeedBy(double delta) {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    _scrollController.animateTo(
+      (pos.pixels + delta).clamp(0.0, pos.maxScrollExtent),
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
     );
   }
 
@@ -2715,7 +2903,9 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
   @override
   void initState() {
     super.initState();
-    if (!_waitForTap) _startLoading();
+    // Windows: each player is a full video engine, so it is only created
+    // when the video really comes on screen (see onVisibilityChanged).
+    if (!_waitForTap && !Platform.isWindows) _startLoading();
     _isMuted = _globalMuted.value;
     _globalMuted.addListener(_handleGlobalMuteChanged);
   }
@@ -2738,6 +2928,7 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
   }
 
   void _initMediaKit() async {
+    if (_mediaKitPlayer != null) return;
     _mediaKitPlayer = Player();
     _mediaKitController = VideoController(_mediaKitPlayer!);
     try {
@@ -2864,7 +3055,14 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
     return VisibilityDetector(
       key: ObjectKey(this),
       onVisibilityChanged: (info) {
-        _isVisible = info.visibleFraction >= 0.8;
+        if (Platform.isWindows &&
+            _mediaKitPlayer == null &&
+            info.visibleFraction >= 0.3) {
+          _startLoading();
+        }
+        // Desktop windows are short: 60% visible is enough to play.
+        _isVisible =
+            info.visibleFraction >= (Platform.isWindows ? 0.6 : 0.8);
         if (_isVisible) {
           if (!_didNotifyActivePlayback) {
             _didNotifyActivePlayback = true;
@@ -2895,7 +3093,7 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
           height: widget.height,
           width: double.infinity,
           decoration: BoxDecoration(
-            color: AppColors.lightGrey,
+            color: Platform.isWindows ? Colors.black : AppColors.lightGrey,
             borderRadius:
                 widget.rounded ? BorderRadius.circular(8) : BorderRadius.zero,
           ),
@@ -2910,7 +3108,12 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
                         child: IgnorePointer(
                           ignoring: true,
                           child: Platform.isWindows
-                              ? Video(controller: _mediaKitController!)
+                              ? Video(
+                                  controller: _mediaKitController!,
+                                  controls: NoVideoControls,
+                                  fit: BoxFit.contain,
+                                  fill: Colors.black,
+                                )
                               : FittedBox(
                                   fit: BoxFit.cover,
                                   child: SizedBox(
@@ -3013,8 +3216,10 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
                     ],
                   ),
                 )
-              : const Center(
-                  child: Icon(Icons.play_circle_fill, size: 48),
+              : Center(
+                  child: Icon(Icons.play_circle_fill,
+                      size: 48,
+                      color: Platform.isWindows ? Colors.white70 : null),
                 ),
         ),
       ),
@@ -3091,10 +3296,12 @@ class _PostMediaCarouselState extends State<_PostMediaCarousel> {
     if (widget.media.isEmpty) {
       return const SizedBox.shrink();
     }
+    final height = _feedMediaHeight(context);
+    final desktop = Platform.isWindows;
     return Column(
       children: [
         SizedBox(
-          height: 440,
+          height: height,
           child: Stack(
             children: [
               PageView.builder(
@@ -3109,6 +3316,7 @@ class _PostMediaCarouselState extends State<_PostMediaCarousel> {
                   if (item.isVideo) {
                     return _AutoPlayVideoPreview(
                       url: item.url,
+                      height: height,
                       onActivePlayback: () =>
                           widget.onMediaEngaged?.call(index),
                       onDoubleTap: () {
@@ -3126,28 +3334,13 @@ class _PostMediaCarouselState extends State<_PostMediaCarousel> {
                     onTap: () => widget.onTap(index),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: CachedNetworkImage(
-                        imageUrl: item.url,
-                        height: 440,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) => Container(
-                          height: 440,
-                          color: AppColors.lightGrey,
-                          child:
-                              const Center(child: CircularProgressIndicator()),
-                        ),
-                        errorWidget: (context, url, error) => Container(
-                          height: 440,
-                          color: AppColors.lightGrey,
-                          child: const Icon(Icons.error),
-                        ),
-                      ),
+                      child: _WholeImage(url: item.url, height: height),
                     ),
                   );
                 },
               ),
-              if (widget.overlayText != null &&
+              if (!desktop &&
+                  widget.overlayText != null &&
                   widget.overlayText!.trim().isNotEmpty)
                 Positioned(
                   left: 0,
@@ -3178,6 +3371,58 @@ class _PostMediaCarouselState extends State<_PostMediaCarousel> {
                     ),
                   ),
                 ),
+              if (desktop && widget.media.length > 1) ...[
+                if (_index > 0)
+                  Positioned(
+                    left: 8,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: _MediaArrow(
+                        icon: Icons.chevron_left_rounded,
+                        onTap: () => _controller.previousPage(
+                          duration: const Duration(milliseconds: 260),
+                          curve: Curves.easeOutCubic,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (_index < widget.media.length - 1)
+                  Positioned(
+                    right: 8,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: _MediaArrow(
+                        icon: Icons.chevron_right_rounded,
+                        onTap: () => _controller.nextPage(
+                          duration: const Duration(milliseconds: 260),
+                          curve: Curves.easeOutCubic,
+                        ),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  right: 12,
+                  bottom: 12,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${_index + 1}/${widget.media.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               IgnorePointer(
                 child: Center(
                   child: AnimatedOpacity(
@@ -3226,6 +3471,143 @@ class _PostMediaCarouselState extends State<_PostMediaCarousel> {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// How tall photos/videos are in the feed. On phones: the old 440.
+/// On desktop: about 55% of the window, so the caption, the media and the
+/// like/comment row fit on screen together.
+double _feedMediaHeight(BuildContext context) {
+  if (!Platform.isWindows) return 440;
+  final h = MediaQuery.sizeOf(context).height;
+  return (h * 0.55).clamp(240.0, 560.0);
+}
+
+/// Shows the WHOLE picture (no cropping). The empty sides are filled with a
+/// tiny blurred copy of the same picture, so it doesn't look boxed in.
+class _WholeImage extends StatelessWidget {
+  const _WholeImage({required this.url, required this.height});
+
+  final String url;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final decodeHeight = (height * dpr).round();
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          const ColoredBox(color: Color(0xFF0B0F16)),
+          // A 12 px wide copy stretched smoothly looks blurred and costs
+          // almost nothing (no blur filter running while you scroll).
+          Opacity(
+            opacity: 0.6,
+            child: CachedNetworkImage(
+              imageUrl: url,
+              fit: BoxFit.cover,
+              memCacheWidth: 12,
+              filterQuality: FilterQuality.medium,
+              fadeInDuration: Duration.zero,
+              placeholder: (_, __) => const SizedBox.shrink(),
+              errorWidget: (_, __, ___) => const SizedBox.shrink(),
+            ),
+          ),
+          CachedNetworkImage(
+            imageUrl: url,
+            fit: BoxFit.contain,
+            // Decode only as big as it is drawn: less memory, less lag.
+            memCacheHeight: decodeHeight,
+            placeholder: (context, url) =>
+                const Center(child: CircularProgressIndicator()),
+            errorWidget: (context, url, error) => const Center(
+              child: Icon(Icons.broken_image_outlined, color: Colors.white54),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Caption shown above the media on desktop: 3 lines, then "more".
+class _ExpandableCaption extends StatefulWidget {
+  const _ExpandableCaption({required this.text});
+
+  final String text;
+
+  @override
+  State<_ExpandableCaption> createState() => _ExpandableCaptionState();
+}
+
+class _ExpandableCaptionState extends State<_ExpandableCaption> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(fontSize: 15, height: 1.4);
+    return LayoutBuilder(builder: (context, c) {
+      final painter = TextPainter(
+        text: TextSpan(text: widget.text, style: style),
+        maxLines: 3,
+        textDirection: Directionality.of(context),
+      )..layout(maxWidth: c.maxWidth);
+      final long = painter.didExceedMaxLines;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.text,
+            style: style,
+            maxLines: _open ? null : 3,
+            overflow: _open ? null : TextOverflow.ellipsis,
+          ),
+          if (long)
+            GestureDetector(
+              onTap: () => setState(() => _open = !_open),
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    _open ? tr('less') : tr('more'),
+                    style: const TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
+    });
+  }
+}
+
+class _MediaArrow extends StatelessWidget {
+  const _MediaArrow({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.45),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Icon(icon, color: Colors.white, size: 26),
+        ),
+      ),
     );
   }
 }
@@ -3961,6 +4343,13 @@ class PostCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (media.isNotEmpty &&
+                    Platform.isWindows &&
+                    post.content.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                    child: _ExpandableCaption(text: post.content.trim()),
+                  ),
                 if (media.isNotEmpty) ...[
                   _PostMediaCarousel(
                     media: media,
@@ -4521,28 +4910,73 @@ class _DesktopSpotlightRail extends StatelessWidget {
 class _DesktopSpotlightDock extends StatelessWidget {
   const _DesktopSpotlightDock({
     required this.feedMode,
-    required this.onSwitchFeed,
+    required this.extended,
+    required this.onFeedMode,
     required this.onOpenDiscover,
     required this.onOpenMessages,
+    required this.onOpenNotifications,
+    required this.onOpenSaved,
+    required this.onOpenProfile,
+    required this.onOpenSettings,
     required this.onCreatePost,
   });
 
   final String feedMode;
-  final VoidCallback onSwitchFeed;
+
+  /// Wide window: icon + text in a row. Otherwise: small icon column.
+  final bool extended;
+  final ValueChanged<String> onFeedMode;
   final VoidCallback onOpenDiscover;
   final VoidCallback onOpenMessages;
+  final VoidCallback onOpenNotifications;
+  final VoidCallback onOpenSaved;
+  final VoidCallback onOpenProfile;
+  final VoidCallback onOpenSettings;
   final VoidCallback onCreatePost;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    Widget section(String text) => extended
+        ? Padding(
+            padding: const EdgeInsets.fromLTRB(12, 14, 12, 6),
+            child: Text(
+              text.toUpperCase(),
+              style: TextStyle(
+                fontSize: 11,
+                letterSpacing: 1.1,
+                fontWeight: FontWeight.w800,
+                color: isDark ? Colors.white38 : Colors.black38,
+              ),
+            ),
+          )
+        : Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
+            child: Divider(
+                height: 1, color: isDark ? Colors.white12 : Colors.black12),
+          );
+    Widget item(IconData icon, String label, VoidCallback onTap,
+            {bool active = false, String? shortcut}) =>
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: _DesktopDockButton(
+            icon: icon,
+            label: label,
+            active: active,
+            extended: extended,
+            tooltip: shortcut == null ? label : '$label  ($shortcut)',
+            onTap: onTap,
+          ),
+        );
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      padding: EdgeInsets.symmetric(
+          horizontal: extended ? 10 : 8, vertical: 12),
       decoration: BoxDecoration(
         color: isDark
             ? const Color(0xFF131923)
             : Colors.white.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(
           color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.06),
         ),
@@ -4555,51 +4989,80 @@ class _DesktopSpotlightDock extends StatelessWidget {
         ],
       ),
       child: Column(
+        crossAxisAlignment: extended
+            ? CrossAxisAlignment.stretch
+            : CrossAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 54,
-            height: 54,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: Image.asset(
-                'assets/images/duhuze_logo.png',
-                fit: BoxFit.cover,
+          Row(
+            mainAxisAlignment: extended
+                ? MainAxisAlignment.start
+                : MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 44,
+                height: 44,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Image.asset(
+                    'assets/images/duhuze_logo.png',
+                    fit: BoxFit.cover,
+                    cacheWidth: 132,
+                  ),
+                ),
+              ),
+              if (extended) ...[
+                const SizedBox(width: 10),
+                const Text(
+                  'Duhuze',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Scrolls when the window is short, so nothing gets cut off.
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: extended
+                    ? CrossAxisAlignment.stretch
+                    : CrossAxisAlignment.center,
+                children: [
+                  section(tr('Feeds')),
+                  item(Icons.auto_awesome_rounded, tr('For You'),
+                      () => onFeedMode('forYou'),
+                      active: feedMode == 'forYou', shortcut: '1'),
+                  item(Icons.video_collection_rounded, tr('Reels'),
+                      () => onFeedMode('reels'),
+                      active: feedMode == 'reels', shortcut: '2'),
+                  item(Icons.people_alt_rounded, tr('Following'),
+                      () => onFeedMode('following'),
+                      active: feedMode == 'following', shortcut: '3'),
+                  section(tr('Explore')),
+                  item(Icons.travel_explore_rounded, tr('Discover'),
+                      onOpenDiscover,
+                      shortcut: 'Ctrl+K'),
+                  item(Icons.chat_bubble_rounded, tr('Messages'),
+                      onOpenMessages,
+                      shortcut: 'Ctrl+M'),
+                  item(Icons.notifications_rounded, tr('Notifications'),
+                      onOpenNotifications),
+                  item(Icons.bookmark_rounded, tr('Saved'), onOpenSaved),
+                  section(tr('You')),
+                  item(Icons.person_rounded, tr('Profile'), onOpenProfile),
+                  item(Icons.settings_rounded, tr('Settings'), onOpenSettings),
+                ],
               ),
             ),
           ),
-          const SizedBox(height: 16),
-          _DesktopDockButton(
-            icon: feedMode == 'following'
-                ? Icons.people_alt_rounded
-                : feedMode == 'reels'
-                    ? Icons.video_collection
-                    : Icons.home_rounded,
-            label: feedMode == 'following'
-                ? 'Following'
-                : feedMode == 'reels'
-                    ? 'Reels'
-                    : 'For You',
-            active: true,
-            onTap: onSwitchFeed,
-          ),
-          const SizedBox(height: 10),
-          _DesktopDockButton(
-            icon: Icons.travel_explore_rounded,
-            label: tr('Discover'),
-            onTap: onOpenDiscover,
-          ),
-          const SizedBox(height: 10),
-          _DesktopDockButton(
-            icon: Icons.chat_bubble_rounded,
-            label: tr('Inbox'),
-            onTap: onOpenMessages,
-          ),
-          const Spacer(),
+          const SizedBox(height: 8),
           _DesktopDockButton(
             icon: Icons.add_box_rounded,
             label: tr('Create'),
             active: true,
             filled: true,
+            extended: extended,
+            tooltip: '${tr('Create')}  (Ctrl+N)',
             onTap: onCreatePost,
           ),
         ],
@@ -4615,6 +5078,8 @@ class _DesktopDockButton extends StatefulWidget {
     required this.onTap,
     this.active = false,
     this.filled = false,
+    this.extended = false,
+    this.tooltip,
   });
 
   final IconData icon;
@@ -4622,6 +5087,8 @@ class _DesktopDockButton extends StatefulWidget {
   final VoidCallback onTap;
   final bool active;
   final bool filled;
+  final bool extended;
+  final String? tooltip;
 
   @override
   State<_DesktopDockButton> createState() => _DesktopDockButtonState();
@@ -4634,54 +5101,93 @@ class _DesktopDockButtonState extends State<_DesktopDockButton> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final highlight = widget.active || _hovered;
-    return MouseRegion(
+    final color = widget.filled
+        ? Colors.white
+        : highlight
+            ? AppColors.primary
+            : (isDark ? Colors.white70 : Colors.black54);
+    final icon = Icon(widget.icon, color: color, size: 22);
+    final label = Text(
+      widget.label,
+      textAlign: widget.extended ? TextAlign.start : TextAlign.center,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontSize: widget.extended ? 14 : 11,
+        fontWeight: FontWeight.w700,
+        color: color,
+      ),
+    );
+    final button = MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
         onTap: widget.onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+          duration: const Duration(milliseconds: 160),
           curve: Curves.easeOutCubic,
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          width: widget.extended ? double.infinity : 76,
+          padding: widget.extended
+              ? const EdgeInsets.symmetric(horizontal: 12, vertical: 11)
+              : const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
           decoration: BoxDecoration(
             color: widget.filled
                 ? AppColors.primary
                 : highlight
                     ? AppColors.primary.withValues(alpha: isDark ? 0.18 : 0.12)
                     : Colors.transparent,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(16),
           ),
-          child: Column(
-            children: [
-              Icon(
-                widget.icon,
-                color: widget.filled
-                    ? Colors.white
-                    : highlight
-                        ? AppColors.primary
-                        : (isDark ? Colors.white70 : Colors.black54),
-                size: 22,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                widget.label,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: widget.filled
-                      ? Colors.white
-                      : highlight
-                          ? AppColors.primary
-                          : (isDark ? Colors.white70 : Colors.black54),
-                ),
-              ),
-            ],
-          ),
+          child: widget.extended
+              ? Row(children: [
+                  icon,
+                  const SizedBox(width: 12),
+                  Expanded(child: label),
+                ])
+              : Column(mainAxisSize: MainAxisSize.min, children: [
+                  icon,
+                  const SizedBox(height: 4),
+                  label,
+                ]),
         ),
       ),
+    );
+    return widget.tooltip == null
+        ? button
+        : Tooltip(
+            message: widget.tooltip!,
+            waitDuration: const Duration(milliseconds: 500),
+            child: button,
+          );
+  }
+}
+
+/// Up / down buttons beside reels on desktop (the mouse wheel and the
+/// arrow keys work too).
+class _ReelStepButtons extends StatelessWidget {
+  const _ReelStepButtons({required this.onUp, required this.onDown});
+
+  final VoidCallback onUp;
+  final VoidCallback onDown;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Tooltip(
+          message: tr('Previous') + '  (↑)',
+          child: _MediaArrow(
+              icon: Icons.keyboard_arrow_up_rounded, onTap: onUp),
+        ),
+        const SizedBox(height: 10),
+        Tooltip(
+          message: tr('Next') + '  (↓)',
+          child: _MediaArrow(
+              icon: Icons.keyboard_arrow_down_rounded, onTap: onDown),
+        ),
+      ],
     );
   }
 }

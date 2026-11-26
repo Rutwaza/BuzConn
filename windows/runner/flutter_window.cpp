@@ -16,8 +16,8 @@
 
 namespace {
 
-constexpr int kMaxWindowWidth = 1600;
-constexpr int kMaxWindowHeight = 1000;
+constexpr int kMinWindowWidth = 760;
+constexpr int kMinWindowHeight = 600;
 
 }  // namespace
 
@@ -143,15 +143,15 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
   if (message == WM_GETMINMAXINFO) {
-    const LRESULT default_result =
-        DefWindowProc(hwnd, message, wparam, lparam);
+    // Smallest size the window can be dragged to. Below this the layout
+    // would have to hide things, so Windows simply stops the resize.
+    // No maximum: the app fills any screen when maximised.
     auto* min_max_info = reinterpret_cast<MINMAXINFO*>(lparam);
     const double scale_factor = GetDpiForWindow(hwnd) / 96.0;
-    const int max_width =
-        static_cast<int>(kMaxWindowWidth * scale_factor);
-    const int max_height =
-        static_cast<int>(kMaxWindowHeight * scale_factor);
+    int min_width = static_cast<int>(kMinWindowWidth * scale_factor);
+    int min_height = static_cast<int>(kMinWindowHeight * scale_factor);
 
+    // Never ask for more than a small (laptop) screen really has.
     MONITORINFO monitor_info{sizeof(MONITORINFO)};
     const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
     if (GetMonitorInfo(monitor, &monitor_info)) {
@@ -159,25 +159,12 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
           monitor_info.rcWork.right - monitor_info.rcWork.left;
       const int work_height =
           monitor_info.rcWork.bottom - monitor_info.rcWork.top;
-      const int constrained_width =
-          max_width < work_width ? max_width : work_width;
-      const int constrained_height =
-          max_height < work_height ? max_height : work_height;
-
-      min_max_info->ptMaxPosition.x = (work_width - constrained_width) / 2;
-      min_max_info->ptMaxPosition.y = (work_height - constrained_height) / 2;
-      min_max_info->ptMaxSize.x = constrained_width;
-      min_max_info->ptMaxSize.y = constrained_height;
-      min_max_info->ptMaxTrackSize.x = constrained_width;
-      min_max_info->ptMaxTrackSize.y = constrained_height;
-    } else {
-      min_max_info->ptMaxSize.x = max_width;
-      min_max_info->ptMaxSize.y = max_height;
-      min_max_info->ptMaxTrackSize.x = max_width;
-      min_max_info->ptMaxTrackSize.y = max_height;
+      if (min_width > work_width) min_width = work_width;
+      if (min_height > work_height) min_height = work_height;
     }
-
-    return default_result;
+    min_max_info->ptMinTrackSize.x = min_width;
+    min_max_info->ptMinTrackSize.y = min_height;
+    return 0;
   }
 
   // Give Flutter, including plugins, an opportunity to handle window messages.
