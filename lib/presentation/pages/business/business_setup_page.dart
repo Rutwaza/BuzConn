@@ -21,6 +21,7 @@ import '../../../core/theme/colors.dart';
 import '../../../features/billing/billing_service.dart';
 import '../../../features/billing/upgrade_sheets.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/opening_hours.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/services/r2_storage_service.dart';
 
@@ -43,6 +44,9 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
   final _momoCodeController = TextEditingController();
   final _momoNameController = TextEditingController();
   final _emailController = TextEditingController();
+  // Opening hours: null = not changed, {} = remove, else the new hours.
+  Map<String, String>? _hours;
+  Object? _savedHours;
 
   String _selectedCategory = 'Other';
   bool _isLoading = false;
@@ -121,6 +125,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
         _momoCodeController.text = (data['momoCode'] ?? '').toString();
         _momoNameController.text = (data['momoName'] ?? '').toString();
         _emailController.text = (data['email'] ?? '').toString();
+        _savedHours = data['hours'];
         final category = (data['category'] ?? 'Other').toString();
         _selectedCategory = _categories.contains(category) ? category : 'Other';
         _existingImageUrl = (data['imageUrl'] ?? '').toString();
@@ -168,6 +173,10 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
             'momoCode': _momoCodeController.text.trim(),
             'momoName': _momoNameController.text.trim(),
             'email': _emailController.text.trim(),
+            if (_hours != null)
+              'hours': _hours!.isEmpty
+                  ? (_isEditMode ? FieldValue.delete() : null)
+                  : _hours,
             if (_selectedLocation != null) ...{
               'latitude': _selectedLocation!.latitude,
               'longitude': _selectedLocation!.longitude,
@@ -186,7 +195,9 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
             // Made by the server: the first page is free, more pages need
             // a paid place (functions/pages.js createPage).
             final r = await BillingService.instance.createPage({
-              ...Map<String, Object?>.from(businessData)..remove('updatedAt'),
+              ...(Map<String, Object?>.from(businessData)
+                ..remove('updatedAt')
+                ..removeWhere((k, v) => v == null)),
               'googleMapsLink': mapsLink,
             });
             if (r['needSlot'] == true) {
@@ -242,6 +253,36 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
         }
       }
     }
+  }
+
+  Widget _hoursTile() {
+    final current = _hours ?? _savedHours;
+    final h = (current is Map && current.isNotEmpty) ? current : null;
+    return Material(
+      color: AppColors.primary.withValues(alpha: 0.06),
+      borderRadius: BorderRadius.circular(14),
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        leading: const Icon(Icons.schedule_rounded, color: AppColors.primary),
+        title: Text(tr('Opening hours')),
+        subtitle: h == null
+            ? Text(tr('Optional: show "Open now" on your page'))
+            : Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: OpenStatusChip(hours: h),
+                ),
+              ),
+        trailing: TextButton(
+          onPressed: () async {
+            final r = await showOpeningHoursEditor(context, current);
+            if (r != null) setState(() => _hours = r);
+          },
+          child: Text(h == null ? tr('Add') : tr('Edit')),
+        ),
+      ),
+    );
   }
 
   @override
@@ -954,6 +995,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    _hoursTile(),
+                    const SizedBox(height: 16),
                     AppTextField(
                       controller: _emailController,
                       label: tr('Contact Email'),
@@ -984,7 +1027,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        tr('Your page will be reviewed before it becomes visible to the community. This usually takes 24-48 hours.'),
+                        tr('Your first page is free. Your page is visible right away; to get the blue ✓ later, use Get verified on the page.'),
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ),

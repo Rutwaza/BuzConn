@@ -1,5 +1,6 @@
 import 'package:businessfinder/core/widgets/emoji_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/widgets/mention_suggestions.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:businessfinder/core/services/image_shrinker.dart';
 import 'package:businessfinder/core/services/video_frame_grabber.dart';
@@ -959,6 +960,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                                 return null;
                                               },
                                             ),
+                                            MentionSuggestions(
+                                                controller: _contentController),
                                             const SizedBox(height: 20),
                                             Row(
                                               children: [
@@ -1064,6 +1067,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                         return null;
                                       },
                                     ),
+                                    MentionSuggestions(
+                                        controller: _contentController),
                                     const SizedBox(height: 24),
                                     Row(
                                       children: [

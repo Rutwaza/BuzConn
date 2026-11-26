@@ -38,7 +38,8 @@
     "trailingSlash": false,
     "ignore": [
       "firebase.json",
-      "**/.*"
+      "**/.git/**",
+      "**/.DS_Store"
     ],
     "headers": [
       {

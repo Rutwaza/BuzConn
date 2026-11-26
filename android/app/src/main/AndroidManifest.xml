@@ -57,7 +57,10 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="duhuze" android:host="open"/>
             </intent-filter>
-            <intent-filter>
+            <!-- autoVerify: links open straight in Duhuze (no "Open with" question)
+                 once site/.well-known/assetlinks.json lists this app's key
+                 (tools/make-assetlinks.ps1). Without it Android just asks. -->
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>

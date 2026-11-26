@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/widgets/opening_hours.dart';
 import 'package:businessfinder/core/widgets/post_thumb.dart';
 import 'package:businessfinder/features/admin/admin_verify_button.dart';
 import 'package:businessfinder/features/shop/ui/page_shop_widgets.dart';
@@ -416,6 +417,10 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                     label: tr('Address'),
                                     value: address,
                                   ),
+                                ],
+                                if (OpeningHours.fromData(business['hours']) != null) ...[
+                                  const SizedBox(height: 10),
+                                  _HoursBox(hours: business['hours']),
                                 ],
                               ],
                             );
@@ -1117,6 +1122,10 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                             value: address,
                                           ),
                                         ],
+                                        if (OpeningHours.fromData(business['hours']) != null) ...[
+                                          const SizedBox(height: 10),
+                                          _HoursBox(hours: business['hours']),
+                                        ],
                                       ],
                                     ),
                                   ),
@@ -1685,6 +1694,33 @@ class _StatPill extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// "Opening hours  [Open now · until 18:00]", tap to see the week.
+class _HoursBox extends StatelessWidget {
+  const _HoursBox({required this.hours});
+  final Object? hours;
+
+  @override
+  Widget build(BuildContext context) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(left: 32, bottom: 6),
+        leading: const Icon(Icons.schedule_rounded, size: 20),
+        title: Wrap(
+          spacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(tr('Opening hours'), style: const TextStyle(fontWeight: FontWeight.w700)),
+            OpenStatusChip(hours: hours),
+          ],
+        ),
+        children: [OpeningHoursTable(hours: hours)],
       ),
     );
   }

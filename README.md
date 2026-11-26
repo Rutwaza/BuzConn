@@ -250,6 +250,10 @@ Owner → **My pages → ⋮ → Page team → Add person** (@username). Roles: 
   4. Admin → Payments: account id, the two product codes, **Sandbox** first, switch **Payments ready** on, test, then **Live**.
 - App: `lib/features/billing/` (`pay_sheet.dart` = the one payment screen; `upgrade_sheets.dart` = Get another page / Boost).
 
+### Opening hours
+
+Pages can set `hours: {"1": "08:00-18:00", …, "7": ""}` (1 = Monday, "" = closed, "00:00-00:00" = 24 h) in Edit page. Shown as *Open now · until 18:00* on the page, the Discover list and map card, and the **Open now** filter. Code: `lib/core/widgets/opening_hours.dart`.
+
 ### #Hashtags and @mentions
 
 `functions/tags.js`: posts get `hashtags` (lowercase, set in `feed.js`); `@username` in a post or comment sends a `mention` notification. App: `lib/core/widgets/tagged_text.dart` (tappable #tags, @names, links) and `lib/presentation/pages/search/hashtag_page.dart`; typing `#tag` in Discover offers the tag page. Index: `posts (hashtags array-contains, createdAt desc)`.
@@ -273,7 +277,7 @@ The ➤ button on a post (or ⋯ → Share) opens the share sheet:
 - **Add to story**: the post's photo + caption as your 24-hour status, with a **View post** button for viewers.
 - **Copy link**: `https://duhuze-rw.web.app/p/<postId>`. The website shows a preview (photo, author, caption) and an **Open in the Duhuze app** button; on Android the link opens the app directly.
 - **Share to…**: the phone/PC share menu (WhatsApp, Telegram, email…), via the `share_plus` package.
-- Website pages: `site/p.html`, `site/g.html` (rewrites in `firebase.json`). App routes `/p/:id` and `/g/:code` (`lib/core/routes/router.dart`); Android links in `AndroidManifest.xml`. To skip Android's "Open with" question later, add `site/.well-known/assetlinks.json` with the Play app-signing SHA-256 and set `android:autoVerify="true"`.
+- Website pages: `site/p.html`, `site/g.html` (rewrites in `firebase.json`). App routes `/p/:id` and `/g/:code` (`lib/core/routes/router.dart`); Android links in `AndroidManifest.xml`. `android:autoVerify="true"` is on. To skip Android's "Open with" question, run `powershell -ExecutionPolicy Bypass -File .\tools\make-assetlinks.ps1` (adds your upload + debug keys to `site/.well-known/assetlinks.json`), commit, `.\deploy.ps1`. Once on Google Play, run it again with `-PlayKey <App signing SHA-256 from Play Console>`.
 
 ### Other things that must not be forgotten
 

@@ -2,6 +2,7 @@ import 'package:businessfinder/core/widgets/emoji_picker.dart';
 import 'package:businessfinder/core/services/media_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:businessfinder/core/widgets/tagged_text.dart';
+import 'package:businessfinder/core/widgets/mention_suggestions.dart';
 import 'package:businessfinder/features/billing/upgrade_sheets.dart';
 import 'package:businessfinder/features/moderation/moderation.dart';
 import 'package:businessfinder/features/shop/logic/page_index.dart';
@@ -982,6 +983,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                MentionSuggestions(controller: _commentController),
                 TextField(
                   controller: _commentController,
                   minLines: 2,
@@ -4582,7 +4584,8 @@ class PostCard extends StatelessWidget {
                           padding: const EdgeInsets.only(right: 2),
                           child: _MessagePill(onTap: onMessage),
                         ),
-                      if (post.ownerId == currentUserId)
+                      if (post.ownerId == currentUserId ||
+                          PageIndex.instance.managesPage(post.businessId))
                         PopupMenuButton<String>(
                           tooltip: tr('More'),
                           icon: const Icon(Icons.more_horiz_rounded),
@@ -4610,15 +4613,16 @@ class PostCard extends StatelessWidget {
                                     : tr('Boost post')),
                               ),
                             ),
-                            PopupMenuItem(
-                              value: 'edit',
-                              child: ListTile(
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                leading: const Icon(Icons.edit_rounded),
-                                title: Text(tr('Edit')),
+                            if (post.ownerId == currentUserId)
+                              PopupMenuItem(
+                                value: 'edit',
+                                child: ListTile(
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: const Icon(Icons.edit_rounded),
+                                  title: Text(tr('Edit')),
+                                ),
                               ),
-                            ),
                             PopupMenuItem(
                               value: 'delete',
                               child: ListTile(

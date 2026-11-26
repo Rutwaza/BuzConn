@@ -16,6 +16,7 @@ import '../../../core/widgets/post_thumb.dart';
 import '../business/post_detail_page.dart';
 import 'pages_map.dart';
 import 'hashtag_page.dart';
+import '../../../core/widgets/opening_hours.dart';
 
 enum SearchFilter { all, businesses, users, posts }
 
@@ -59,9 +60,10 @@ class _SearchPageState extends State<SearchPage> {
   bool _onlyShops = false;
   bool _onlyVerified = false;
   bool _topRated = false;
+  bool _openNow = false;
 
   bool get _anyPageFilter =>
-      _category != null || _place.isNotEmpty || _onlyShops || _onlyVerified || _topRated;
+      _category != null || _place.isNotEmpty || _onlyShops || _onlyVerified || _topRated || _openNow;
 
   bool _passesPageFilters(Map<String, dynamic> b) {
     if (b['suspended'] == true) return false; // hidden by the team
@@ -76,6 +78,9 @@ class _SearchPageState extends State<SearchPage> {
     if (_onlyShops && ((b['productCount'] as num?) ?? 0) <= 0) return false;
     if (_onlyVerified && b['verified'] != true) return false;
     if (_topRated && ((b['ratingAvg'] as num?) ?? 0) < 4) return false;
+    if (_openNow && !(OpeningHours.fromData(b['hours'])?.isOpenAt(DateTime.now()) ?? false)) {
+      return false;
+    }
     return true;
   }
 
@@ -145,12 +150,13 @@ class _SearchPageState extends State<SearchPage> {
           chip('🛍 ${tr('Has a shop')}', _onlyShops, () => _onlyShops = !_onlyShops),
           chip('✓ ${tr('Verified')}', _onlyVerified, () => _onlyVerified = !_onlyVerified),
           chip('⭐ 4+', _topRated, () => _topRated = !_topRated),
+          chip('🕒 ${tr('Open now')}', _openNow, () => _openNow = !_openNow),
           if (_anyPageFilter)
             TextButton(
               onPressed: () => setState(() {
                 _category = null;
                 _place = '';
-                _onlyShops = _onlyVerified = _topRated = false;
+                _onlyShops = _onlyVerified = _topRated = _openNow = false;
               }),
               child: Text(tr('Reset')),
             ),
@@ -536,6 +542,7 @@ class _SearchPageState extends State<SearchPage> {
         place: (page['location'] ?? page['address'] ?? '').toString(),
         verified: page['verified'] == true,
         mapsLink: (page['googleMapsLink'] ?? '').toString(),
+        hours: page['hours'],
       ));
     }
     return out;
@@ -1353,7 +1360,17 @@ class _SearchPageState extends State<SearchPage> {
             : null,
       ),
       title: Text(item.title),
-      subtitle: Text(item.subtitle),
+      subtitle: OpeningHours.fromData(item.hours) == null
+          ? Text(item.subtitle)
+          : Wrap(
+              spacing: 6,
+              runSpacing: 2,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(item.subtitle),
+                OpenStatusChip(hours: item.hours, compact: true),
+              ],
+            ),
       trailing: _buildTrailing(item),
       onTap: () {
         HapticFeedback.selectionClick();
@@ -1425,6 +1442,7 @@ class _SearchPageState extends State<SearchPage> {
               title: name.isEmpty ? 'Creator' : name,
               subtitle: category.isEmpty ? 'Creator' : category,
               imageUrl: b['imageUrl'] as String?,
+              hours: b['hours'],
               typeIcon: Icons.storefront,
               type: _SearchItemType.page,
               targetId: (b['id'] ?? b['businessId']).toString(),
@@ -1829,8 +1847,10 @@ class _SearchItem {
   final VoidCallback onTap;
   final _SearchItemType type;
   final String targetId;
+  final Object? hours;
 
   _SearchItem({
+    this.hours,
     required this.title,
     required this.subtitle,
     required this.imageUrl,

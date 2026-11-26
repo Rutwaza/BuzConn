@@ -8,6 +8,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/i18n/tr.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/widgets/verified_badge.dart';
+import '../../../core/widgets/opening_hours.dart';
 
 /// One page shown on the Discover map.
 class MapPage {
@@ -20,6 +21,7 @@ class MapPage {
     this.place = '',
     this.verified = false,
     this.mapsLink = '',
+    this.hours,
   });
 
   final String id;
@@ -30,6 +32,7 @@ class MapPage {
   final String place;
   final bool verified;
   final String mapsLink;
+  final Object? hours;
 }
 
 /// Discover map: page logos as pins, tap one to see a small card,
@@ -490,6 +493,10 @@ class _PageCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                                 fontSize: 12, color: AppColors.grey)),
+                      ],
+                      if (OpeningHours.fromData(page.hours) != null) ...[
+                        const SizedBox(height: 4),
+                        OpenStatusChip(hours: page.hours),
                       ],
                     ],
                   ),

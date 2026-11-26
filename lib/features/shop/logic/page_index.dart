@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 /// Which pages have a shop and which are verified, loaded once and kept
@@ -13,6 +14,8 @@ class PageIndex extends ChangeNotifier {
   Set<String> _suspendedPages = {};
   Set<String> _suspendedUsers = {};
   Set<String> _verifiedUsers = {};
+  // Pages I own or am a team admin of (I can boost their posts).
+  Set<String> _managed = {};
   DateTime? _loadedAt;
   bool _loading = false;
 
@@ -22,6 +25,10 @@ class PageIndex extends ChangeNotifier {
       businessId.isNotEmpty && _verified.contains(businessId);
 
   bool isUserVerified(String uid) => _verifiedUsers.contains(uid);
+
+  /// I own this page or I'm a team admin of it.
+  bool managesPage(String businessId) =>
+      businessId.isNotEmpty && _managed.contains(businessId);
 
   /// ✓ next to a post's author: the page if it's a page post, else the person.
   bool postAuthorVerified(String businessId, String ownerId) =>
@@ -56,6 +63,19 @@ class PageIndex extends ChangeNotifier {
       _suspendedUsers = results[3].docs.map((d) => d.id).toSet();
       _verifiedUsers = results[4].docs.map((d) => d.id).toSet();
       _shops.removeAll(_suspendedPages);
+      final me = FirebaseAuth.instance.currentUser?.uid;
+      if (me != null) {
+        final mine = await Future.wait([
+          pages.where('ownerId', isEqualTo: me).get(),
+          pages.where('teamIds', arrayContains: me).get(),
+        ]);
+        _managed = {
+          ...mine[0].docs.map((d) => d.id),
+          ...mine[1].docs
+              .where((d) => (d.data()['team'] as Map?)?[me] == 'admin')
+              .map((d) => d.id),
+        };
+      }
       _loadedAt = DateTime.now();
       notifyListeners();
     } catch (e) {

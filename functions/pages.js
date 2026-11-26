@@ -71,6 +71,15 @@ exports.createPage = onCall({region: REGION}, async (request) => {
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   };
+  // Opening hours {"1": "08:00-18:00", ..., "7": ""} (1 = Monday).
+  if (d.hours && typeof d.hours === "object") {
+    const hours = {};
+    for (let day = 1; day <= 7; day++) {
+      const v = str(d.hours[String(day)], 11);
+      hours[String(day)] = /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(v) ? v : "";
+    }
+    page.hours = hours;
+  }
   if (lat !== null && lng !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
     Object.assign(page, {latitude: lat, longitude: lng, lat, lng});
   }

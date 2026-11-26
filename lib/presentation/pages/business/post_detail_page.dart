@@ -4,6 +4,7 @@ import 'package:businessfinder/core/i18n/tr.dart';
 
 import 'package:flutter/material.dart';
 import 'package:businessfinder/core/widgets/tagged_text.dart';
+import 'package:businessfinder/core/widgets/mention_suggestions.dart';
 import 'package:businessfinder/features/share/share_post_sheet.dart';
 import 'package:businessfinder/features/posts/data/engagement_repository.dart';
 import 'package:flutter/services.dart';
@@ -1139,6 +1140,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               ],
                             ),
                           ),
+                        MentionSuggestions(controller: _commentController),
                         TextField(
                           controller: _commentController,
                           minLines: 1,
