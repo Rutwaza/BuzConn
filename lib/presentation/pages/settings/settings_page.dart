@@ -7,6 +7,7 @@ import 'package:businessfinder/core/services/lite_mode_service.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:businessfinder/features/verification/verification_sheet.dart';
 import 'package:businessfinder/features/chat/data/presence_service.dart';
 import 'package:go_router/go_router.dart';
 
@@ -291,6 +292,12 @@ class _SettingsPageState extends State<SettingsPage> {
             subtitle: tr('Update your photo, bio, and contact details'),
             onTap: () => context.push(AppRoutes.profile),
           ),
+          _SettingsTile(
+            icon: Icons.verified_rounded,
+            title: tr('Get verified'),
+            subtitle: tr('Ask for the blue ✓ for your account'),
+            onTap: () => showVerificationSheet(context, kind: 'user'),
+          ),
           // Only the Duhuze team sees this (README -> "Admin panel").
           FutureBuilder<StaffRole>(
             future: AdminService.instance.role(),
@@ -300,7 +307,7 @@ class _SettingsPageState extends State<SettingsPage> {
               return _SettingsTile(
                 icon: Icons.admin_panel_settings_rounded,
                 title: role == StaffRole.admin ? 'Admin panel' : 'Moderator panel',
-                subtitle: 'Reports, users and team',
+                subtitle: 'Dashboard, reports, users, pages, verification',
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const AdminPanelPage()),
                 ),

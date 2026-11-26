@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A post on Duhuze</title>
+<meta property="og:title" content="A post on Duhuze">
+<meta property="og:description" content="Open it in the Duhuze app: Africa Connected.">
+<meta property="og:site_name" content="Duhuze">
+<link rel="stylesheet" href="/style.css">
+<style>
+  .card{border:1px solid #e3e8f0;border-radius:18px;overflow:hidden;max-width:520px;margin:18px 0;background:#fff}
+  .card img{width:100%;max-height:520px;object-fit:contain;background:#0b0f16;display:block}
+  .card .body{padding:14px 16px}
+  .who{font-weight:700;margin-bottom:6px}
+  .btn{display:inline-block;padding:12px 18px;border-radius:999px;background:#3A6EA5;color:#fff!important;text-decoration:none;font-weight:700;margin:6px 8px 6px 0}
+  .btn.ghost{background:#eef3f9;color:#3A6EA5!important}
+</style>
+</head>
+<body>
+<header><a href="/">Duhuze</a></header>
+<main>
+<h1 id="title">Loading…</h1>
+<div id="post"></div>
+<p>
+  <a class="btn" id="open" href="#">Open in the Duhuze app</a>
+  <a class="btn ghost" href="/">Get Duhuze</a>
+</p>
+<p class="muted">Duhuze · Africa Connected</p>
+</main>
+<script>
+// Link: https://duhuze-rw.web.app/p/<postId>. Shows a preview (posts are
+// public) and opens the app with duhuze://open/p/<postId>.
+(function () {
+  var id = location.pathname.split('/').filter(Boolean).pop() || '';
+  var app = 'duhuze://open/p/' + encodeURIComponent(id);
+  var open = document.getElementById('open');
+  open.href = /Android/i.test(navigator.userAgent)
+    ? 'intent://open/p/' + encodeURIComponent(id) + '#Intent;scheme=duhuze;package=rw.duhuze.app;end'
+    : app;
+  function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+  var url = 'https://firestore.googleapis.com/v1/projects/bussinessfinder-327f5/databases/(default)/documents/posts/' + encodeURIComponent(id);
+  fetch(url).then(function (r) { if (!r.ok) throw r; return r.json(); }).then(function (doc) {
+    var f = doc.fields || {};
+    var str = function (k) { return (f[k] && f[k].stringValue) || ''; };
+    var img = '';
+    var media = f.media && f.media.arrayValue && f.media.arrayValue.values;
+    if (media && media.length) {
+      var m = media[0].mapValue.fields;
+      img = (m.type && m.type.stringValue === 'video') ? ((m.thumbnailUrl && m.thumbnailUrl.stringValue) || '') : (m.url && m.url.stringValue) || '';
+    } else if (str('imageUrl')) { img = str('imageUrl'); }
+    var who = str('businessName') || 'Someone on Duhuze';
+    document.getElementById('title').textContent = who + ' on Duhuze';
+    document.title = who + ' on Duhuze';
+    document.getElementById('post').innerHTML =
+      '<div class="card">' + (img ? '<img src="' + esc(img) + '" alt="">' : '') +
+      '<div class="body"><div class="who">' + esc(who) + '</div><div>' + esc(str('content')).replace(/\n/g, '<br>') + '</div></div></div>';
+  }).catch(function () {
+    document.getElementById('title').textContent = 'This post is not available';
+  });
+})();
+</script>
+</body>
+</html>

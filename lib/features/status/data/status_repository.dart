@@ -24,6 +24,8 @@ class StatusItem {
     this.text = '',
     this.bgColor = 0xFF3A6EA5,
     this.viewCount = 0,
+    this.postId,
+    this.postBy,
   });
 
   factory StatusItem.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -38,6 +40,8 @@ class StatusItem {
       text: (d['text'] ?? '').toString(),
       bgColor: (d['bgColor'] as num?)?.toInt() ?? 0xFF3A6EA5,
       viewCount: (d['viewCount'] as num?)?.toInt() ?? 0,
+      postId: d['postId'] as String?,
+      postBy: d['postBy'] as String?,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       expiresAt: (d['expiresAt'] as Timestamp?)?.toDate() ??
           DateTime.now().add(const Duration(hours: 24)),
@@ -53,6 +57,10 @@ class StatusItem {
   final String text;
   final int bgColor;
   final int viewCount;
+
+  /// Set when this status is a shared post ("View post" button).
+  final String? postId;
+  final String? postBy;
   final DateTime createdAt;
   final DateTime expiresAt;
 }
@@ -205,6 +213,40 @@ class StatusRepository {
       'text': text.trim(),
       'bgColor': bgColor,
       'viewCount': 0,
+      'createdAt': FieldValue.serverTimestamp(),
+      'expiresAt': Timestamp.fromDate(DateTime.now().add(lifetime)),
+    });
+  }
+
+  /// "Add to story" from a post's share menu: the post's photo (or video
+  /// cover) with its caption, and a "View post" button for viewers.
+  Future<void> sharePost({
+    required String postId,
+    required String postBy,
+    required String caption,
+    String? imageUrl,
+  }) async {
+    final uid = _uid;
+    if (uid == null) throw StateError('Sign in first.');
+    final profile = (await _db.collection('users').doc(uid).get()).data() ?? {};
+    final text = caption.trim().length > 200
+        ? '${caption.trim().substring(0, 197)}…'
+        : caption.trim();
+    await _db.collection('statuses').add({
+      'ownerId': uid,
+      'ownerName': (profile['name'] ??
+              FirebaseAuth.instance.currentUser?.displayName ??
+              'User')
+          .toString(),
+      'ownerImageUrl': (profile['imageUrl'] as String?) ??
+          FirebaseAuth.instance.currentUser?.photoURL,
+      'type': imageUrl == null ? 'text' : 'image',
+      'mediaUrl': imageUrl,
+      'text': imageUrl == null ? '📮 $postBy\n\n$text' : text,
+      'bgColor': 0xFF3A6EA5,
+      'viewCount': 0,
+      'postId': postId,
+      'postBy': postBy,
       'createdAt': FieldValue.serverTimestamp(),
       'expiresAt': Timestamp.fromDate(DateTime.now().add(lifetime)),
     });

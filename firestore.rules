@@ -88,7 +88,23 @@ service cloud.firestore {
         && chat.get('requestStatus', 'none') != 'rejected'
         && (chat.get('requestStatus', 'none') != 'pending'
           || chat.get('requesterId', '') == request.auth.uid)
-        && !blockedByOtherParticipant(chat);
+        && (chat.get('chatType', '') == 'group'
+          // Groups: "only admins can send" when an admin turned it on.
+          ? (chat.get('onlyAdminsCanSend', false) != true
+            || request.auth.uid in chat.get('admins', []))
+          : !blockedByOtherParticipant(chat))
+        // "system" messages are written by the server only.
+        && request.resource.data.get('mediaType', '') != 'system';
+    }
+
+    // Group chats: members, admins, name, photo, settings and the invite
+    // code only change through the groupAction function (functions/groups.js).
+    function groupFieldsUnchanged() {
+      return resource.data.get('chatType', '') != 'group'
+        || !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'chatType', 'admins', 'ownerId', 'createdBy', 'groupName', 'groupImageUrl',
+          'groupDescription', 'onlyAdminsCanSend', 'onlyAdminsCanEditInfo',
+          'inviteCode', 'memberCount', 'removedIds']);
     }
 
     // Moderation: if the other person blocked me, I cannot message them.
@@ -120,7 +136,15 @@ service cloud.firestore {
     // username (claimUsername function) and app access.
     function userServerFields() {
       return ['isActive', 'username', 'usernameLower', 'apps', 'admin', 'role',
-        'searchKeywords', 'suspended'];
+        'searchKeywords', 'suspended', 'verified', 'verifiedAt', 'verifiedBy'];
+    }
+
+    // Posting "as a page": only your own page, and not while it's suspended.
+    function canPostAsPage() {
+      let bid = request.resource.data.get('businessId', '');
+      return bid == null || bid == ''
+        || (get(/databases/$(database)/documents/businesses/$(bid)).data.ownerId == request.auth.uid
+          && get(/databases/$(database)/documents/businesses/$(bid)).data.get('suspended', false) != true);
     }
 
     function isBusinessOwner(businessId) {
@@ -147,7 +171,8 @@ service cloud.firestore {
     // badge, the shop counter and the review average.
     function businessServerFields() {
       return ['searchKeywords', 'verified', 'verifiedAt', 'verifiedBy',
-        'productCount', 'ratingAvg', 'ratingCount'];
+        'productCount', 'ratingAvg', 'ratingCount',
+        'suspended', 'suspendedReason', 'suspendedAt'];
     }
 
     match /businesses/{businessId} {
@@ -155,7 +180,9 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid
         && !request.resource.data.keys().hasAny(businessServerFields());
       // searchKeywords are made by the server (functions/feed.js).
+      // A page suspended by the team can't be edited until it's restored.
       allow update: if isSignedIn() && resource.data.ownerId == request.auth.uid
+        && resource.data.get('suspended', false) != true
         && !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(businessServerFields());
       allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
@@ -165,6 +192,7 @@ service cloud.firestore {
     match /businesses/{businessId}/products/{productId} {
       allow read: if true;
       allow create, update: if isBusinessOwner(businessId)
+        && get(/databases/$(database)/documents/businesses/$(businessId)).data.get('suspended', false) != true
         // soldCount is counted by the server when orders are confirmed.
         && request.resource.data.get('soldCount', 0)
           == (resource == null ? 0 : resource.data.get('soldCount', 0))
@@ -175,6 +203,14 @@ service cloud.firestore {
         && request.resource.data.price > 0
         && request.resource.data.price <= 10000000;
       allow delete: if isBusinessOwner(businessId);
+    }
+
+    // "Get verified" requests: made by the server (requestVerification),
+    // read by the person who asked and by the team.
+    match /verification_requests/{requestId} {
+      allow read: if isStaff()
+        || (isSignedIn() && resource.data.requesterId == request.auth.uid);
+      allow write: if false;
     }
 
     // Reviews: one per person (the id is their uid), 1-5 stars. The page
@@ -273,7 +309,8 @@ service cloud.firestore {
         && request.resource.data.get('comments', []).size() == 0
         && request.resource.data.get('likeCount', 0) == 0
         && request.resource.data.get('commentCount', 0) == 0
-        && !request.resource.data.keys().hasAny(['trendingScore', 'searchKeywords']);
+        && !request.resource.data.keys().hasAny(['trendingScore', 'searchKeywords'])
+        && canPostAsPage();
       // likeCount/commentCount are kept by Cloud Functions only.
       allow update: if isOwnerPostEdit() || isCounterBump();
       allow delete: if isPostOwner();
@@ -373,7 +410,8 @@ service cloud.firestore {
       allow update: if isSignedIn()
         && request.auth.uid in resource.data.participants
         && request.resource.data.participants == resource.data.participants
-        && canUpdateChatRequest();
+        && canUpdateChatRequest()
+        && groupFieldsUnchanged();
 
       match /messages/{messageId} {
         allow read: if isChatParticipant(chatId);

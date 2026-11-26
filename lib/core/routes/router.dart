@@ -14,6 +14,7 @@ import 'package:businessfinder/presentation/pages/feed/create_post_page.dart';
 import 'package:businessfinder/presentation/pages/business/business_profile_page.dart';
 import 'package:businessfinder/features/chat/ui/chat_list_page.dart';
 import 'package:businessfinder/features/chat/ui/chat_page.dart';
+import 'package:businessfinder/features/chat/ui/group_pages.dart';
 import 'package:businessfinder/presentation/pages/search/search_page.dart';
 import 'package:businessfinder/presentation/pages/profile/client_profile_page.dart';
 import 'package:businessfinder/presentation/pages/notifications/notifications_page.dart';
@@ -110,6 +111,17 @@ class AppRouter {
             },
           );
         },
+      ),
+      // Shared links (website / duhuze://open/...): a post, a group invite.
+      GoRoute(
+        path: '/p/:id',
+        redirect: (context, state) =>
+            AppRoutes.postPath(state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/g/:code',
+        builder: (context, state) =>
+            JoinGroupLinkPage(code: state.pathParameters['code']!),
       ),
       GoRoute(
         path: AppRoutes.createPost,

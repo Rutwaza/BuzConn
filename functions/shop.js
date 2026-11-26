@@ -66,7 +66,7 @@ exports.createOrder = onCall({region: REGION}, async (request) => {
 
   const bizSnap = await db().collection("businesses").doc(businessId).get();
   const biz = bizSnap.data();
-  if (!biz || biz.isActive === false) {
+  if (!biz || biz.isActive === false || biz.suspended === true) {
     throw new HttpsError("not-found", "This shop is not available.");
   }
   if (biz.ownerId === uid) {

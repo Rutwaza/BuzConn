@@ -178,7 +178,6 @@ exports.adminSetRole = onCall({region: REGION}, async (request) => {
   return {ok: true, uid: user.uid, note: "They must sign out and in again (or wait up to 1 hour)."};
 });
 
-/** Small numbers for the dashboard. */
 // Verified badge for a real business page (admins only).
 exports.adminSetVerified = onCall({region: REGION}, async (request) => {
   requireAdmin(request);
@@ -195,19 +194,184 @@ exports.adminSetVerified = onCall({region: REGION}, async (request) => {
   return {ok: true, verified};
 });
 
+
+
+
+// ------------------------------------------------------------- pages --
+
+/** Suspend / restore a business page. A suspended page disappears from
+ * feeds and search, its shop stops taking orders, and the owner can't edit
+ * it or post as it until it is restored. data: {businessId, suspended, note} */
+exports.adminSetPageSuspended = onCall({region: REGION}, async (request) => {
+  requireStaff(request);
+  const businessId = String(request.data?.businessId || "");
+  const suspended = request.data?.suspended === true;
+  const note = String(request.data?.note || "").slice(0, 500);
+  const ref = db().collection("businesses").doc(businessId);
+  const page = (await ref.get()).data();
+  if (!businessId || !page) throw new HttpsError("not-found", "Page not found.");
+  await ref.set({
+    suspended,
+    suspendedReason: suspended ? note : null,
+    suspendedAt: suspended ? now() : null,
+    updatedAt: now(),
+  }, {merge: true});
+  if (page.ownerId) {
+    await notifyUser(page.ownerId, suspended ?
+      `Your page "${page.name}" was suspended by the Duhuze team.${note ? " Reason: " + note : ""}` :
+      `Your page "${page.name}" is active again.`, {businessId});
+  }
+  await log(request, suspended ? "page_suspended" : "page_restored", {businessId, note});
+  return {ok: true};
+});
+
+/** Verified badge for a person. data: {uid, verified} (admins only). */
+exports.adminSetUserVerified = onCall({region: REGION}, async (request) => {
+  requireAdmin(request);
+  const uid = String(request.data?.uid || "");
+  const verified = request.data?.verified === true;
+  if (!uid) throw new HttpsError("invalid-argument", "uid is required.");
+  await db().collection("users").doc(uid).set({
+    verified, verifiedAt: verified ? now() : null, verifiedBy: request.auth.uid,
+  }, {merge: true});
+  await log(request, verified ? "user_verified" : "user_unverified", {uid});
+  return {ok: true};
+});
+
+/** A message from the team to one user (shows in their notifications). */
+exports.adminWarnUser = onCall({region: REGION}, async (request) => {
+  requireStaff(request);
+  const uid = String(request.data?.uid || "");
+  const message = String(request.data?.message || "").trim().slice(0, 500);
+  if (!uid || message.length < 3) throw new HttpsError("invalid-argument", "Write a message.");
+  await notifyUser(uid, `Message from the Duhuze team: ${message}`, {kind: "warning"});
+  await log(request, "user_warned", {uid, message});
+  return {ok: true};
+});
+
+/** Everything the team needs to judge one account. */
+exports.adminUserDetails = onCall({region: REGION}, async (request) => {
+  requireStaff(request);
+  const uid = String(request.data?.uid || "");
+  if (!uid) throw new HttpsError("invalid-argument", "uid is required.");
+  const d = db();
+  const count = async (q) => (await q.count().get()).data().count;
+  let auth = null;
+  try {
+    const u = await admin.auth().getUser(uid);
+    auth = {
+      email: u.email || null, phone: u.phoneNumber || null, emailVerified: u.emailVerified,
+      disabled: u.disabled, createdAt: u.metadata.creationTime, lastSignIn: u.metadata.lastSignInTime,
+      providers: u.providerData.map((p) => p.providerId),
+      admin: u.customClaims?.admin === true, moderator: u.customClaims?.moderator === true,
+    };
+  } catch (_) {/* deleted auth user */}
+  const [posts, pages, followers, following, reportsAgainst, reportsActioned, orders] = await Promise.all([
+    count(d.collection("posts").where("ownerId", "==", uid)),
+    d.collection("businesses").where("ownerId", "==", uid).limit(20).get(),
+    count(d.collection("user_follows").where("followingId", "==", uid)),
+    count(d.collection("user_follows").where("followerId", "==", uid)),
+    count(d.collection("reports").where("targetOwnerId", "==", uid)),
+    count(d.collection("reports").where("targetOwnerId", "==", uid).where("status", "==", "actioned")),
+    count(d.collection("orders").where("buyerId", "==", uid)),
+  ]);
+  return {
+    auth, posts, followers, following, reportsAgainst, reportsActioned, orders,
+    pages: pages.docs.map((p) => ({id: p.id, name: p.data().name || "Page",
+      suspended: p.data().suspended === true, verified: p.data().verified === true})),
+  };
+});
+
+/** Approve or reject a verification request. data: {requestId, approve, note} */
+exports.adminReviewVerification = onCall({region: REGION}, async (request) => {
+  requireAdmin(request);
+  const requestId = String(request.data?.requestId || "");
+  const approve = request.data?.approve === true;
+  const note = String(request.data?.note || "").slice(0, 500);
+  const ref = db().collection("verification_requests").doc(requestId);
+  const req = (await ref.get()).data();
+  if (!req) throw new HttpsError("not-found", "Request not found.");
+  if (req.status !== "pending") throw new HttpsError("failed-precondition", "Already handled.");
+  if (approve) {
+    const target = req.kind === "page" ?
+      db().collection("businesses").doc(req.targetId) :
+      db().collection("users").doc(req.targetId);
+    await target.set({verified: true, verifiedAt: now(), verifiedBy: request.auth.uid}, {merge: true});
+  }
+  await ref.update({status: approve ? "approved" : "rejected", reviewNote: note,
+    reviewedBy: request.auth.token.email || request.auth.uid, reviewedAt: now()});
+  await notifyUser(req.requesterId, approve ?
+    `🎉 ${req.kind === "page" ? `Your page "${req.targetName}"` : "Your account"} is now verified ✓` :
+    `Your verification request was not approved this time.${note ? " " + note : ""}`,
+  {kind: "verification", targetId: req.targetId});
+  await log(request, approve ? "verification_approved" : "verification_rejected",
+    {requestId, kind: req.kind, targetId: req.targetId, note});
+  return {ok: true};
+});
+
+/** One notification to everyone (admins only; up to 5000 people). */
+exports.adminBroadcast = onCall({region: REGION, timeoutSeconds: 300}, async (request) => {
+  requireAdmin(request);
+  const message = String(request.data?.message || "").trim().slice(0, 300);
+  if (message.length < 5) throw new HttpsError("invalid-argument", "Write the announcement.");
+  const users = await db().collection("users").where("isActive", "==", true).limit(5000).get();
+  const writer = db().bulkWriter();
+  for (const u of users.docs) {
+    writer.create(db().collection("notifications").doc(), notificationDoc(u.id, `📢 ${message}`, {kind: "announcement"}));
+  }
+  await writer.close();
+  await log(request, "broadcast", {message, sent: users.size});
+  return {sent: users.size};
+});
+
 exports.adminStats = onCall({region: REGION}, async (request) => {
   requireStaff(request);
   const count = async (q) => (await q.count().get()).data().count;
   const d = db();
-  const [users, pages, posts, openReports, urgentReports, suspended] = await Promise.all([
+  const since = (h) => admin.firestore.Timestamp.fromMillis(Date.now() - h * 3600000);
+  const safe = (p) => p.catch(() => 0);
+  const [users, pages, posts, openReports, urgentReports, suspended, suspendedPages,
+    verifiedUsers, verifiedPages, pendingVerifications, orders, disputes,
+    newUsers7d, newPosts24h, groups] = await Promise.all([
     count(d.collection("users")),
     count(d.collection("businesses")),
     count(d.collection("posts")),
     count(d.collection("reports").where("status", "==", "open")),
     count(d.collection("reports").where("status", "==", "open").where("reason", "==", "child_safety")),
     count(d.collection("users").where("suspended", "==", true)),
+    count(d.collection("businesses").where("suspended", "==", true)),
+    count(d.collection("users").where("verified", "==", true)),
+    count(d.collection("businesses").where("verified", "==", true)),
+    count(d.collection("verification_requests").where("status", "==", "pending")),
+    count(d.collection("orders")),
+    count(d.collection("orders").where("status", "==", "not_received")),
+    safe(count(d.collection("users").where("createdAt", ">=", since(24 * 7)))),
+    safe(count(d.collection("posts").where("createdAt", ">=", since(24)))),
+    count(d.collection("chats").where("chatType", "==", "group")),
   ]);
-  return {users, pages, posts, openReports, urgentReports, suspended};
+  return {users, pages, posts, openReports, urgentReports, suspended, suspendedPages,
+    verifiedUsers, verifiedPages, pendingVerifications, orders, disputes,
+    newUsers7d, newPosts24h, groups};
 });
 
-exports._adminInternals = {isAdmin, isStaff};
+function notificationDoc(toUserId, preview, extra = {}) {
+  return {
+    toUserId,
+    fromUserId: "duhuze",
+    fromUserName: "Duhuze team",
+    fromUserImageUrl: null,
+    type: "admin",
+    preview,
+    ...extra,
+    readAt: null,
+    hidden: false,
+    createdAt: now(),
+  };
+}
+
+async function notifyUser(uid, preview, extra) {
+  if (!uid) return;
+  await db().collection("notifications").add(notificationDoc(uid, preview, extra));
+}
+
+exports._adminInternals = {isAdmin, isStaff, notifyUser};

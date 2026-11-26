@@ -346,6 +346,58 @@ test("reviews: one per person, 1-5 stars, not by the owner", async () => {
   await assertFails(setDoc(doc(as(EVE), `businesses/b9/reviews/${EVE}`), {rating: 4, ratingAvg: 5}));
 });
 
+test("groups: only the server changes members, admins and settings", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "chats/g1"), {
+      chatType: "group", participants: [ALICE, BOB], admins: [ALICE], ownerId: ALICE,
+      groupName: "Team", onlyAdminsCanSend: false, requestStatus: "none",
+    });
+  });
+  // The app can't make a group or touch group fields.
+  await assertFails(setDoc(doc(as(BOB), "chats/g2"), {chatType: "group", participants: [BOB]}));
+  await assertFails(updateDoc(doc(as(BOB), "chats/g1"), {admins: [ALICE, BOB]}));
+  await assertFails(updateDoc(doc(as(ALICE), "chats/g1"), {groupName: "Renamed"}));
+  await assertFails(updateDoc(doc(as(BOB), "chats/g1"), {participants: [ALICE, BOB, EVE]}));
+  // Normal chat bookkeeping still works.
+  await assertSucceeds(updateDoc(doc(as(BOB), "chats/g1"), {lastMessage: "hi"}));
+  // Members talk; outsiders can't; nobody fakes a system message.
+  await assertSucceeds(setDoc(doc(as(BOB), "chats/g1/messages/m1"), {senderId: BOB, text: "hi"}));
+  await assertFails(setDoc(doc(as(EVE), "chats/g1/messages/m2"), {senderId: EVE, text: "hi"}));
+  await assertFails(setDoc(doc(as(BOB), "chats/g1/messages/m3"), {senderId: BOB, text: "x", mediaType: "system"}));
+  // "Only admins can send".
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), "chats/g1"), {onlyAdminsCanSend: true});
+  });
+  await assertFails(setDoc(doc(as(BOB), "chats/g1/messages/m4"), {senderId: BOB, text: "hi"}));
+  await assertSucceeds(setDoc(doc(as(ALICE), "chats/g1/messages/m5"), {senderId: ALICE, text: "hi"}));
+});
+
+test("suspended page: owner can't edit, post as it, or change products", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "businesses/bs"), {ownerId: ALICE, name: "Shop", suspended: true});
+    await setDoc(doc(ctx.firestore(), "businesses/ok"), {ownerId: ALICE, name: "Fine"});
+  });
+  await assertFails(updateDoc(doc(as(ALICE), "businesses/bs"), {name: "New"}));
+  await assertFails(updateDoc(doc(as(ALICE), "businesses/ok"), {suspended: false}));
+  await assertFails(setDoc(doc(as(ALICE), "businesses/bs/products/p1"), {name: "Tea", price: 500}));
+  await assertFails(setDoc(doc(as(ALICE), "posts/ps1"), {ownerId: ALICE, businessId: "bs", content: "x"}));
+  await assertSucceeds(setDoc(doc(as(ALICE), "posts/ps2"), {ownerId: ALICE, businessId: "ok", content: "x"}));
+  await assertSucceeds(setDoc(doc(as(ALICE), "posts/ps3"), {ownerId: ALICE, businessId: "", content: "x"}));
+  await assertFails(setDoc(doc(as(BOB), "posts/ps4"), {ownerId: BOB, businessId: "ok", content: "x"}));
+});
+
+test("verified badge and verification requests are server-only", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `users/${BOB}`), {name: "Bob"});
+    await setDoc(doc(ctx.firestore(), `verification_requests/user_${BOB}`), {requesterId: BOB, status: "pending"});
+  });
+  await assertFails(updateDoc(doc(as(BOB), `users/${BOB}`), {verified: true}));
+  await assertSucceeds(updateDoc(doc(as(BOB), `users/${BOB}`), {bio: "hello"}));
+  await assertSucceeds(getDoc(doc(as(BOB), `verification_requests/user_${BOB}`)));
+  await assertFails(getDoc(doc(as(EVE), `verification_requests/user_${BOB}`)));
+  await assertFails(setDoc(doc(as(BOB), `verification_requests/user_${BOB}`), {status: "approved"}));
+});
+
 test("users cannot un-suspend themselves", async () => {
   await assertFails(updateDoc(doc(as(ALICE), "users/alice"), {suspended: false}));
 });

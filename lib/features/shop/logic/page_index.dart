@@ -10,6 +10,9 @@ class PageIndex extends ChangeNotifier {
 
   Set<String> _shops = {};
   Set<String> _verified = {};
+  Set<String> _suspendedPages = {};
+  Set<String> _suspendedUsers = {};
+  Set<String> _verifiedUsers = {};
   DateTime? _loadedAt;
   bool _loading = false;
 
@@ -17,6 +20,17 @@ class PageIndex extends ChangeNotifier {
       businessId.isNotEmpty && _shops.contains(businessId);
   bool isVerified(String businessId) =>
       businessId.isNotEmpty && _verified.contains(businessId);
+
+  bool isUserVerified(String uid) => _verifiedUsers.contains(uid);
+
+  /// ✓ next to a post's author: the page if it's a page post, else the person.
+  bool postAuthorVerified(String businessId, String ownerId) =>
+      businessId.isNotEmpty ? isVerified(businessId) : isUserVerified(ownerId);
+
+  /// Posts of suspended pages/people are not shown (Admin panel).
+  bool hidesPost(String businessId, String ownerId) =>
+      (businessId.isNotEmpty && _suspendedPages.contains(businessId)) ||
+      _suspendedUsers.contains(ownerId);
 
   Future<void> refresh({bool force = false}) async {
     if (_loading) return;
@@ -28,12 +42,20 @@ class PageIndex extends ChangeNotifier {
     _loading = true;
     try {
       final pages = FirebaseFirestore.instance.collection('businesses');
+      final users = FirebaseFirestore.instance.collection('users');
       final results = await Future.wait([
         pages.where('productCount', isGreaterThan: 0).limit(500).get(),
         pages.where('verified', isEqualTo: true).limit(500).get(),
+        pages.where('suspended', isEqualTo: true).limit(500).get(),
+        users.where('suspended', isEqualTo: true).limit(500).get(),
+        users.where('verified', isEqualTo: true).limit(1000).get(),
       ]);
       _shops = results[0].docs.map((d) => d.id).toSet();
       _verified = results[1].docs.map((d) => d.id).toSet();
+      _suspendedPages = results[2].docs.map((d) => d.id).toSet();
+      _suspendedUsers = results[3].docs.map((d) => d.id).toSet();
+      _verifiedUsers = results[4].docs.map((d) => d.id).toSet();
+      _shops.removeAll(_suspendedPages);
       _loadedAt = DateTime.now();
       notifyListeners();
     } catch (e) {

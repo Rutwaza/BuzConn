@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join a group on Duhuze</title>
+<meta property="og:title" content="You're invited to a Duhuze group">
+<link rel="stylesheet" href="/style.css">
+<style>
+  .btn{display:inline-block;padding:12px 18px;border-radius:999px;background:#3A6EA5;color:#fff!important;text-decoration:none;font-weight:700;margin:6px 8px 6px 0}
+  .btn.ghost{background:#eef3f9;color:#3A6EA5!important}
+  code{font-size:20px;background:#eef3f9;padding:4px 10px;border-radius:8px}
+</style>
+</head>
+<body>
+<header><a href="/">Duhuze</a></header>
+<main>
+<h1>You're invited to a group 👋</h1>
+<p>Open this link on a phone or PC with Duhuze installed. Or open Duhuze → Inbox → <strong>Join a group</strong> and enter this code:</p>
+<p><code id="code"></code></p>
+<p>
+  <a class="btn" id="open" href="#">Open in the Duhuze app</a>
+  <a class="btn ghost" href="/">Get Duhuze</a>
+</p>
+</main>
+<script>
+(function () {
+  var code = location.pathname.split('/').filter(Boolean).pop() || '';
+  document.getElementById('code').textContent = code;
+  document.getElementById('open').href = /Android/i.test(navigator.userAgent)
+    ? 'intent://open/g/' + encodeURIComponent(code) + '#Intent;scheme=duhuze;package=rw.duhuze.app;end'
+    : 'duhuze://open/g/' + encodeURIComponent(code);
+})();
+</script>
+</body>
+</html>

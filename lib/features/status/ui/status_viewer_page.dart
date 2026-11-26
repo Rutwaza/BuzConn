@@ -4,6 +4,8 @@ import 'dart:io' show Platform;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import '../../../core/constants/app_constants.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
@@ -463,6 +465,29 @@ class _StatusViewerPageState extends State<StatusViewerPage>
                   ),
                 ),
               ),
+              if (s.postId != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: _isMine ? 150 : 200,
+                  child: Center(
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black87,
+                      ),
+                      onPressed: () {
+                        _pause(true);
+                        context.push(AppRoutes.postPath(s.postId!)).then((_) {
+                          if (mounted) _pause(false);
+                        });
+                      },
+                      icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                      label: Text('${tr('View post')}'
+                          '${(s.postBy ?? '').isEmpty ? '' : ' · ${s.postBy}'}'),
+                    ),
+                  ),
+                ),
               if (_flash != null)
                 IgnorePointer(
                   child: Center(

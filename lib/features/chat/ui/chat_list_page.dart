@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'group_pages.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -63,6 +64,18 @@ class _ChatListPageState extends State<ChatListPage> {
     final firestore = FirebaseFirestore.instance;
     final isBusinessOwner = data['businessOwnerId'] == currentUserId;
     final chatType = (data['chatType'] ?? '').toString();
+
+    if (chatType == 'group') {
+      final count = (data['participants'] as List?)?.length ?? 0;
+      return {
+        'title': (data['groupName'] ?? 'Group').toString(),
+        'avatarUrl': data['groupImageUrl'] as String?,
+        'lastSeen': null,
+        'otherUserId': null,
+        'isGroup': true,
+        'memberCount': count,
+      };
+    }
 
     if (chatType == 'direct') {
       final userAId = data['userAId'] as String?;
@@ -196,6 +209,16 @@ class _ChatListPageState extends State<ChatListPage> {
         title: Text(tr('Inbox')),
         actions: [
           IconButton(
+            tooltip: tr('New group'),
+            icon: const Icon(Icons.group_add_rounded),
+            onPressed: () => startNewGroup(context),
+          ),
+          IconButton(
+            tooltip: tr('Join a group'),
+            icon: const Icon(Icons.link_rounded),
+            onPressed: () => joinGroupDialog(context),
+          ),
+          IconButton(
             tooltip: tr('Archived'),
             icon: Icon(
               _filter == _InboxFilter.archived
@@ -214,9 +237,41 @@ class _ChatListPageState extends State<ChatListPage> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
+        tooltip: tr('New chat'),
+        onPressed: () async {
           HapticFeedback.mediumImpact();
-          context.push(AppRoutes.search);
+          final pick = await showModalBottomSheet<String>(
+            context: context,
+            showDragHandle: true,
+            builder: (c) => SafeArea(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                ListTile(
+                  leading: const CircleAvatar(
+                      child: Icon(Icons.person_search_rounded)),
+                  title: Text(tr('New message')),
+                  subtitle: Text(tr('Find a person or a page')),
+                  onTap: () => Navigator.pop(c, 'message'),
+                ),
+                ListTile(
+                  leading:
+                      const CircleAvatar(child: Icon(Icons.group_add_rounded)),
+                  title: Text(tr('New group')),
+                  subtitle: Text(tr('Chat with several people at once')),
+                  onTap: () => Navigator.pop(c, 'group'),
+                ),
+                ListTile(
+                  leading: const CircleAvatar(child: Icon(Icons.link_rounded)),
+                  title: Text(tr('Join a group')),
+                  subtitle: Text(tr('With an invite link or code')),
+                  onTap: () => Navigator.pop(c, 'join'),
+                ),
+              ]),
+            ),
+          );
+          if (!context.mounted) return;
+          if (pick == 'message') context.push(AppRoutes.search);
+          if (pick == 'group') startNewGroup(context);
+          if (pick == 'join') joinGroupDialog(context);
         },
         backgroundColor: AppColors.primary,
         child: const Icon(Icons.edit_outlined, color: Colors.white),
@@ -325,6 +380,7 @@ class _ChatListPageState extends State<ChatListPage> {
                           _buildFilterChip(_InboxFilter.all, 'All'),
                           _buildFilterChip(_InboxFilter.requests, 'Requests'),
                           _buildFilterChip(_InboxFilter.unread, 'Unread'),
+                          _buildFilterChip(_InboxFilter.groups, 'Groups'),
                           _buildFilterChip(_InboxFilter.creators, 'Creators'),
                           _buildFilterChip(_InboxFilter.archived, 'Archived'),
                         ],
@@ -390,6 +446,10 @@ class _ChatListPageState extends State<ChatListPage> {
                       if (_filter == _InboxFilter.creators && !isCreatorChat) {
                         return false;
                       }
+                      if (_filter == _InboxFilter.groups &&
+                          data['chatType'] != 'group') {
+                        return false;
+                      }
                       if (_searchQuery.isEmpty) return true;
                       final lastMessage =
                           (data['lastMessage'] ?? '').toString();
@@ -398,8 +458,9 @@ class _ChatListPageState extends State<ChatListPage> {
                       final businessName =
                           (data['businessName'] ?? '').toString();
                       final clientName = (data['clientName'] ?? '').toString();
+      final groupName = (data['groupName'] ?? '').toString();
                       final haystack =
-                          '$lastMessage $aName $bName $businessName $clientName'
+                          '$lastMessage $aName $bName $businessName $clientName $groupName'
                               .toLowerCase();
                       return haystack.contains(_searchQuery);
                     }).toList();
@@ -689,6 +750,8 @@ class _ChatListPageState extends State<ChatListPage> {
         return 'Unread';
       case _InboxFilter.creators:
         return 'Creators';
+      case _InboxFilter.groups:
+        return 'Groups';
       case _InboxFilter.archived:
         return 'Archived';
       case _InboxFilter.all:
@@ -919,7 +982,7 @@ class _ChatListPageState extends State<ChatListPage> {
   }
 }
 
-enum _InboxFilter { all, unread, creators, archived, requests }
+enum _InboxFilter { all, unread, groups, creators, archived, requests }
 
 class _DesktopChatShell extends StatelessWidget {
   const _DesktopChatShell({

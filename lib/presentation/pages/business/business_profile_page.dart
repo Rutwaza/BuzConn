@@ -88,6 +88,42 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
           final isOwner = currentUserId == ownerId;
           final isDesktop = MediaQuery.of(context).size.width >= 1100;
 
+          // Suspended by the Duhuze team: visitors see a notice only; the
+          // owner sees why (Admin panel -> Pages).
+          if (business['suspended'] == true) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 460),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.pause_circle_outline_rounded,
+                        size: 64, color: AppColors.grey),
+                    const SizedBox(height: 12),
+                    Text(
+                      isOwner
+                          ? tr('Your page is suspended')
+                          : tr('This page is not available'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      isOwner
+                          ? '${tr('The Duhuze team suspended it.')}'
+                              '${(business['suspendedReason'] ?? '').toString().isEmpty ? '' : '\n${tr('Reason')}: ${business['suspendedReason']}'}'
+                              '\n${tr('Contact us if you think this is a mistake.')}'
+                          : tr('It was suspended for breaking the Duhuze rules.'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppColors.grey),
+                    ),
+                  ]),
+                ),
+              ),
+            );
+          }
+
           if (isDesktop) {
             return _buildDesktopLayout(
               business: business,
@@ -199,7 +235,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                         ),
                         AdminVerifyButton(
                             businessId: widget.businessId,
-                            verified: isVerified),
+                            verified: isVerified,
+                            isOwner: isOwner),
                         if (description.isNotEmpty) ...[
                           const SizedBox(height: 10),
                           Text(
@@ -695,7 +732,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                         ),
                                         AdminVerifyButton(
                                             businessId: widget.businessId,
-                                            verified: isVerified),
+                                            verified: isVerified,
+                            isOwner: isOwner),
                                       ],
                                     ),
                                   ],

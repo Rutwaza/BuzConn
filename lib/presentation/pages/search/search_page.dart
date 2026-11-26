@@ -60,6 +60,7 @@ class _SearchPageState extends State<SearchPage> {
       _category != null || _place.isNotEmpty || _onlyShops || _onlyVerified || _topRated;
 
   bool _passesPageFilters(Map<String, dynamic> b) {
+    if (b['suspended'] == true) return false; // hidden by the team
     if (_category != null &&
         (b['category'] ?? '').toString().toLowerCase() != _category!.toLowerCase()) {
       return false;

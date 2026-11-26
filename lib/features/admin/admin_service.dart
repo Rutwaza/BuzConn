@@ -38,6 +38,28 @@ class AdminService {
   Future<void> setVerified(String businessId, bool verified) => _call(
       'adminSetVerified', {'businessId': businessId, 'verified': verified});
 
+  Future<void> setPageSuspended(String businessId, bool suspended,
+          {String note = ''}) =>
+      _call('adminSetPageSuspended',
+          {'businessId': businessId, 'suspended': suspended, 'note': note});
+
+  Future<void> setUserVerified(String uid, bool verified) =>
+      _call('adminSetUserVerified', {'uid': uid, 'verified': verified});
+
+  Future<void> warnUser(String uid, String message) =>
+      _call('adminWarnUser', {'uid': uid, 'message': message});
+
+  Future<Map<String, dynamic>> userDetails(String uid) =>
+      _call('adminUserDetails', {'uid': uid});
+
+  Future<void> reviewVerification(String requestId, bool approve,
+          {String note = ''}) =>
+      _call('adminReviewVerification',
+          {'requestId': requestId, 'approve': approve, 'note': note});
+
+  Future<Map<String, dynamic>> broadcast(String message) =>
+      _call('adminBroadcast', {'message': message});
+
   Future<void> resolveReport(String reportId, String action,
           {String note = ''}) =>
       _call('adminResolveReport',

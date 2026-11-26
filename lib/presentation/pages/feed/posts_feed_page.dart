@@ -10,6 +10,7 @@ import 'package:businessfinder/features/shop/data/shop_models.dart'
     show formatRwf;
 import 'package:businessfinder/core/widgets/verified_badge.dart';
 import 'package:businessfinder/features/onboarding/welcome_tour.dart';
+import 'package:businessfinder/features/share/share_post_sheet.dart';
 import 'package:businessfinder/core/services/lite_mode_service.dart';
 import 'package:businessfinder/features/status/ui/status_bar.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
@@ -137,7 +138,6 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     LikeStore.instance.addListener(_onLikesChanged);
     // Which pages have a shop / are verified (for the Shop chip and ✓).
     PageIndex.instance.addListener(_onLikesChanged);
-    unawaited(PageIndex.instance.refresh());
     _scrollController.addListener(_onScroll);
     _bootstrapFeed();
   }
@@ -252,8 +252,12 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       _didJumpToPost = false;
       _inlineSuggestionsDismissed = false;
     });
-    await _loadFollowingIds();
-    await _loadViewedHighlights();
+    await Future.wait([
+      _loadFollowingIds(),
+      _loadViewedHighlights(),
+      // Shops, ✓ badges and suspended pages/people (hidden from the feed).
+      PageIndex.instance.refresh(),
+    ]);
     await _loadMore();
   }
 
@@ -522,6 +526,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     for (final doc in docs) {
       try {
         final post = Post.fromFirestore(doc);
+        if (PageIndex.instance.hidesPost(post.businessId, post.ownerId)) {
+          continue; // suspended page or person
+        }
         if (!existingIds.contains(post.id)) nextPosts.add(post);
       } catch (e) {
         // A very old post with a shape we can't read: skip it, don't break
@@ -2442,120 +2449,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   }
 
   void _sharePost(Post post) {
-    HapticFeedback.selectionClick();
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        final isDark = Theme.of(sheetContext).brightness == Brightness.dark;
-        return SafeArea(
-          child: Container(
-            margin: const EdgeInsets.all(12),
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF141821) : Colors.white,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.white24 : Colors.black12,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  tr('Share this post'),
-                  style: Theme.of(sheetContext).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const SizedBox(height: 6),
-                _ShareSheetPreview(post: post),
-                const SizedBox(height: 14),
-                Text(
-                  tr('Quick actions'),
-                  style: Theme.of(sheetContext).textTheme.labelLarge?.copyWith(
-                        color: AppColors.grey,
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    _ShareSheetAction(
-                      icon: Icons.copy_rounded,
-                      label: tr('Copy text'),
-                      onTap: () async {
-                        HapticFeedback.lightImpact();
-                        await Clipboard.setData(
-                          ClipboardData(
-                            text: post.content.trim().isEmpty
-                                ? 'Check out this Duhuze post from ${post.businessName}'
-                                : post.content,
-                          ),
-                        );
-                        if (!mounted) return;
-                        Navigator.of(sheetContext).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(tr('Caption copied'))),
-                        );
-                      },
-                    ),
-                    _ShareSheetAction(
-                      icon: Icons.send_rounded,
-                      label: tr('Send'),
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        Navigator.of(sheetContext).pop();
-                        _startChat(post);
-                      },
-                    ),
-                    _ShareSheetAction(
-                      icon: Icons.person_outline_rounded,
-                      label: tr('Open creator'),
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        Navigator.of(sheetContext).pop();
-                        if (post.businessId.isNotEmpty) {
-                          context.push(
-                              AppRoutes.businessProfilePath(post.businessId));
-                        } else {
-                          context
-                              .push(AppRoutes.clientProfilePath(post.ownerId));
-                        }
-                      },
-                    ),
-                    _ShareSheetAction(
-                      icon: Icons.link_rounded,
-                      label: tr('Copy ID'),
-                      onTap: () async {
-                        HapticFeedback.lightImpact();
-                        await Clipboard.setData(ClipboardData(text: post.id));
-                        if (!mounted) return;
-                        Navigator.of(sheetContext).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(tr('Post ID copied'))),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+    // Professional share sheet: chats (several at once), story, link,
+    // phone/PC share menu (lib/features/share/share_post_sheet.dart).
+    showSharePostSheet(context, post);
   }
 
   void _openLocation(Post post) async {
@@ -3844,6 +3740,67 @@ class _StarterPages extends StatelessWidget {
   }
 }
 
+/// "Message" button in a post header: small, rounded, with a hover state.
+class _MessagePill extends StatefulWidget {
+  const _MessagePill({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  State<_MessagePill> createState() => _MessagePillState();
+}
+
+class _MessagePillState extends State<_MessagePill> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final narrow = MediaQuery.sizeOf(context).width < 380;
+    return Tooltip(
+      message: tr('Message creator'),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            widget.onTap();
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            padding: EdgeInsets.symmetric(
+                horizontal: narrow ? 9 : 12, vertical: 7),
+            decoration: BoxDecoration(
+              gradient: _hover
+                  ? const LinearGradient(
+                      colors: [AppColors.primary, Color(0xFF5B8FCB)])
+                  : null,
+              color: _hover
+                  ? null
+                  : AppColors.primary.withValues(alpha: isDark ? 0.22 : 0.10),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.chat_bubble_rounded,
+                  size: 15,
+                  color: _hover ? Colors.white : AppColors.primary),
+              if (!narrow) ...[
+                const SizedBox(width: 6),
+                Text(tr('Message'),
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: _hover ? Colors.white : AppColors.primary)),
+              ],
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MediaArrow extends StatelessWidget {
   const _MediaArrow({required this.icon, required this.onTap});
 
@@ -4450,8 +4407,8 @@ class PostCard extends StatelessWidget {
                                     ),
                                   ),
                                 ),
-                                if (PageIndex.instance
-                                    .isVerified(post.businessId)) ...[
+                                if (PageIndex.instance.postAuthorVerified(
+                                    post.businessId, post.ownerId)) ...[
                                   const SizedBox(width: 4),
                                   const VerifiedBadge(),
                                 ],
@@ -4563,8 +4520,17 @@ class PostCard extends StatelessWidget {
                           ],
                         ),
                       ),
+                      if (post.ownerId != currentUserId)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 2),
+                          child: _MessagePill(onTap: onMessage),
+                        ),
                       if (post.ownerId == currentUserId)
                         PopupMenuButton<String>(
+                          tooltip: tr('More'),
+                          icon: const Icon(Icons.more_horiz_rounded),
+                          padding: EdgeInsets.zero,
+                          position: PopupMenuPosition.under,
                           onSelected: (value) {
                             if (value == 'edit') {
                               onEdit();
@@ -4585,11 +4551,22 @@ class PostCard extends StatelessWidget {
                         )
                       else
                         PopupMenuButton<String>(
+                          tooltip: tr('More'),
+                          icon: const Icon(Icons.more_horiz_rounded),
+                          padding: EdgeInsets.zero,
+                          position: PopupMenuPosition.under,
                           onSelected: (value) {
                             final name = post.businessName.isNotEmpty
                                 ? post.businessName
                                 : tr('this user');
-                            if (value == 'report') {
+                            if (value == 'share') {
+                              onShare();
+                            } else if (value == 'link') {
+                              Clipboard.setData(
+                                  ClipboardData(text: postLink(post.id)));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(tr('Link copied'))));
+                            } else if (value == 'report') {
                               showReportSheet(context,
                                   targetType: 'post',
                                   targetId: post.id,
@@ -4602,11 +4579,48 @@ class PostCard extends StatelessWidget {
                           },
                           itemBuilder: (context) => [
                             PopupMenuItem(
-                                value: 'report',
-                                child: Text(tr('Report post'))),
+                              value: 'share',
+                              child: ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(Icons.send_rounded),
+                                title: Text(tr('Share')),
+                              ),
+                            ),
                             PopupMenuItem(
-                                value: 'block',
-                                child: Text(tr('Block this person'))),
+                              value: 'link',
+                              child: ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(Icons.link_rounded),
+                                title: Text(tr('Copy link')),
+                              ),
+                            ),
+                            const PopupMenuDivider(),
+                            PopupMenuItem(
+                              value: 'report',
+                              child: ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(Icons.flag_outlined,
+                                    color: Colors.redAccent),
+                                title: Text(tr('Report post'),
+                                    style: const TextStyle(
+                                        color: Colors.redAccent)),
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'block',
+                              child: ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(Icons.block_rounded,
+                                    color: Colors.redAccent),
+                                title: Text(tr('Block this person'),
+                                    style: const TextStyle(
+                                        color: Colors.redAccent)),
+                              ),
+                            ),
                           ],
                         ),
                     ],
@@ -4688,7 +4702,11 @@ class PostCard extends StatelessWidget {
                         padding: const EdgeInsets.all(4),
                         constraints: const BoxConstraints.tightFor(
                             width: 32, height: 32),
-                        icon: const Icon(Icons.forward),
+                        tooltip: tr('Share'),
+                        icon: Transform.rotate(
+                          angle: -0.5,
+                          child: const Icon(Icons.send_outlined, size: 22),
+                        ),
                         onPressed: onShare,
                       ),
                       if (hasVideo)
@@ -4725,16 +4743,6 @@ class PostCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (post.ownerId != currentUserId)
-              Positioned(
-                right: 6,
-                top: 6,
-                child: IconButton(
-                  icon: const Icon(Icons.send),
-                  onPressed: onMessage,
-                  tooltip: tr('Message creator'),
-                ),
-              ),
           ],
         ),
       ),
@@ -4881,74 +4889,6 @@ class _FeedTabButton extends StatelessWidget {
                 : Theme.of(context).colorScheme.onSurface,
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ShareSheetPreview extends StatelessWidget {
-  const _ShareSheetPreview({required this.post});
-
-  final Post post;
-
-  @override
-  Widget build(BuildContext context) {
-    final thumb = post.media.isNotEmpty ? post.media.first.url : null;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark
-            ? Colors.white.withValues(alpha: 0.04)
-            : Colors.black.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: SizedBox(
-              width: 58,
-              height: 58,
-              child: thumb != null && thumb.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: thumb,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => Container(
-                        color: AppColors.lightGrey,
-                        child: const Icon(Icons.photo),
-                      ),
-                    )
-                  : Container(
-                      color: AppColors.lightGrey,
-                      child: const Icon(Icons.photo),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  post.businessName.isNotEmpty ? post.businessName : 'Creator',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  post.content.trim().isEmpty
-                      ? 'Share this moment with your people.'
-                      : post.content,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.grey),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -5593,51 +5533,6 @@ class _DesktopRailActionState extends State<_DesktopRailAction> {
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ShareSheetAction extends StatelessWidget {
-  const _ShareSheetAction({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Ink(
-        width: 92,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-        decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white.withValues(alpha: 0.05)
-              : Colors.black.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: AppColors.primary),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
         ),
       ),
     );

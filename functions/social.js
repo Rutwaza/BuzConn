@@ -102,6 +102,10 @@ exports.notifyOnChatMessage = onDocumentCreated(
     if (message.mediaUrl) preview = "[media]";
     else if (isGhost) preview = "Sent you a message";
     else preview = clip(message.text);
+    if (chat.chatType === "group") {
+      // "Team Duhuze · Alice: hello"
+      preview = `${clip(chat.groupName || "Group")} · ${String(message.senderName || "Someone")}: ${preview}`;
+    }
 
     const from = {
       name: String(message.senderName || "User"),

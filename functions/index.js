@@ -28,7 +28,12 @@ Object.assign(exports, feedFunctions);
 const {_ghostInternals, ...ghostFunctions} = require("./ghost");
 Object.assign(exports, ghostFunctions);
 // Shop: catalogs, orders, MoMo payments. See shop.js and payments/.
-Object.assign(exports, require("./shop"));
+const {_shopInternals, ...shopFunctions} = require("./shop");
+Object.assign(exports, shopFunctions);
+const {_groupInternals, ...groupFunctions} = require("./groups");
+const {_verificationInternals, ...verificationFunctions} = require("./verification");
+Object.assign(exports, verificationFunctions);
+Object.assign(exports, groupFunctions);
 // Status (24h stories): view counter + hourly cleanup. See status.js.
 Object.assign(exports, require("./status"));
 // Account deletion (Google Play requirement). See account.js.

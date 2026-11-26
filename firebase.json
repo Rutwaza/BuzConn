@@ -50,6 +50,16 @@
           }
         ]
       }
+    ],
+    "rewrites": [
+      {
+        "source": "/p/**",
+        "destination": "/p.html"
+      },
+      {
+        "source": "/g/**",
+        "destination": "/g.html"
+      }
     ]
   }
 }

@@ -1,4 +1,6 @@
 import 'package:businessfinder/core/widgets/emoji_picker.dart';
+import 'group_pages.dart';
+import 'package:businessfinder/features/share/share_post_sheet.dart';
 import 'package:businessfinder/core/services/media_picker.dart';
 import 'dart:async';
 import 'package:businessfinder/features/moderation/moderation.dart';
@@ -58,6 +60,16 @@ class ChatPage extends ConsumerStatefulWidget {
   @override
   ConsumerState<ChatPage> createState() => _ChatPageState();
 }
+
+const _senderColors = [
+  Color(0xFF61D1ED),
+  Color(0xFFFF8A65),
+  Color(0xFF81C784),
+  Color(0xFFBA68C8),
+  Color(0xFFFFD54F),
+  Color(0xFF4DB6AC),
+  Color(0xFFF06292),
+];
 
 class _ChatPageState extends ConsumerState<ChatPage> {
   // "typing…" of the other person, from the Realtime Database.
@@ -506,7 +518,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         String title;
         String? avatarUrl;
         String? otherUserId;
-        if (chatType == 'direct') {
+        final isGroup = chatType == 'group';
+        final groupMembers =
+            (chatData['participants'] as List? ?? const []).length;
+        final iAmGroupAdmin =
+            (chatData['admins'] as List? ?? const []).contains(user.uid);
+        final groupMuted =
+            isGroup && chatData['onlyAdminsCanSend'] == true && !iAmGroupAdmin;
+        if (isGroup) {
+          title = (chatData['groupName'] ?? 'Group').toString();
+          avatarUrl = chatData['groupImageUrl'] as String?;
+          otherUserId = null;
+        } else if (chatType == 'direct') {
           final userAId = chatData['userAId'] as String?;
           final userBId = chatData['userBId'] as String?;
           final isUserA = userAId == user.uid;
@@ -567,87 +590,109 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         final appBar = AppBar(
           scrolledUnderElevation: 0,
           titleSpacing: 10,
-          title: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.22),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.grey.withValues(alpha: 0.35),
+          title: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: !isGroup
+                ? null
+                : () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => GroupInfoPage(chatId: widget.chatId),
+                    )),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.22),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.grey.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: AppColors.primary,
+                    backgroundImage:
+                        avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                    child: avatarUrl == null && isGroup
+                        ? const Icon(Icons.groups_rounded,
+                            color: Colors.white, size: 20)
+                        : avatarUrl == null
+                            ? Text(
+                                title.toString().isNotEmpty
+                                    ? title[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              )
+                            : null,
                   ),
                 ),
-                child: CircleAvatar(
-                  radius: 18,
-                  backgroundColor: AppColors.primary,
-                  backgroundImage:
-                      avatarUrl != null ? NetworkImage(avatarUrl) : null,
-                  child: avatarUrl == null
-                      ? Text(
-                          title.toString().isNotEmpty
-                              ? title[0].toUpperCase()
-                              : '?',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        )
-                      : null,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    _ChatStatusLabel(
-                      otherUserId: otherUserId,
-                      isTyping: isOtherTyping,
-                      chatType: chatType,
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      if (isGroup)
+                        Text(
+                          '$groupMembers ${tr('members')} · ${tr('tap for group info')}',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.grey),
+                        )
+                      else
+                        _ChatStatusLabel(
+                          otherUserId: otherUserId,
+                          isTyping: isOtherTyping,
+                          chatType: chatType,
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-              IconButton(
-                tooltip: _isGhostMode ? 'Ghost mode on' : 'Ghost mode off',
-                onPressed: () => _setGhostMode(!_isGhostMode),
-                icon: Icon(
-                  _isGhostMode ? Icons.visibility_off : Icons.visibility,
-                  color: _isGhostMode ? AppColors.primary : Colors.grey,
-                ),
-              ),
-            ],
+                if (!isGroup)
+                  IconButton(
+                    tooltip: _isGhostMode ? 'Ghost mode on' : 'Ghost mode off',
+                    onPressed: () => _setGhostMode(!_isGhostMode),
+                    icon: Icon(
+                      _isGhostMode ? Icons.visibility_off : Icons.visibility,
+                      color: _isGhostMode ? AppColors.primary : Colors.grey,
+                    ),
+                  ),
+              ],
+            ),
           ),
           actions: [
-            _ChatActionButton(
-              icon: Icons.call_rounded,
-              onPressed: isIncomingMessageRequest || isRejectedMessageRequest
-                  ? null
-                  : _startAudioCall,
-              tooltip: tr('Audio call'),
-            ),
-            const SizedBox(width: 6),
-            _ChatActionButton(
-              icon: Icons.videocam_rounded,
-              onPressed: isIncomingMessageRequest || isRejectedMessageRequest
-                  ? null
-                  : _startVideoCall,
-              tooltip: tr('Video call'),
-            ),
+            if (!isGroup) ...[
+              _ChatActionButton(
+                icon: Icons.call_rounded,
+                onPressed: isIncomingMessageRequest || isRejectedMessageRequest
+                    ? null
+                    : _startAudioCall,
+                tooltip: tr('Audio call'),
+              ),
+              const SizedBox(width: 6),
+              _ChatActionButton(
+                icon: Icons.videocam_rounded,
+                onPressed: isIncomingMessageRequest || isRejectedMessageRequest
+                    ? null
+                    : _startVideoCall,
+                tooltip: tr('Video call'),
+              ),
+            ],
             PopupMenuButton<String>(
               icon: Container(
                 width: 36,
@@ -664,6 +709,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 ),
               ),
               onSelected: (value) async {
+                if (value == 'group_info') {
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => GroupInfoPage(chatId: widget.chatId),
+                  ));
+                  return;
+                }
                 if (value == 'profile') {
                   final businessId = chatData['businessId'] as String?;
                   if (businessId != null && context.mounted) {
@@ -720,7 +771,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               },
               itemBuilder: (context) {
                 final items = <PopupMenuEntry<String>>[];
+                if (isGroup) {
+                  items.add(PopupMenuItem(
+                    value: 'group_info',
+                    child: Text(tr('Group info')),
+                  ));
+                }
                 if (chatType != 'direct' &&
+                    !isGroup &&
                     !isBusinessOwner &&
                     chatData['businessId'] != null) {
                   items.add(
@@ -970,6 +1028,31 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                     child: Center(
                       child: Text(tr('This message request was declined.')),
+                    ),
+                  )
+                else if (groupMuted)
+                  SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: inputBarColor,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(children: [
+                          const Icon(Icons.campaign_outlined,
+                              color: AppColors.grey),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                                tr('Only admins can send messages in this group.'),
+                                style: const TextStyle(color: AppColors.grey)),
+                          ),
+                        ]),
+                      ),
                     ),
                   )
                 else
@@ -1329,6 +1412,34 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 ? Map<String, dynamic>.from(rawReplyTo)
                 : null;
             final deleted = data['deleted'] == true;
+            if (mediaType == 'system') {
+              // "Alice added Bob" etc. (written by the server for groups).
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Center(
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : Colors.black.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      text.toString(),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white70 : Colors.black54,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }
             final messageId = (data['id'] ?? doc.id).toString();
             _messageKeys.putIfAbsent(messageId, () => GlobalKey());
             final isLinkOnly = _isSingleUrl(text.toString());
@@ -1372,6 +1483,29 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                         _revealedReceivedGhostMessageIds.add(messageId);
                       },
                 onHide: null,
+              );
+            } else if (data['sharedPost'] is Map) {
+              // A post shared from the feed (share sheet).
+              final shared =
+                  Map<String, dynamic>.from(data['sharedPost'] as Map);
+              final postId = (shared['postId'] ?? '').toString();
+              content = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SharedPostBubble(
+                    data: shared,
+                    onOpen: () {
+                      if (postId.isNotEmpty) {
+                        context.push(AppRoutes.postPath(postId));
+                      }
+                    },
+                  ),
+                  if (data['shareNoteEmpty'] != true &&
+                      text.toString().trim().isNotEmpty)
+                    _buildLinkifiedText(text.toString(),
+                        isMe: isMe, isDark: isDark),
+                ],
               );
             } else if (mediaType == 'location' && data['location'] is Map) {
               // If you were sharing live and reopened the app, keep the pin moving.
@@ -1761,10 +1895,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                       Text(
                                         senderName,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
                                           fontSize: 12,
-                                          color: Color(0xFF61D1ED),
+                                          // One colour per person (groups).
+                                          color: _senderColors[
+                                              data['senderId'].hashCode.abs() %
+                                                  _senderColors.length],
                                         ),
                                       ),
                                     if (replyTo != null) ...[

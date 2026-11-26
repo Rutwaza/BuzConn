@@ -295,7 +295,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final preview = data['preview'] as String?;
       final key = '$type|$fromUserId|${postId ?? ''}|${chatId ?? ''}'
           // Each order update is its own line.
-          '${type == 'order' || type == 'report' ? '|${doc.id}' : ''}';
+          '${const {'order', 'report', 'admin', 'review'}.contains(type) ? '|${doc.id}' : ''}';
 
       final last = grouped.isNotEmpty ? grouped.last : null;
       final canMerge = last != null &&
@@ -654,6 +654,20 @@ class _NotificationsPageState extends State<NotificationsPage> {
           label: tr('Shop'),
           color: const Color(0xFF14B8A6),
         );
+      case 'admin':
+        return _NotificationSpec(
+          icon: Icons.campaign_rounded,
+          emoji: '\u{1F4E2}',
+          label: tr('Duhuze team'),
+          color: const Color(0xFF1D9BF0),
+        );
+      case 'review':
+        return _NotificationSpec(
+          icon: Icons.star_rounded,
+          emoji: '\u2B50',
+          label: tr('Review'),
+          color: const Color(0xFFFFB400),
+        );
       case 'follow':
         return _NotificationSpec(
           icon: Icons.person_add_alt_1_rounded,
@@ -689,6 +703,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
         return ': ${item.preview ?? 'order update'}';
       case 'report':
         return ': ${item.preview ?? 'new report'}';
+      case 'admin':
+      case 'review':
+        return ': ${item.preview ?? ''}';
       case 'follow':
         return item.count > 1
             ? ' and ${item.count - 1} others followed you'

@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class ChatRepository {
+  static final Map<String, Map<String, dynamic>> _profileCache = {};
+
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -146,7 +148,21 @@ class ChatRepository {
         throw StateError('This message request was declined.');
       }
 
-      if (chat['chatType'] == 'direct') {
+      if (chat['chatType'] == 'group') {
+        // Groups: my own profile name/photo (cached after the first send).
+        final me = _profileCache[senderId] ??= (await _firestore
+                    .collection('users')
+                    .doc(senderId)
+                    .get(const GetOptions(source: Source.serverAndCache)))
+                .data() ??
+            {};
+        senderName = (me['name'] ?? senderName).toString();
+        senderAvatar = (me['imageUrl'] as String?) ?? senderAvatar;
+        // "Alice: hello" in the chat list.
+        if (mediaType != 'location' && mediaUrl == null && !isGhost) {
+          chatUpdates['lastMessage'] = '$senderName: $text';
+        }
+      } else if (chat['chatType'] == 'direct') {
         final isUserA = chat['userAId'] == senderId;
         senderName = (isUserA ? chat['userAName'] : chat['userBName'])
                 ?.toString() ??

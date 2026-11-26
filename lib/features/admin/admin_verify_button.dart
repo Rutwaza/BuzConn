@@ -2,21 +2,38 @@ import 'package:flutter/material.dart';
 
 import '../../core/i18n/tr.dart';
 import 'admin_service.dart';
+import '../verification/verification_sheet.dart';
 
 /// Shown on a page only to admins: give or remove the verified badge.
 class AdminVerifyButton extends StatelessWidget {
   const AdminVerifyButton(
-      {super.key, required this.businessId, required this.verified});
+      {super.key,
+      required this.businessId,
+      required this.verified,
+      this.isOwner = false});
 
   final String businessId;
   final bool verified;
+
+  /// The page owner sees "Get verified" (request) instead.
+  final bool isOwner;
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<StaffRole>(
       future: AdminService.instance.role(),
       builder: (context, snap) {
-        if (snap.data != StaffRole.admin) return const SizedBox.shrink();
+        if (snap.data != StaffRole.admin) {
+          if (isOwner && !verified) {
+            return TextButton.icon(
+              icon: const Icon(Icons.verified_outlined, size: 18),
+              label: Text(tr('Get verified')),
+              onPressed: () => showVerificationSheet(context,
+                  kind: 'page', targetId: businessId),
+            );
+          }
+          return const SizedBox.shrink();
+        }
         return TextButton.icon(
           icon: Icon(
               verified

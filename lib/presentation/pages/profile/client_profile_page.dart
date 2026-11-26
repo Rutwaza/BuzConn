@@ -852,7 +852,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                   final name = (data['name'] ?? 'Page').toString();
                   final category = (data['category'] ?? '').toString();
                   final isActive = data['isActive'] != false;
-                  final isVerified = data['isVerified'] == true;
+                  final isVerified = data['verified'] == true; // given by an admin
                   return InkWell(
                     onTap: () =>
                         context.push(AppRoutes.businessProfilePath(doc.id)),

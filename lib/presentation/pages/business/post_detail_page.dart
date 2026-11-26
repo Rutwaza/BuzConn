@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:businessfinder/core/i18n/tr.dart';
 
 import 'package:flutter/material.dart';
+import 'package:businessfinder/features/share/share_post_sheet.dart';
 import 'package:businessfinder/features/posts/data/engagement_repository.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -468,177 +469,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
     return value.toString();
   }
 
-  void _showShareSheet(Post post) {
-    HapticFeedback.selectionClick();
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        final isDark = Theme.of(sheetContext).brightness == Brightness.dark;
-        final thumb = post.media.isNotEmpty ? post.media.first.url : null;
-        return SafeArea(
-          child: Container(
-            margin: const EdgeInsets.all(12),
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF141821) : Colors.white,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.white24 : Colors.black12,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  tr('Share this post'),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 18,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.04)
-                        : Colors.black.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Row(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: SizedBox(
-                          width: 56,
-                          height: 56,
-                          child: thumb != null && thumb.isNotEmpty
-                              ? CachedNetworkImage(
-                                  imageUrl: thumb,
-                                  fit: BoxFit.cover,
-                                  errorWidget: (_, __, ___) => Container(
-                                    color: AppColors.lightGrey,
-                                    child: const Icon(Icons.photo),
-                                  ),
-                                )
-                              : Container(
-                                  color: AppColors.lightGrey,
-                                  child: const Icon(Icons.photo),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              post.businessName.isNotEmpty
-                                  ? post.businessName
-                                  : 'Creator',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              post.content.trim().isEmpty
-                                  ? 'Share this moment.'
-                                  : post.content,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: AppColors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    _SheetAction(
-                      icon: Icons.send_rounded,
-                      label: tr('Send'),
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        Navigator.pop(sheetContext);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                              content: Text(
-                                  tr('Open chat from feed to send this post'))),
-                        );
-                      },
-                    ),
-                    _SheetAction(
-                      icon: Icons.copy_rounded,
-                      label: tr('Copy text'),
-                      onTap: () async {
-                        HapticFeedback.lightImpact();
-                        await Clipboard.setData(
-                          ClipboardData(
-                            text: post.content.trim().isEmpty
-                                ? 'Check out this Duhuze post from ${post.businessName}'
-                                : post.content,
-                          ),
-                        );
-                        if (!mounted) return;
-                        Navigator.pop(sheetContext);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(tr('Caption copied'))),
-                        );
-                      },
-                    ),
-                    _SheetAction(
-                      icon: Icons.person_outline_rounded,
-                      label: tr('Creator'),
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        Navigator.pop(sheetContext);
-                        if (post.businessId.isNotEmpty) {
-                          context.push(
-                              AppRoutes.businessProfilePath(post.businessId));
-                        } else {
-                          context
-                              .push(AppRoutes.clientProfilePath(post.ownerId));
-                        }
-                      },
-                    ),
-                    _SheetAction(
-                      icon: Icons.link_rounded,
-                      label: tr('Copy ID'),
-                      onTap: () async {
-                        HapticFeedback.lightImpact();
-                        await Clipboard.setData(ClipboardData(text: post.id));
-                        if (!mounted) return;
-                        Navigator.pop(sheetContext);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(tr('Post ID copied'))),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
+
 
   List<Widget> _buildCommentThreads(List<Comment> comments) {
     final byId = <String, Comment>{
@@ -1546,7 +1377,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               Text('${post.commentCount}'),
                               IconButton(
                                 icon: const Icon(Icons.forward),
-                                onPressed: () => _showShareSheet(post),
+                                onPressed: () => showSharePostSheet(context, post),
                               ),
                             ],
                           ),
@@ -1733,47 +1564,3 @@ class _DetailMetaChip extends StatelessWidget {
   }
 }
 
-class _SheetAction extends StatelessWidget {
-  const _SheetAction({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Ink(
-        width: 92,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-        decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white.withValues(alpha: 0.05)
-              : Colors.black.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: AppColors.primary),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

@@ -168,19 +168,23 @@ only appears for staff. Tapping a report notification also opens it. Every
 staff member gets a notification for each new report; child-safety reports
 say **URGENT**.
 
-**The tabs**
+**The sections** (left rail on PC, ☰ menu on phones)
 
-1. **Reports**
-   - The top row shows counts: urgent, open reports, users, pages, posts, suspended.
+1. **Dashboard**: counts at a glance (people, pages, posts, groups, open reports, verification requests, orders and "not received" disputes, suspended, verified, new people this week, new posts today). Tap a card to jump to its section. A red banner shows waiting child-safety reports. Admins can **Send announcement** (a notification to every active user, up to 5,000; logged).
+2. **Reports**
    - *Open* is the to-do list (child safety always first); *Handled* is the history.
    - Tap a report to see the reported person, the post or status (photo + text), the reporter's note, and the actions:
      - **Dismiss**: nothing wrong.
      - **Remove post/status**: deletes it with its likes, comments and views. A copy is kept in the locked Firestore collection `evidence` (for the police), and photo/video files stay in R2.
-     - **Suspend user**: logs them out everywhere and blocks sign-in. Their posts stay up; use *Remove* for those.
+     - **Suspend user**: logs them out everywhere and blocks sign-in; their posts are hidden from feeds.
      - **Remove + suspend**: both at once.
    - Write a short note (why). It is saved on the report.
-2. **Users**: search one word of a name or username. **Suspend** or **Restore**. The list opens on the suspended users. Tap a person to see their profile.
-3. **Team** (admin only): see the team, **Add moderator** by email (they need a Duhuze account), remove a moderator.
+3. **Users**: *Newest*, *Suspended*, *Verified*, or search one word of a name/username. Tap a person for the full picture: email/phone (and if verified), sign-in method, join date, last sign-in, posts, followers, reports against them, "strikes" (reports that led to action), orders, their pages. Actions: **Open profile**, **Send warning** (they get a "Message from the Duhuze team" notification), **Verify ✓ / Remove ✓** (admin), **Suspend** (with a reason, logged) / **Restore account**.
+4. **Pages**: *Newest*, *Shops*, *Verified*, *Suspended*, or search. Tap a page: followers, posts, products, orders, reports, rating, MoMo set or not. Actions: **Open page**, **Owner** (opens the person), **Verify ✓ / Remove ✓** (admin), **Suspend page** (with a reason the owner sees) / **Restore page**. A suspended page disappears from feeds and search, its shop refuses orders, and the owner can't edit it, post as it or change products (enforced in `firestore.rules`).
+5. **Verification** (admin): requests for the blue ✓. They only arrive when every rule is met (see *Verification* below), each with its checklist. **Look at it**, then **Approve** or **Reject** (with a note the person sees). They get a notification either way.
+6. **Orders**: *Not received* (buyer says paid, shop says no money: compare the MoMo transaction ID; open the **Shop** or the **Buyer** to act) and *Latest* orders with their tracking line.
+7. **Activity** (admin): every team action from `admin_events`: who did what, when, with notes. Tap a line to open the person or page.
+8. **Team** (admin only): see the team, **Add moderator** by email (they need a Duhuze account), remove a moderator.
 
 **Rules for the team**
 
@@ -195,8 +199,9 @@ say **URGENT**.
 | --- | --- |
 | Panel screens | `lib/features/admin/admin_panel_page.dart` |
 | Role check + calls | `lib/features/admin/admin_service.dart` |
-| Server actions: `adminResolveReport`, `adminSetUserSuspended`, `adminSetRole`, `adminSetVerified`, `adminStats` | `functions/admin.js` |
-| Verified badge (✓): open the page → **Verify this page** (admins only see the button). Give it only to real, checked businesses. | `lib/features/admin/admin_verify_button.dart` |
+| Server actions: `adminResolveReport`, `adminSetUserSuspended`, `adminSetPageSuspended`, `adminSetRole`, `adminSetVerified` (page), `adminSetUserVerified`, `adminReviewVerification`, `adminWarnUser`, `adminUserDetails`, `adminBroadcast`, `adminStats` | `functions/admin.js` |
+| Verified badge (✓): Admin panel, or on a page **Verify this page** (admins only see the button) | `lib/features/admin/admin_verify_button.dart` |
+| "Get verified" requests and their rules | `functions/verification.js`, `lib/features/verification/verification_sheet.dart` |
 | Report alerts to the team | `functions/moderation.js` (`staff` + `ADMIN_EMAILS`) |
 | Who can read `reports` / `staff` | `firestore.rules` (`isStaff()`) |
 | Report & block for users | `lib/features/moderation/moderation.dart` |
@@ -204,6 +209,41 @@ say **URGENT**.
 **If you lose access** (changed email, new account): from the PC run
 `node scripts/set-admin.js <new email>` (needs the Firebase owner Google
 account), then `node scripts/set-admin.js <old email> --remove`.
+
+### Verification (the blue ✓)
+
+People ask in **Settings → Get verified**; page owners on their page → **Get verified**. The app shows a checklist from the server; the request button only appears when everything is ✓:
+
+| Rule | Person | Page |
+| --- | --- | --- |
+| Age | account ≥ 30 days | page ≥ 14 days |
+| Profile | photo, name, bio (10+ letters) | logo, description (20+ letters), category |
+| Contact | verified email or a phone number | phone + location/address |
+| Activity | ≥ 3 posts, ≥ 25 followers | ≥ 3 posts, ≥ 25 followers |
+| Clean record | not suspended, no removed content in 90 days | same for the owner; page not suspended |
+
+Change the numbers in `RULES` at the top of `functions/verification.js`. After a rejection they can ask again after 30 days. `verified` on `users`/`businesses` can only be written by the server.
+
+### Group chats
+
+Inbox → **New group** (or the ✏️ button → *New group*): pick people (the people you follow / who follow you come first, or search), then a name, photo and description. In the group: tap the name at the top for **Group info**.
+
+- **Roles:** the creator is the **owner**; admins can add and remove members, make admins, change info and settings, and reset the invite link. Only the owner can remove an admin. If the owner leaves, the next admin (or the oldest member) becomes owner. Up to 256 members.
+- **Settings:** *Only admins can send messages* (announcement groups) and *Only admins can edit group info*.
+- **Invite link:** `https://duhuze-rw.web.app/g/<code>`. On Android it opens the app; anywhere, Inbox → 🔗 *Join a group* takes the link or the code. People removed by an admin can't rejoin with the link (only an admin can add them back).
+- Changes appear in the chat as small grey lines ("Alice added Bob"), written by the server.
+- Group calls and ghost mode are not available in groups yet.
+- **Code:** server `functions/groups.js` (`groupAction`), app `lib/features/chat/ui/group_pages.dart`, `people_picker.dart`, `lib/features/chat/data/group_service.dart`. Group fields (`admins`, `groupName`, `onlyAdminsCanSend`, …) can only change through the server (`groupFieldsUnchanged()` in the rules).
+
+### Sharing posts and links
+
+The ➤ button on a post (or ⋯ → Share) opens the share sheet:
+
+- **Send to** several chats or groups at once (recent chats first, 🔍 for anyone), with an optional note. It arrives as a post card in the chat; tapping it opens the post.
+- **Add to story**: the post's photo + caption as your 24-hour status, with a **View post** button for viewers.
+- **Copy link**: `https://duhuze-rw.web.app/p/<postId>`. The website shows a preview (photo, author, caption) and an **Open in the Duhuze app** button; on Android the link opens the app directly.
+- **Share to…**: the phone/PC share menu (WhatsApp, Telegram, email…), via the `share_plus` package.
+- Website pages: `site/p.html`, `site/g.html` (rewrites in `firebase.json`). App routes `/p/:id` and `/g/:code` (`lib/core/routes/router.dart`); Android links in `AndroidManifest.xml`. To skip Android's "Open with" question later, add `site/.well-known/assetlinks.json` with the Play app-signing SHA-256 and set `android:autoVerify="true"`.
 
 ### Other things that must not be forgotten
 
@@ -231,7 +271,9 @@ account), then `node scripts/set-admin.js <old email> --remove`.
 | `orders` | Shop orders | `createOrder` (server), then buyer/owner status moves |
 | `posts`, `posts/{id}/likes`, `posts/{id}/comments` | Feed content | Users; counters by server |
 | `timelines/{uid}/items` | Following feed | Server only |
-| `chats/{id}/messages` | Messages (incl. `location`, live location fields) | Participants |
+| `chats/{id}` (`chatType`: direct, business, **group**) | Chats; groups add `admins`, `ownerId`, `groupName`, `inviteCode`, settings | Participants; group fields only via `groupAction` |
+| `chats/{id}/messages` | Messages (incl. `location`, live location, `sharedPost`; `mediaType: system` lines in groups) | Participants; system lines by the server |
+| `verification_requests/{kind}_{id}` | Blue ✓ requests with their checklist | Server only; the requester and admins read |
 | `ghost_archive` | Encrypted ghost copies | Server only, nobody reads from the app |
 | `statuses`, `statuses/{id}/views` | 24h statuses and who viewed them | Owner creates/deletes; viewer adds own view; server counts + cleans up hourly |
 | `users/{uid}/blocked/{otherUid}` | People I blocked | Only me |
