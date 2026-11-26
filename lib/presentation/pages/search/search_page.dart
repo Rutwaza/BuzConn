@@ -6,13 +6,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
+import '../../../core/widgets/post_thumb.dart';
+import '../business/post_detail_page.dart';
+import 'pages_map.dart';
 
 enum SearchFilter { all, businesses, users, posts }
 
@@ -48,6 +50,7 @@ class _SearchPageState extends State<SearchPage> {
   String _lastResultQuery = '';
   SearchFilter _lastResultFilter = SearchFilter.all;
   static const LatLng _defaultDiscoverCenter = LatLng(-1.9441, 30.0619);
+  final _pagesMapKey = GlobalKey<PagesMapState>();
   final Map<String, LatLng> _resolvedPageLocations = {};
   // Page filters (Discover): category, place, shop, verified, rating.
   String? _category;
@@ -511,95 +514,38 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
-  List<Marker> _buildPageMarkers(
-    List<Map<String, dynamic>> pages,
-    bool isDark,
-  ) {
-    final markers = <Marker>[];
+  /// Pages with a known location, for the Discover map. Pages whose
+  /// place is only an address get looked up (once) in the background.
+  List<MapPage> _mapPages(List<Map<String, dynamic>> pages) {
+    final out = <MapPage>[];
     for (final page in pages.take(12)) {
       final point = _extractPagePoint(page);
-      final pageId = (page['id'] ?? page['businessId'] ?? '').toString();
-      final title = (page['name'] ?? 'Page').toString();
-
-      if (point != null) {
-        markers.add(
-          Marker(
-            point: point,
-            width: 110,
-            height: 52,
-            child: Tooltip(
-              message: title,
-              child: InkWell(
-                onTap: pageId.isEmpty
-                    ? null
-                    : () => context.push(AppRoutes.businessProfilePath(pageId)),
-                borderRadius: BorderRadius.circular(999),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFF111722).withValues(alpha: 0.92)
-                            : Colors.white.withValues(alpha: 0.94),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: AppColors.primary.withValues(alpha: 0.28),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.08),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.location_on_rounded,
-                            size: 14,
-                            color: AppColors.primary,
-                          ),
-                          const SizedBox(width: 4),
-                          Flexible(
-                            child: Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: isDark ? Colors.white : Colors.black87,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    const Icon(
-                      Icons.place_rounded,
-                      size: 16,
-                      color: AppColors.primary,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      } else {
+      if (point == null) {
         _resolvePageLocation(page);
+        continue;
       }
+      final pageId = (page['id'] ?? page['businessId'] ?? '').toString();
+      if (pageId.isEmpty) continue;
+      out.add(MapPage(
+        id: pageId,
+        name: (page['name'] ?? 'Page').toString(),
+        point: point,
+        imageUrl: (page['imageUrl'] ?? '').toString(),
+        category: (page['category'] ?? '').toString(),
+        place: (page['location'] ?? page['address'] ?? '').toString(),
+        verified: page['verified'] == true,
+        mapsLink: (page['googleMapsLink'] ?? '').toString(),
+      ));
     }
-    return markers;
+    return out;
   }
+
+  void _openPost(Post post) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => PostDetailPage(post: post),
+    ));
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -747,8 +693,7 @@ class _SearchPageState extends State<SearchPage> {
                             return _PostResultCard(
                               post: post,
                               onTap: () {
-                                context.push(
-                                    '${AppRoutes.feed}?postId=${post.id}');
+                                _openPost(post);
                               },
                             );
                           },
@@ -819,8 +764,7 @@ class _SearchPageState extends State<SearchPage> {
                                 (post) => _PostResultCard(
                                   post: post,
                                   onTap: () {
-                                    context.push(
-                                        '${AppRoutes.feed}?postId=${post.id}');
+                                    _openPost(post);
                                   },
                                 ),
                               ),
@@ -993,8 +937,7 @@ class _SearchPageState extends State<SearchPage> {
       return name.contains(query) || location.contains(query);
     }).take(12).toList();
 
-    final markers = _buildPageMarkers(locationPages, isDark);
-    final mapCenter = markers.isNotEmpty ? markers.first.point : _defaultDiscoverCenter;
+    final mapPages = _mapPages(locationPages);
 
     return Padding(
       padding: const EdgeInsets.all(14),
@@ -1072,7 +1015,7 @@ class _SearchPageState extends State<SearchPage> {
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(
-                                '${markers.length} pinned',
+                                '${mapPages.length} ${tr('pinned')}',
                                 style: const TextStyle(
                                   color: AppColors.primary,
                                   fontWeight: FontWeight.w700,
@@ -1084,69 +1027,49 @@ class _SearchPageState extends State<SearchPage> {
                         ),
                         const SizedBox(height: 14),
                         Expanded(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: Stack(
-                              children: [
-                                FlutterMap(
-                                  options: MapOptions(
-                                    initialCenter: mapCenter,
-                                    initialZoom: markers.length > 1 ? 10.6 : 11.4,
-                                  ),
-                                  children: [
-                                    TileLayer(
-                                      urlTemplate:
-                                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                      userAgentPackageName: AppConstants.mapUserAgent,
-                                    ),
-                                    MarkerLayer(markers: markers),
-                                  ],
-                                ),
-                                if (markers.isEmpty)
-                                  Positioned.fill(
-                                    child: Container(
-                                      color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.04),
-                                      alignment: Alignment.center,
-                                      child: Text(
-                                        _resolvingPageLocations.isNotEmpty
-                                            ? 'Loading page locations...'
-                                            : 'No page locations to show yet',
-                                        style: const TextStyle(
-                                          color: AppColors.grey,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
+                          child: PagesMap(
+                            key: _pagesMapKey,
+                            pages: mapPages,
+                            loading: _resolvingPageLocations.isNotEmpty,
+                            fallbackCenter: _defaultDiscoverCenter,
+                            onOpenPage: (id) =>
+                                context.push(AppRoutes.businessProfilePath(id)),
                           ),
                         ),
                         if (locationPages.isNotEmpty) ...[
                           const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 10,
-                            runSpacing: 10,
-                            children: locationPages.take(4).map((page) {
-                              final pageId = (page['id'] ?? '').toString();
-                              final title = (page['name'] ?? 'Page').toString();
-                              return ActionChip(
-                                onPressed: pageId.isEmpty
-                                    ? null
-                                    : () => context.push(
-                                          AppRoutes.businessProfilePath(pageId),
-                                        ),
-                                avatar: const Icon(
-                                  Icons.storefront_rounded,
-                                  size: 16,
-                                  color: AppColors.primary,
-                                ),
-                                label: Text(
-                                  title,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              );
-                            }).toList(),
+                          SizedBox(
+                            height: 36,
+                            child: ListView(
+                              scrollDirection: Axis.horizontal,
+                              children: locationPages.map((page) {
+                                final pageId = (page['id'] ?? '').toString();
+                                final title = (page['name'] ?? 'Page').toString();
+                                final onMap =
+                                    mapPages.any((m) => m.id == pageId);
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: ActionChip(
+                                    onPressed: pageId.isEmpty
+                                        ? null
+                                        : () => onMap
+                                            ? _pagesMapKey.currentState
+                                                ?.focus(pageId)
+                                            : context.push(AppRoutes
+                                                .businessProfilePath(pageId)),
+                                    avatar: Icon(
+                                      onMap
+                                          ? Icons.location_on_rounded
+                                          : Icons.storefront_rounded,
+                                      size: 16,
+                                      color: AppColors.primary,
+                                    ),
+                                    label: Text(title,
+                                        overflow: TextOverflow.ellipsis),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
                           ),
                         ],
                       ],
@@ -1267,7 +1190,7 @@ class _SearchPageState extends State<SearchPage> {
           return _PostResultCard(
             post: post,
             onTap: () {
-              context.push('${AppRoutes.feed}?postId=${post.id}');
+              _openPost(post);
             },
           );
         },
@@ -1326,7 +1249,7 @@ class _SearchPageState extends State<SearchPage> {
             ...postPreview.map((post) => _PostResultCard(
                   post: post,
                   onTap: () {
-                    context.push('${AppRoutes.feed}?postId=${post.id}');
+                    _openPost(post);
                   },
                 )),
           ],
@@ -1674,79 +1597,194 @@ class _PostResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final thumb = _postThumbnail(post);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hasMedia = post.media.isNotEmpty;
+    final text = post.content.trim();
+    final name = post.businessName.isNotEmpty ? post.businessName : tr('Creator');
+    final avatar = post.businessImageUrl;
+    final muted = isDark ? Colors.white60 : Colors.black54;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
-      child: Card(
-        elevation: 1,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      child: Material(
+        color: isDark ? const Color(0xFF1A202C) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (thumb != null)
-                ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(12)),
-                  child: Image.network(
-                    thumb,
-                    height: 180,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
-                )
-              else
-                Container(
-                  height: 180,
-                  width: double.infinity,
-                  decoration: const BoxDecoration(
-                    color: AppColors.lightGrey,
-                    borderRadius:
-                        BorderRadius.vertical(top: Radius.circular(12)),
-                  ),
-                  child: const Icon(Icons.photo, size: 40),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                  color: isDark ? Colors.white10 : const Color(0x14000000)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Author line.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                  child: Row(children: [
+                    CircleAvatar(
+                      radius: 15,
+                      backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                      backgroundImage: avatar != null && avatar.isNotEmpty
+                          ? NetworkImage(avatar)
+                          : null,
+                      child: avatar == null || avatar.isEmpty
+                          ? Text(name[0].toUpperCase(),
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.primary))
+                          : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 13.5)),
+                    ),
+                    Text(_ago(post.createdAt),
+                        style: TextStyle(fontSize: 11.5, color: muted)),
+                  ]),
                 ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      post.businessName.isNotEmpty
-                          ? post.businessName
-                          : 'Creator',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
+                if (hasMedia)
+                  AspectRatio(
+                    aspectRatio: 16 / 10,
+                    child: Stack(fit: StackFit.expand, children: [
+                      PostThumb(post: post, showVideoIcon: false),
+                      if (post.media.first.isVideo)
+                        Center(
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: const BoxDecoration(
+                                color: Colors.black45, shape: BoxShape.circle),
+                            child: const Icon(Icons.play_arrow_rounded,
+                                color: Colors.white, size: 30),
+                          ),
+                        ),
+                      if (post.media.length > 1)
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(999)),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              const Icon(Icons.collections_rounded,
+                                  size: 12, color: Colors.white),
+                              const SizedBox(width: 4),
+                              Text('${post.media.length}',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700)),
+                            ]),
+                          ),
+                        ),
+                    ]),
+                  )
+                else
+                  // Text post: the words are the post, so show them nicely.
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 12),
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppColors.primary.withValues(alpha: isDark ? 0.18 : 0.10),
+                          AppColors.primary.withValues(alpha: isDark ? 0.06 : 0.03),
+                        ],
+                      ),
+                      border: Border(
+                        left: BorderSide(
+                            color: AppColors.primary.withValues(alpha: 0.7),
+                            width: 3),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      post.content.isNotEmpty ? post.content : 'Post',
-                      maxLines: 2,
+                    child: Text(
+                      text.isEmpty ? tr('Post') : text,
+                      maxLines: 6,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppColors.grey),
+                      style: const TextStyle(
+                          fontSize: 14.5, height: 1.4, fontWeight: FontWeight.w500),
                     ),
-                  ],
+                  ),
+                if (hasMedia && text.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                    child: Text(text,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13.5, height: 1.35)),
+                  ),
+                // Likes, comments, product.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                  child: Row(children: [
+                    Icon(Icons.favorite_rounded, size: 15, color: muted),
+                    const SizedBox(width: 4),
+                    Text('${post.likeCount}',
+                        style: TextStyle(fontSize: 12, color: muted)),
+                    const SizedBox(width: 14),
+                    Icon(Icons.mode_comment_rounded, size: 14, color: muted),
+                    const SizedBox(width: 4),
+                    Text('${post.commentCount}',
+                        style: TextStyle(fontSize: 12, color: muted)),
+                    const Spacer(),
+                    if (post.product != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${tr('Buy')} · ${_money(post.product!.price)} RWF',
+                          style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.primary),
+                        ),
+                      ),
+                  ]),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  String? _postThumbnail(Post post) {
-    if (post.media.isNotEmpty) {
-      final image = post.media.firstWhere(
-        (m) => !m.isVideo,
-        orElse: () => const PostMedia(type: PostMediaType.video, url: ''),
-      );
-      if (image.url.isNotEmpty) return image.url;
+  static String _ago(DateTime t) {
+    final d = DateTime.now().difference(t);
+    if (d.inMinutes < 1) return tr('now');
+    if (d.inHours < 1) return '${d.inMinutes}m';
+    if (d.inDays < 1) return '${d.inHours}h';
+    if (d.inDays < 7) return '${d.inDays}d';
+    if (d.inDays < 365) return '${(d.inDays / 7).floor()}w';
+    return '${(d.inDays / 365).floor()}y';
+  }
+
+  static String _money(int v) {
+    final s = v.toString();
+    final b = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) b.write(',');
+      b.write(s[i]);
     }
-    return post.imageUrl;
+    return b.toString();
   }
 }
 

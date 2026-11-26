@@ -110,6 +110,14 @@ test("a new post must start with no likes or comments", async () => {
 });
 
 // 2 & 3. Messages ------------------------------------------------------------
+test("chats: check a new chat id; outsiders can't read; participants can't be reordered", async () => {
+  await assertSucceeds(getDoc(doc(as(EVE), "chats/bob_eve")));          // not made yet
+  await assertFails(getDoc(doc(as(EVE), "chats/alice_bob")));           // not mine
+  await assertSucceeds(getDoc(doc(as(BOB), "chats/alice_bob")));
+  await assertFails(setDoc(doc(as(BOB), "chats/alice_bob"),
+    {participants: [BOB, ALICE], chatType: "direct"}, {merge: true}));
+});
+
 test("you can only send messages as yourself", async () => {
   const msgs = collection(as(BOB), "chats/alice_bob/messages");
   await assertSucceeds(addDoc(msgs, {senderId: BOB, text: "yo", createdAt: serverTimestamp()}));

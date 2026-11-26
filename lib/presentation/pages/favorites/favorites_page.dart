@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:businessfinder/core/widgets/post_thumb.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
-import '../feed/post_detail_page.dart';
+import '../business/post_detail_page.dart';
 
+/// Saved posts as a 3-across grid (like a profile), newest first.
+/// Tap: open the post. Long-press or right-click: remove from Saved.
 class FavoritesPage extends StatelessWidget {
   const FavoritesPage({super.key});
 
@@ -18,9 +20,7 @@ class FavoritesPage extends StatelessWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(tr('Saved')),
-      ),
+      appBar: AppBar(title: Text(tr('Saved'))),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('users')
@@ -30,215 +30,273 @@ class FavoritesPage extends StatelessWidget {
             .snapshots(),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return _grid(context, count: 9, builder: (_) => const _TileShimmer());
           }
           final docs = snap.data?.docs ?? [];
-          if (docs.isEmpty) {
-            return Center(child: Text(tr('No saved posts yet.')));
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(12),
-            itemCount: docs.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final fav = docs[index];
-              final postId = fav.id;
-              return StreamBuilder<DocumentSnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('posts')
-                    .doc(postId)
-                    .snapshots(),
-                builder: (context, postSnap) {
-                  if (postSnap.connectionState == ConnectionState.waiting) {
-                    return _loadingCard();
-                  }
-                  if (!postSnap.hasData || !postSnap.data!.exists) {
-                    return _deletedCard(context, postId, user.uid);
-                  }
-                  final post = Post.fromFirestore(postSnap.data!);
-                  return _postCard(context, post, user.uid);
-                },
-              );
-            },
+          if (docs.isEmpty) return const _EmptySaved();
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+                child: Row(children: [
+                  const Icon(Icons.bookmark_rounded,
+                      size: 18, color: AppColors.primary),
+                  const SizedBox(width: 6),
+                  Text(
+                    docs.length == 1
+                        ? tr('1 saved post')
+                        : '${docs.length} ${tr('saved posts')}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const Spacer(),
+                  Text(tr('Only you can see this'),
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.grey)),
+                ]),
+              ),
+              Expanded(
+                child: _grid(
+                  context,
+                  count: docs.length,
+                  builder: (i) => _SavedTile(
+                    key: ValueKey(docs[i].id),
+                    postId: docs[i].id,
+                    userId: user.uid,
+                  ),
+                ),
+              ),
+            ],
           );
         },
       ),
     );
   }
 
-  Widget _postCard(BuildContext context, Post post, String userId) {
-    final media = post.media;
-    String? previewUrl;
-    bool isVideo = false;
-    if (media.isNotEmpty) {
-      previewUrl = media.first.url;
-      isVideo = media.first.isVideo;
-    } else if (post.imageUrl != null && post.imageUrl!.isNotEmpty) {
-      previewUrl = post.imageUrl;
-    } else if (post.videoUrl != null && post.videoUrl!.isNotEmpty) {
-      previewUrl = post.videoUrl;
-      isVideo = true;
-    }
-
-    return InkWell(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => PostDetailPage(postId: post.id),
+  /// 3 across on phones; on wide screens the grid stays a comfortable
+  /// width in the middle (like Instagram on the web).
+  Widget _grid(BuildContext context,
+      {required int count, required Widget Function(int) builder}) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 935),
+        child: GridView.builder(
+          padding: const EdgeInsets.fromLTRB(2, 0, 2, 24),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: 3,
+            crossAxisSpacing: 3,
           ),
-        );
-      },
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF171B24)
-              : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Theme.of(context).brightness == Brightness.dark
-                ? Colors.white10
-                : Colors.black12,
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: AppColors.lightGrey,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: previewUrl == null
-                  ? const Icon(Icons.image, color: AppColors.grey)
-                  : ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: isVideo
-                          ? _VideoThumb(
-                              url: previewUrl,
-                              thumb: media.isNotEmpty
-                                  ? media.first.thumbnailUrl
-                                  : null)
-                          : Image.network(
-                              previewUrl,
-                              fit: BoxFit.cover,
-                            ),
-                    ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    post.content.isEmpty ? 'Post' : post.content,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Likes: ${post.likeCount}  Comments: ${post.commentCount}',
-                    style: TextStyle(
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? Colors.white70
-                          : AppColors.grey,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              _formatDate(post.createdAt),
-              style: const TextStyle(fontSize: 12),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.bookmark_remove),
-              onPressed: () => _unsave(userId, post.id),
-            ),
-          ],
+          itemCount: count,
+          itemBuilder: (_, i) => builder(i),
         ),
       ),
     );
-  }
-
-  Widget _deletedCard(BuildContext context, String postId, String userId) {
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.error_outline, color: AppColors.grey),
-        title: Text(tr('Post deleted')),
-        subtitle: Text(tr('This post is no longer available.')),
-        trailing: IconButton(
-          icon: const Icon(Icons.delete),
-          onPressed: () => _unsave(userId, postId),
-        ),
-      ),
-    );
-  }
-
-  Widget _loadingCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            const SizedBox(width: 12),
-            Expanded(child: Text(tr('Loading...'))),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _unsave(String userId, String postId) async {
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .collection('favorites')
-        .doc(postId)
-        .delete();
-  }
-
-  String _formatDate(DateTime date) {
-    final month = date.month.toString().padLeft(2, '0');
-    final day = date.day.toString().padLeft(2, '0');
-    return '$month/$day';
   }
 }
 
-class _VideoThumb extends StatelessWidget {
-  const _VideoThumb({required this.url, this.thumb});
+class _SavedTile extends StatefulWidget {
+  const _SavedTile({super.key, required this.postId, required this.userId});
 
-  final String url;
-  final String? thumb;
+  final String postId;
+  final String userId;
+
+  @override
+  State<_SavedTile> createState() => _SavedTileState();
+}
+
+class _SavedTileState extends State<_SavedTile> {
+  // One read per tile (not a live listener): lighter with many saves.
+  late final Future<DocumentSnapshot<Map<String, dynamic>>> _post =
+      FirebaseFirestore.instance.collection('posts').doc(widget.postId).get();
+  bool _hover = false;
+
+  Future<void> _unsave() async {
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.userId)
+        .collection('favorites')
+        .doc(widget.postId)
+        .delete();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(tr('Removed from Saved'))));
+  }
+
+  Future<void> _menu(Offset? at) async {
+    final choice = at == null
+        ? await showModalBottomSheet<String>(
+            context: context,
+            showDragHandle: true,
+            builder: (c) => SafeArea(
+              child: ListTile(
+                leading: const Icon(Icons.bookmark_remove_rounded),
+                title: Text(tr('Remove from Saved')),
+                onTap: () => Navigator.pop(c, 'remove'),
+              ),
+            ),
+          )
+        : await showMenu<String>(
+            context: context,
+            position: RelativeRect.fromLTRB(at.dx, at.dy, at.dx, at.dy),
+            items: [
+              PopupMenuItem(
+                value: 'remove',
+                child: Row(children: [
+                  const Icon(Icons.bookmark_remove_rounded, size: 18),
+                  const SizedBox(width: 10),
+                  Text(tr('Remove from Saved')),
+                ]),
+              ),
+            ],
+          );
+    if (choice == 'remove') await _unsave();
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Cover picture, or a frame taken from the video (works on Windows too).
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        VideoCover(
-          media: PostMedia(
-              type: PostMediaType.video, url: url, thumbnailUrl: thumb),
-          width: 320,
-        ),
-        const Center(
-          child: Icon(Icons.play_circle_fill,
-              color: Colors.white,
-              shadows: [Shadow(blurRadius: 6, color: Colors.black54)]),
-        ),
-      ],
+    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      future: _post,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const _TileShimmer();
+        }
+        final doc = snap.data;
+        if (doc == null || !doc.exists) {
+          return _GoneTile(onRemove: _unsave);
+        }
+        final post = Post.fromFirestore(doc);
+        return MouseRegion(
+          onEnter: (_) => setState(() => _hover = true),
+          onExit: (_) => setState(() => _hover = false),
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => PostDetailPage(post: post),
+            )),
+            onLongPress: () => _menu(null),
+            onSecondaryTapDown: (d) => _menu(d.globalPosition),
+            child: Stack(fit: StackFit.expand, children: [
+              PostThumb(post: post, showVideoIcon: false),
+              // Type badge, top right (video / several photos).
+              if (post.media.isNotEmpty)
+                Positioned(
+                  right: 6,
+                  top: 6,
+                  child: Icon(
+                    post.media.first.isVideo
+                        ? Icons.play_arrow_rounded
+                        : post.media.length > 1
+                            ? Icons.collections_rounded
+                            : null,
+                    color: Colors.white,
+                    size: 20,
+                    shadows: const [
+                      Shadow(blurRadius: 6, color: Colors.black54)
+                    ],
+                  ),
+                ),
+              // Hover (desktop): likes and comments, like Instagram.
+              AnimatedOpacity(
+                opacity: _hover ? 1 : 0,
+                duration: const Duration(milliseconds: 140),
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.38),
+                  alignment: Alignment.center,
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.favorite_rounded,
+                        color: Colors.white, size: 18),
+                    const SizedBox(width: 4),
+                    Text('${post.likeCount}',
+                        style: const TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.w800)),
+                    const SizedBox(width: 14),
+                    const Icon(Icons.mode_comment_rounded,
+                        color: Colors.white, size: 17),
+                    const SizedBox(width: 4),
+                    Text('${post.commentCount}',
+                        style: const TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.w800)),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _GoneTile extends StatelessWidget {
+  const _GoneTile({required this.onRemove});
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: InkWell(
+        onTap: onRemove,
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.hide_image_outlined, color: AppColors.grey),
+          const SizedBox(height: 6),
+          Text(tr('Post deleted'),
+              style: const TextStyle(fontSize: 12, color: AppColors.grey)),
+          const SizedBox(height: 2),
+          Text(tr('Tap to remove'),
+              style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w700)),
+        ]),
+      ),
+    );
+  }
+}
+
+class _TileShimmer extends StatelessWidget {
+  const _TileShimmer();
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest);
+  }
+}
+
+class _EmptySaved extends StatelessWidget {
+  const _EmptySaved();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 84,
+            height: 84,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                  color: Theme.of(context).colorScheme.onSurface, width: 2),
+            ),
+            child: const Icon(Icons.bookmark_border_rounded, size: 40),
+          ),
+          const SizedBox(height: 16),
+          Text(tr('Save posts you love'),
+              style:
+                  const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          Text(
+            tr('Tap the bookmark on any post to keep it here. Only you can see what you save.'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.grey),
+          ),
+        ]),
+      ),
     );
   }
 }

@@ -8,7 +8,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../../../core/theme/colors.dart';
-import '../feed/post_detail_page.dart';
+import 'package:go_router/go_router.dart';
+import '../../../core/constants/app_constants.dart';
 
 class AnalyticsPage extends StatelessWidget {
   const AnalyticsPage({super.key});
@@ -1006,11 +1007,8 @@ class _PostPreviewCard extends StatelessWidget {
 
     return InkWell(
       onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => PostDetailPage(postId: postId),
-          ),
-        );
+        // Same post page as the feed (media + comments beside it).
+        context.push(AppRoutes.postPath(postId));
       },
       child: Container(
         padding: const EdgeInsets.all(12),

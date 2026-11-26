@@ -36,8 +36,12 @@ class ChatRepository {
     final clientName = client['name'] ?? 'Client';
     final clientImageUrl = client['imageUrl'];
 
+    // The chat may already exist (made by the other person, maybe as a
+    // direct chat). Then we must not rewrite `participants` (the rules
+    // refuse any change to it, even just a different order).
+    final exists = await _chatExists(docRef);
     await docRef.set({
-      'participants': [clientId, businessOwnerId],
+      if (!exists) 'participants': [clientId, businessOwnerId],
       'clientId': clientId,
       'clientName': clientName,
       'clientImageUrl': clientImageUrl,
@@ -51,7 +55,7 @@ class ChatRepository {
         businessOwnerId: FieldValue.serverTimestamp(),
       },
       'updatedAt': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
+      if (!exists) 'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
     return chatId;
   }
@@ -67,6 +71,11 @@ class ChatRepository {
     final userA = userASnap.data() ?? {};
     final userAName = userA['name'] ?? 'User';
     final userAImageUrl = userA['imageUrl'];
+
+    // Already there (either person may have started it): just open it.
+    // Writing it again could flip `participants` order or the chat type,
+    // which the rules refuse ("permission denied").
+    if (await _chatExists(docRef)) return chatId;
 
     final userBSnap = await _firestore.collection('users').doc(userBId).get();
     final userB = userBSnap.data() ?? {};
@@ -88,9 +97,21 @@ class ChatRepository {
       },
       'updatedAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    });
 
     return chatId;
+  }
+
+  /// True when the chat doc exists. A chat we are not in (or one the old
+  /// rules hide while it doesn't exist) reads as "permission denied":
+  /// treat that as "not there yet" and let the write decide.
+  Future<bool> _chatExists(DocumentReference<Map<String, dynamic>> ref) async {
+    try {
+      return (await ref.get()).exists;
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') return false;
+      rethrow;
+    }
   }
 
   Future<void> sendMessage({

@@ -398,7 +398,10 @@ service cloud.firestore {
     }
 
     match /chats/{chatId} {
-      allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
+      // A chat that doesn't exist yet can be checked (nothing to leak), so
+      // the app can tell "new chat" from "open the existing one".
+      allow read: if isSignedIn()
+        && (resource == null || request.auth.uid in resource.data.participants);
       allow create: if isSignedIn()
         && request.resource.data.participants is list
         && request.auth.uid in request.resource.data.participants
