@@ -88,7 +88,7 @@ Write-Host "Functions ($($fns.Count)): $(if ($fns) { $fns -join ', ' } else { 'n
 if ($DryRun) { exit 0 }
 if (-not $targets -and -not $fns) {
   Write-Host "`nNothing to deploy - Firebase is already up to date." -ForegroundColor Green
-  git rev-parse HEAD | Set-Content $stateFile
+  if (-not $Functions) { git rev-parse HEAD | Set-Content $stateFile }
   exit 0
 }
 
@@ -160,6 +160,11 @@ if ($failed.Count -gt 0) {
 }
 if ($hostingSkipped) {
   Write-Host "`nDone, except the website (placeholders). Not saving .deploy-state so it is retried next time." -ForegroundColor Yellow
+  exit 0
+}
+if ($Functions) {
+  # A retry of a few functions must not mark other pending changes (website, rules) as deployed.
+  Write-Host "`nDone - those functions are deployed. Run .\deploy.ps1 once more for any other changes." -ForegroundColor Green
   exit 0
 }
 git rev-parse HEAD | Set-Content $stateFile

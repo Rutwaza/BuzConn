@@ -257,9 +257,11 @@ service cloud.firestore {
     // Orders are made by the server (createOrder) with the real prices.
     // Buyer: "I paid" or "Cancel". Shop owner: "Received" or "Not received".
     match /orders/{orderId} {
-      allow read: if isSignedIn()
-        && (resource.data.buyerId == request.auth.uid
-          || resource.data.businessOwnerId == request.auth.uid);
+      // The admin team reads all orders (Orders tab, page details).
+      allow read: if isStaff()
+        || (isSignedIn()
+          && (resource.data.buyerId == request.auth.uid
+            || resource.data.businessOwnerId == request.auth.uid));
       allow create, delete: if false;
       allow update: if isSignedIn() && (
         (resource.data.buyerId == request.auth.uid

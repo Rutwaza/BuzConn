@@ -233,6 +233,10 @@ test("orders: only the server creates them; outsiders cannot read", async () => 
   await assertSucceeds(getDoc(doc(as(BOB), "orders/o1")));
   await assertSucceeds(getDoc(doc(as(ALICE), "orders/o1")));
   await assertFails(getDoc(doc(as(EVE), "orders/o1")));
+  // The admin team can read every order (Admin panel), but not change it.
+  await assertSucceeds(getDoc(doc(as(EVE, {admin: true}), "orders/o1")));
+  await assertSucceeds(getDoc(doc(as(EVE, {moderator: true}), "orders/o1")));
+  await assertFails(updateDoc(doc(as(EVE, {admin: true}), "orders/o1"), {status: "confirmed"}));
 });
 
 test("orders: buyer says paid, cannot confirm or change the total", async () => {
