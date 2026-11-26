@@ -20,6 +20,8 @@ param(
   [string[]]$Functions
 )
 $ErrorActionPreference = 'Continue'
+# Give the Firebase CLI more time to load functions code (default is 10s, too short for our index.js)
+if (-not $env:FUNCTIONS_DISCOVERY_TIMEOUT) { $env:FUNCTIONS_DISCOVERY_TIMEOUT = '60' }
 $project = 'bussinessfinder-327f5'
 $stateFile = Join-Path $PSScriptRoot '.deploy-state'
 Set-Location $PSScriptRoot
