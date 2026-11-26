@@ -212,17 +212,47 @@ account), then `node scripts/set-admin.js <old email> --remove`.
 
 ### Verification (the blue ✓)
 
-People ask in **Settings → Get verified**; page owners on their page → **Get verified**. The app shows a checklist from the server; the request button only appears when everything is ✓:
+People ask in **Settings → Get verified**; page owners in **My pages → ⋮ → Get verified** (or on the page). The app shows a checklist from the server with progress, the person's numbers and a tip for each missing item; the request button only appears when everything is ✓. A person on the team still reviews every request (Admin panel → Verification).
 
 | Rule | Person | Page |
 | --- | --- | --- |
-| Age | account ≥ 30 days | page ≥ 14 days |
-| Profile | photo, name, bio (10+ letters) | logo, description (20+ letters), category |
-| Contact | verified email or a phone number | phone + location/address |
-| Activity | ≥ 3 posts, ≥ 25 followers | ≥ 3 posts, ≥ 25 followers |
-| Clean record | not suspended, no removed content in 90 days | same for the owner; page not suspended |
+| Age | account ≥ 30 days | page ≥ 30 days |
+| Profile | photo, name, bio (10+ letters) | logo, category, description (30+ letters) |
+| Contact | confirmed email or a phone number | phone + location/address |
+| Owner | – | owner: confirmed email or phone, account ≥ 30 days |
+| Posts | ≥ 3 | ≥ 6, and ≥ 2 in the last 30 days |
+| Followers | ≥ 25 | ≥ 50 |
+| Real reactions | – | ≥ 30 likes + comments on the page's last 60 posts |
+| Customers | – | if it has reviews: average ≥ 3.5★ |
+| Clean record | not suspended, no removed content in 90 days | same for the owner; page active, not suspended |
 
-Change the numbers in `RULES` at the top of `functions/verification.js`. After a rejection they can ask again after 30 days. `verified` on `users`/`businesses` can only be written by the server.
+Change the numbers in `RULES` at the top of `functions/verification.js` (and in `site/guide.html#verify`). After a rejection they can ask again after 30 days. `verified` on `users`/`businesses` can only be written by the server.
+
+### Pages: first page free, extra pages paid once
+
+- New pages are made by the server (`createPage` in `functions/pages.js`): the app can no longer create `businesses` docs itself (rules: `allow create: if false`).
+- Everyone has `freePages` (1) + `users/{uid}.pageSlotsBought`. Only **active** pages count. Hiding a page frees its place; showing it again goes through `restorePage` (needs a free place). People who already had 2 pages keep them.
+- **My pages** (`lib/presentation/pages/business/businesses_page.dart`) shows "1 of 1 pages used", **Get more**, the owner's pages, **Pages you help run** and hidden pages.
+
+### Page team
+
+Owner → **My pages → ⋮ → Page team → Add person** (@username). Roles: **admin** (edit page, post, shop, orders), **editor** (post as the page). Max 10. Stored on the page as `team: {uid: role}` + `teamIds` (server only, `pageTeam` in `functions/pages.js`). Orders carry `staffIds` (owner + admins) so admins see and handle them; `pageTeam` updates the last 300 orders when the team changes. Rules helpers: `isPageManager()` / `isPageMember()`.
+
+### Duhuze earnings: extra pages and boosts (IremboPay, not live yet)
+
+- `functions/billing.js`: `billingInfo`, `startPurchase`, `billingWebhook`, `adminBilling`. Every purchase is `payments/{id}` (pending → paid / failed, or **not_ready** while the gateway is off). Items: `page_slot` (one more page) and `boost` (post shows as **Sponsored** in For You until `boostUntil`; a new boost adds days after the current one).
+- Prices and settings: Firestore `config/billing`, edited in **Admin panel → Payments** (extra page 5,000 RWF; boosts 3/7/14 days = 2,000/4,000/7,000 RWF). The app never sends prices.
+- **Until IremboPay is live** people see "Payments are coming soon" and nothing is charged; their tries show as **Waiting** in Admin → Payments (that's your demand). The team can **Give for free** (extra page or boost) or **Mark paid** a payment checked by hand.
+- **Going live with IremboPay** (`functions/payments/irembopay.js`, check names against IremboPay's API docs):
+  1. `firebase functions:secrets:set IREMBOPAY_SECRET_KEY`
+  2. In `functions/billing.js` set `BILLING_SECRETS = ["IREMBOPAY_SECRET_KEY"]`, run `.\deploy.ps1`.
+  3. In IremboPay create the two products (extra page, boost) and set the callback URL to `https://us-central1-bussinessfinder-327f5.cloudfunctions.net/billingWebhook`.
+  4. Admin → Payments: account id, the two product codes, **Sandbox** first, switch **Payments ready** on, test, then **Live**.
+- App: `lib/features/billing/` (`pay_sheet.dart` = the one payment screen; `upgrade_sheets.dart` = Get another page / Boost).
+
+### #Hashtags and @mentions
+
+`functions/tags.js`: posts get `hashtags` (lowercase, set in `feed.js`); `@username` in a post or comment sends a `mention` notification. App: `lib/core/widgets/tagged_text.dart` (tappable #tags, @names, links) and `lib/presentation/pages/search/hashtag_page.dart`; typing `#tag` in Discover offers the tag page. Index: `posts (hashtags array-contains, createdAt desc)`.
 
 ### Group chats
 

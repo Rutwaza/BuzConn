@@ -82,6 +82,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
       ));
       return;
     }
+    if (item.type == 'team') {
+      final id = item.businessId;
+      if (id == null || id.isEmpty || !context.mounted) return;
+      context.push(AppRoutes.businessProfilePath(id));
+      return;
+    }
+    if (item.type == 'billing' && item.postId == null) {
+      if (!context.mounted) return;
+      context.push(AppRoutes.businesses);
+      return;
+    }
     if (item.type == 'follow') {
       if (item.fromUserId.isEmpty || !context.mounted) return;
       context.push(AppRoutes.clientProfilePath(item.fromUserId));
@@ -257,7 +268,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case _NotificationFilter.messages:
         return item.type == 'message' || item.type == 'message_request';
       case _NotificationFilter.activity:
-        return item.type == 'like' || item.type == 'comment';
+        return item.type == 'like' ||
+            item.type == 'comment' ||
+            item.type == 'mention';
       case _NotificationFilter.follows:
         return item.type == 'follow';
     }
@@ -295,7 +308,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final preview = data['preview'] as String?;
       final key = '$type|$fromUserId|${postId ?? ''}|${chatId ?? ''}'
           // Each order update is its own line.
-          '${const {'order', 'report', 'admin', 'review'}.contains(type) ? '|${doc.id}' : ''}';
+          '${const {'order', 'report', 'admin', 'review', 'billing', 'team', 'mention'}.contains(type) ? '|${doc.id}' : ''}';
 
       final last = grouped.isNotEmpty ? grouped.last : null;
       final canMerge = last != null &&
@@ -320,6 +333,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           fromImage: data['fromUserImageUrl'] as String?,
           postId: postId,
           chatId: chatId,
+          businessId: data['businessId'] as String?,
           preview: preview,
           createdAt: createdAt,
           count: 1,
@@ -668,6 +682,27 @@ class _NotificationsPageState extends State<NotificationsPage> {
           label: tr('Review'),
           color: const Color(0xFFFFB400),
         );
+      case 'mention':
+        return _NotificationSpec(
+          icon: Icons.alternate_email_rounded,
+          emoji: '@',
+          label: tr('Mention'),
+          color: const Color(0xFF1D9BF0),
+        );
+      case 'team':
+        return _NotificationSpec(
+          icon: Icons.groups_rounded,
+          emoji: '\u{1F91D}',
+          label: tr('Page team'),
+          color: const Color(0xFF14B8A6),
+        );
+      case 'billing':
+        return _NotificationSpec(
+          icon: Icons.receipt_long_rounded,
+          emoji: '\u{1F9FE}',
+          label: tr('Payment'),
+          color: const Color(0xFF22A06B),
+        );
       case 'follow':
         return _NotificationSpec(
           icon: Icons.person_add_alt_1_rounded,
@@ -705,7 +740,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
         return ': ${item.preview ?? 'new report'}';
       case 'admin':
       case 'review':
+      case 'billing':
         return ': ${item.preview ?? ''}';
+      case 'team':
+        return ' ${item.preview ?? 'added you to a page team'}';
+      case 'mention':
+        return ' mentioned you: ${item.preview ?? ''}';
       case 'follow':
         return item.count > 1
             ? ' and ${item.count - 1} others followed you'
@@ -738,6 +778,7 @@ class _GroupedNotification {
     required this.fromImage,
     required this.postId,
     required this.chatId,
+    this.businessId,
     required this.preview,
     required this.createdAt,
     required this.count,
@@ -752,6 +793,7 @@ class _GroupedNotification {
   final String? fromImage;
   final String? postId;
   final String? chatId;
+  final String? businessId;
   String? preview;
   final DateTime createdAt;
   int count;

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:businessfinder/core/i18n/tr.dart';
 
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/widgets/tagged_text.dart';
 import 'package:businessfinder/features/share/share_post_sheet.dart';
 import 'package:businessfinder/features/posts/data/engagement_repository.dart';
 import 'package:flutter/services.dart';
@@ -694,9 +695,12 @@ class _PostDetailPageState extends State<PostDetailPage> {
                             ),
                           ),
                         ],
-                        Text(
+                        TaggedText(
                           comment.content,
-                          style: const TextStyle(fontSize: 13, height: 1.35),
+                          style: TextStyle(
+                              fontSize: 13,
+                              height: 1.35,
+                              color: Theme.of(context).textTheme.bodyMedium?.color),
                         ),
                         const SizedBox(height: 8),
                         Row(
@@ -1286,7 +1290,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                 ),
                 if (media.isEmpty) ...[
                   const SizedBox(height: 12),
-                  if (post.content.trim().isNotEmpty) Text(post.content),
+                  if (post.content.trim().isNotEmpty) TaggedText(post.content),
                 ],
                 if (media.isNotEmpty) ...[
                   const SizedBox(height: 12),
@@ -1323,7 +1327,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                   ),
                   if (post.content.trim().isNotEmpty) ...[
                     const SizedBox(height: 10),
-                    Text(post.content),
+                    TaggedText(post.content),
                   ],
                   if (media.length > 1) ...[
                     const SizedBox(height: 8),

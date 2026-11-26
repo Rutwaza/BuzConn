@@ -413,3 +413,72 @@ test("verified badge and verification requests are server-only", async () => {
 test("users cannot un-suspend themselves", async () => {
   await assertFails(updateDoc(doc(as(ALICE), "users/alice"), {suspended: false}));
 });
+
+// Pages, page team, payments, boosts --------------------------------------
+const KAMI = "kami"; // team editor
+async function seedTeam() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, "businesses/pg1"), {
+      ownerId: ALICE, name: "Keza", isActive: true,
+      team: {[BOB]: "admin", [KAMI]: "editor"}, teamIds: [BOB, KAMI],
+    });
+    await setDoc(doc(db, "businesses/hidden1"), {ownerId: ALICE, name: "Old", isActive: false});
+    await setDoc(doc(db, "orders/o9"), {
+      buyerId: EVE, businessOwnerId: ALICE, businessId: "pg1", staffIds: [ALICE, BOB],
+      total: 100, status: "paid_claimed",
+    });
+    await setDoc(doc(db, "payments/pay1"), {uid: ALICE, item: "page_slot", amount: 5000, status: "not_ready"});
+  });
+}
+
+test("pages: only the server creates them (paid slots)", async () => {
+  await assertFails(setDoc(doc(as(ALICE), "businesses/new1"), {ownerId: ALICE, name: "Mine"}));
+});
+
+test("page team: admin edits the page, editor posts only, outsiders nothing", async () => {
+  await seedTeam();
+  await assertSucceeds(updateDoc(doc(as(BOB), "businesses/pg1"), {description: "Fresh bread"}));
+  await assertFails(updateDoc(doc(as(KAMI), "businesses/pg1"), {description: "x"}));
+  await assertFails(updateDoc(doc(as(BOB), "businesses/pg1"), {team: {[BOB]: "admin", [EVE]: "admin"}}));
+  await assertFails(updateDoc(doc(as(BOB), "businesses/pg1"), {ownerId: BOB}));
+  const post = (uid) => ({ownerId: uid, businessId: "pg1", content: "hi", likes: [], comments: [], likeCount: 0, commentCount: 0});
+  await assertSucceeds(setDoc(doc(as(KAMI), "posts/tp1"), post(KAMI)));
+  await assertSucceeds(setDoc(doc(as(BOB), "posts/tp2"), post(BOB)));
+  await assertFails(setDoc(doc(as(EVE), "posts/tp3"), post(EVE)));
+  // Admin can delete a page post an editor made; another editor can't.
+  await assertSucceeds(deleteDoc(doc(as(BOB), "posts/tp1")));
+  await assertSucceeds(setDoc(doc(as(KAMI), "posts/tp4"), post(KAMI)));
+  await assertSucceeds(updateDoc(doc(as(ALICE), "posts/tp4"), {businessImageUrl: "https://x/logo.png"}));
+  await assertFails(updateDoc(doc(as(ALICE), "posts/tp4"), {content: "changed by owner"}));
+});
+
+test("page team admins handle orders; editors don't", async () => {
+  await seedTeam();
+  await assertSucceeds(getDoc(doc(as(BOB), "orders/o9")));
+  await assertFails(getDoc(doc(as(KAMI), "orders/o9")));
+  await assertSucceeds(updateDoc(doc(as(BOB), "orders/o9"), {status: "confirmed"}));
+});
+
+test("pages: hide yourself, but showing again needs restorePage", async () => {
+  await seedTeam();
+  await assertFails(updateDoc(doc(as(ALICE), "businesses/hidden1"), {isActive: true}));
+  await assertSucceeds(updateDoc(doc(as(ALICE), "businesses/pg1"), {isActive: false}));
+});
+
+test("payments: you see yours, nobody writes them", async () => {
+  await seedTeam();
+  await assertSucceeds(getDoc(doc(as(ALICE), "payments/pay1")));
+  await assertFails(getDoc(doc(as(BOB), "payments/pay1")));
+  await assertSucceeds(getDoc(doc(as(EVE, {admin: true}), "payments/pay1")));
+  await assertFails(setDoc(doc(as(ALICE), "payments/pay2"), {uid: ALICE, status: "paid"}));
+  await assertFails(updateDoc(doc(as(ALICE), "users/alice"), {pageSlotsBought: 5}));
+});
+
+test("boosts and hashtags are server-only", async () => {
+  const p = {ownerId: ALICE, content: "x", likes: [], comments: [], likeCount: 0, commentCount: 0};
+  await assertFails(setDoc(doc(as(ALICE), "posts/b1"), {...p, boostUntil: new Date(Date.now() + 864e5)}));
+  await assertSucceeds(setDoc(doc(as(ALICE), "posts/b2"), p));
+  await assertFails(updateDoc(doc(as(ALICE), "posts/b2"), {boostUntil: new Date(Date.now() + 864e5)}));
+  await assertFails(updateDoc(doc(as(ALICE), "posts/b2"), {hashtags: ["x"]}));
+});

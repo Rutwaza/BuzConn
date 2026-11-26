@@ -125,23 +125,12 @@ class _VerificationSheetState extends State<_VerificationSheet> {
                   style: const TextStyle(color: AppColors.grey),
                 ),
                 const SizedBox(height: 14),
-                for (final c in checks)
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      c['ok'] == true
-                          ? Icons.check_circle_rounded
-                          : Icons.radio_button_unchecked_rounded,
-                      color: c['ok'] == true
-                          ? AppColors.success
-                          : AppColors.grey,
-                    ),
-                    title: Text(tr(c['label'].toString())),
-                    subtitle: (c['detail'] ?? '').toString().isEmpty
-                        ? null
-                        : Text(c['detail'].toString()),
-                  ),
+                _Progress(
+                  done: checks.where((c) => c['ok'] == true).length,
+                  total: checks.length,
+                ),
+                const SizedBox(height: 8),
+                for (final c in checks) _CheckRow(c: c),
                 const SizedBox(height: 10),
                 if (status == 'pending')
                   _Banner(
@@ -211,6 +200,85 @@ class _Banner extends StatelessWidget {
         Icon(icon, color: color),
         const SizedBox(width: 10),
         Expanded(child: Text(text)),
+      ]),
+    );
+  }
+}
+
+/// "5 of 9 done" with a bar.
+class _Progress extends StatelessWidget {
+  const _Progress({required this.done, required this.total});
+  final int done;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final v = total == 0 ? 0.0 : done / total;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Text('$done ${tr('of')} $total ${tr('done')}',
+            style: const TextStyle(fontWeight: FontWeight.w800)),
+        const Spacer(),
+        Text('${(v * 100).round()}%',
+            style: const TextStyle(color: AppColors.grey, fontSize: 12)),
+      ]),
+      const SizedBox(height: 6),
+      ClipRRect(
+        borderRadius: BorderRadius.circular(99),
+        child: LinearProgressIndicator(
+          value: v,
+          minHeight: 8,
+          color: done == total ? AppColors.success : AppColors.primary,
+          backgroundColor: AppColors.grey.withValues(alpha: 0.18),
+        ),
+      ),
+    ]);
+  }
+}
+
+/// One criterion: ✓ or ○, the numbers, and what to do if it's not met.
+class _CheckRow extends StatelessWidget {
+  const _CheckRow({required this.c});
+  final Map<String, dynamic> c;
+
+  @override
+  Widget build(BuildContext context) {
+    final ok = c['ok'] == true;
+    final detail = (c['detail'] ?? '').toString();
+    final tip = (c['tip'] ?? '').toString();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(
+          ok ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+          color: ok ? AppColors.success : AppColors.grey,
+          size: 22,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Expanded(
+                child: Text(tr(c['label'].toString()),
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        decoration: ok ? null : TextDecoration.none)),
+              ),
+              if (detail.isNotEmpty)
+                Text(detail,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: ok ? AppColors.success : AppColors.grey,
+                        fontWeight: FontWeight.w700)),
+            ]),
+            if (!ok && tip.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(tr(tip),
+                    style: const TextStyle(fontSize: 12.5, color: AppColors.grey)),
+              ),
+          ]),
+        ),
       ]),
     );
   }

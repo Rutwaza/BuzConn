@@ -18,7 +18,8 @@ service cloud.firestore {
     // Fields only the server (Cloud Functions) may change.
     function postServerFields() {
       return ['likes', 'comments', 'ownerId', 'likeCount', 'commentCount',
-        'engagementMigrated', 'trendingScore', 'searchKeywords', 'hasVideo'];
+        'engagementMigrated', 'trendingScore', 'searchKeywords', 'hasVideo',
+        'hashtags', 'boostUntil', 'boostedAt', 'boostPaymentId'];
     }
 
     // Only the current user's own id is added to or removed from `likes`
@@ -49,6 +50,15 @@ service cloud.firestore {
           || (changed.hasAny(['shareCount'])
             && request.resource.data.shareCount == resource.data.get('shareCount', 0) + 1)
         );
+    }
+
+    // Page owner/admin updates the page name/logo shown on the page's
+    // posts (also posts made by team editors).
+    function isPageBrandingEdit() {
+      return resource.data.get('businessId', '') != ''
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['businessName', 'businessImageUrl'])
+        && isPageManager(resource.data.businessId);
     }
 
     function isOwnerPostEdit() {
@@ -136,20 +146,40 @@ service cloud.firestore {
     // username (claimUsername function) and app access.
     function userServerFields() {
       return ['isActive', 'username', 'usernameLower', 'apps', 'admin', 'role',
-        'searchKeywords', 'suspended', 'verified', 'verifiedAt', 'verifiedBy'];
+        'searchKeywords', 'suspended', 'verified', 'verifiedAt', 'verifiedBy',
+        'pageSlotsBought'];
     }
 
     // Posting "as a page": only your own page, and not while it's suspended.
+    // ---- Pages and the page team (functions/pages.js) -------------------
+    function pageData(bid) {
+      return get(/databases/$(database)/documents/businesses/$(bid)).data;
+    }
+    // '' | 'editor' | 'admin' for the signed-in person on page `bid`.
+    function pageRole(bid) {
+      return pageData(bid).get('team', {}).get(request.auth.uid, '');
+    }
+    // Owner or team admin: edit the page, run the shop and orders.
+    function isPageManager(bid) {
+      return isSignedIn()
+        && (pageData(bid).ownerId == request.auth.uid || pageRole(bid) == 'admin');
+    }
+    // Owner, admin or editor: post as the page.
+    function isPageMember(bid) {
+      return isSignedIn()
+        && (pageData(bid).ownerId == request.auth.uid
+          || pageRole(bid) in ['admin', 'editor']);
+    }
+
     function canPostAsPage() {
       let bid = request.resource.data.get('businessId', '');
       return bid == null || bid == ''
-        || (get(/databases/$(database)/documents/businesses/$(bid)).data.ownerId == request.auth.uid
-          && get(/databases/$(database)/documents/businesses/$(bid)).data.get('suspended', false) != true);
+        || (isPageMember(bid) && pageData(bid).get('suspended', false) != true);
     }
 
+    // Shop catalog (products): the owner and team admins.
     function isBusinessOwner(businessId) {
-      return isSignedIn()
-        && get(/databases/$(database)/documents/businesses/$(businessId)).data.ownerId == request.auth.uid;
+      return isPageManager(businessId);
     }
 
     match /users/{userId} {
@@ -172,19 +202,27 @@ service cloud.firestore {
     function businessServerFields() {
       return ['searchKeywords', 'verified', 'verifiedAt', 'verifiedBy',
         'productCount', 'ratingAvg', 'ratingCount',
-        'suspended', 'suspendedReason', 'suspendedAt'];
+        'suspended', 'suspendedReason', 'suspendedAt',
+        'ownerId', 'team', 'teamIds'];
     }
 
     match /businesses/{businessId} {
       allow read: if true;
-      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid
-        && !request.resource.data.keys().hasAny(businessServerFields());
+      // New pages are made by the server (createPage): the first page is
+      // free, more pages need a paid slot (functions/billing.js).
+      allow create: if false;
       // searchKeywords are made by the server (functions/feed.js).
       // A page suspended by the team can't be edited until it's restored.
-      allow update: if isSignedIn() && resource.data.ownerId == request.auth.uid
+      // Owner or team admin. Hiding a page is fine; showing it again goes
+      // through restorePage (it needs a free slot).
+      allow update: if isSignedIn()
+        && (resource.data.ownerId == request.auth.uid
+          || resource.data.get('team', {}).get(request.auth.uid, '') == 'admin')
         && resource.data.get('suspended', false) != true
         && !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(businessServerFields());
+          .hasAny(businessServerFields())
+        && !(resource.data.get('isActive', true) == false
+          && request.resource.data.get('isActive', true) != false);
       allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
     }
 
@@ -261,7 +299,8 @@ service cloud.firestore {
       allow read: if isStaff()
         || (isSignedIn()
           && (resource.data.buyerId == request.auth.uid
-            || resource.data.businessOwnerId == request.auth.uid));
+            || resource.data.businessOwnerId == request.auth.uid
+            || request.auth.uid in resource.data.get('staffIds', [])));
       allow create, delete: if false;
       allow update: if isSignedIn() && (
         (resource.data.buyerId == request.auth.uid
@@ -270,7 +309,8 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['status', 'txRef', 'buyerNote', 'updatedAt', 'paidClaimedAt']))
         ||
-        (resource.data.businessOwnerId == request.auth.uid
+        ((resource.data.businessOwnerId == request.auth.uid
+            || request.auth.uid in resource.data.get('staffIds', []))
           && ((resource.data.status in ['pending_payment', 'paid_claimed', 'not_received']
                 && request.resource.data.status == 'confirmed')
             || (resource.data.status == 'paid_claimed'
@@ -284,6 +324,14 @@ service cloud.firestore {
             .hasOnly(['status', 'ownerNote', 'updatedAt', 'confirmedAt',
               'readyAt', 'deliveredAt']))
       );
+    }
+
+    // Payments to Duhuze (extra pages, boosts): made by the server only
+    // (functions/billing.js). You see your own; the team sees all.
+    match /payments/{paymentId} {
+      allow read: if isStaff()
+        || (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow write: if false;
     }
 
     // Phase 3: each user's Following feed, filled by the server only.
@@ -311,11 +359,15 @@ service cloud.firestore {
         && request.resource.data.get('comments', []).size() == 0
         && request.resource.data.get('likeCount', 0) == 0
         && request.resource.data.get('commentCount', 0) == 0
-        && !request.resource.data.keys().hasAny(['trendingScore', 'searchKeywords'])
+        && !request.resource.data.keys().hasAny(['trendingScore', 'searchKeywords',
+          'hashtags', 'boostUntil', 'boostedAt', 'boostPaymentId'])
         && canPostAsPage();
       // likeCount/commentCount are kept by Cloud Functions only.
-      allow update: if isOwnerPostEdit() || isCounterBump();
-      allow delete: if isPostOwner();
+      allow update: if isOwnerPostEdit() || isCounterBump() || isPageBrandingEdit();
+      // The author, or the page owner/admin for posts made as the page.
+      allow delete: if isPostOwner()
+        || (resource.data.get('businessId', '') != ''
+          && isPageManager(resource.data.businessId));
 
       // Phase 2: one document per like. The id is the user's id, so a user
       // can like a post only once.

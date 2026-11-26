@@ -10,6 +10,7 @@ import '../../core/widgets/verified_badge.dart';
 import '../shop/data/shop_models.dart';
 import '../shop/ui/orders_page.dart' show OrderTracker;
 import 'admin_service.dart';
+import 'admin_payments_tab.dart';
 
 /// The Admin panel (Duhuze team only): Dashboard, Reports, Users, Pages,
 /// Verification, Orders, Activity, Team. Every action is checked again on
@@ -38,6 +39,7 @@ const _sections = [
   _Section(Icons.receipt_long_rounded, 'Orders', false),
   _Section(Icons.history_rounded, 'Activity', true),
   _Section(Icons.shield_rounded, 'Team', true),
+  _Section(Icons.payments_rounded, 'Payments', true),
 ];
 
 class _AdminPanelPageState extends State<AdminPanelPage> {
@@ -80,7 +82,8 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
       4 => const _Padded(_VerificationTab()),
       5 => const _Padded(_OrdersTab()),
       6 => const _Padded(_ActivityTab()),
-      _ => const _Padded(_TeamTab()),
+      7 => const _Padded(_TeamTab()),
+      _ => const _Padded(AdminPaymentsTab()),
     };
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final title = Text(

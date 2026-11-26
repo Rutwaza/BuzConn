@@ -130,6 +130,8 @@ exports.createOrder = onCall({region: REGION}, async (request) => {
     businessId,
     businessName: String(biz.name || "Shop"),
     businessOwnerId: String(biz.ownerId),
+    // Owner + page team admins (pages.js keeps this up to date).
+    staffIds: [String(biz.ownerId), ...Object.keys(biz.team || {}).filter((u) => biz.team[u] === "admin")],
     buyerId: uid,
     items,
     total,
@@ -195,8 +197,12 @@ exports.onOrderWritten = onDocumentWritten(
       name: after.businessName,
       imageUrl: ((await db().collection("businesses").doc(after.businessId).get()).data() || {}).imageUrl || null,
     };
-    await db().collection("notifications").add({
-      toUserId,
+    // Shop side: the owner and the page's team admins are all told.
+    const recipients = to === "owner" ?
+      [...new Set([toUserId, ...(after.staffIds || [])])].filter((u) => u && u !== after.buyerId) :
+      [toUserId];
+    await Promise.all(recipients.map((rid) => db().collection("notifications").add({
+      toUserId: rid,
       fromUserId,
       fromUserName: from.name,
       fromUserImageUrl: from.imageUrl,
@@ -206,7 +212,7 @@ exports.onOrderWritten = onDocumentWritten(
       readAt: null,
       hidden: false,
       createdAt: FieldValue.serverTimestamp(),
-    });
+    })));
   },
 );
 

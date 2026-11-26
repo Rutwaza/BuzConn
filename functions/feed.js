@@ -16,6 +16,7 @@ const {
 } = require("firebase-functions/v2/firestore");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
+const {_tagsInternals: {hashtagsOf}} = require("./tags");
 
 const REGION = "us-central1";
 const FAN_OUT_LIMIT = 5000; // bigger accounts: followers' apps pull instead
@@ -124,6 +125,7 @@ exports.onPostCreatedFeed = onDocumentCreated(
       hasVideo: hasVideo(post),
       trendingScore: trendingScore(post),
       searchKeywords: keywordsFrom(post.businessName, post.content),
+      hashtags: hashtagsOf(post.content),
     });
 
     // Fan-out to followers' timelines.
@@ -156,6 +158,8 @@ exports.onPostEditedFeed = onDocumentUpdated(
     if (after.hasVideo !== video) update.hasVideo = video;
     const keywords = keywordsFrom(after.businessName, after.content);
     if (!sameArray(after.searchKeywords, keywords)) update.searchKeywords = keywords;
+    const tags = hashtagsOf(after.content);
+    if (!sameArray(after.hashtags, tags)) update.hashtags = tags;
     if (Object.keys(update).length) await event.data.after.ref.update(update);
   },
 );

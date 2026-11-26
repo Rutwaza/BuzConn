@@ -16,7 +16,7 @@ const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const REGION = "us-central1";
 const MAX_MEMBERS = 256;
 const db = () => admin.firestore();
-const {FieldValue} = admin.firestore;
+const {FieldValue} = require("firebase-admin/firestore");
 
 function newCode() {
   return crypto.randomBytes(6).toString("base64url").replace(/[-_]/g, "x").slice(0, 8);

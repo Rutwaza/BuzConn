@@ -76,6 +76,13 @@ if ($All) {
         $prop = $map.PSObject.Properties[$Matches[1]]
         if ($prop) { $fns += $prop.Value }
       }
+      # Payment gateways are used by the shop and by Duhuze earnings.
+      if ($file -match '^functions/payments/') {
+        foreach ($f in @('shop.js', 'billing.js')) {
+          $prop = $map.PSObject.Properties[$f]
+          if ($prop) { $fns += $prop.Value }
+        }
+      }
     }
   }
 }

@@ -34,6 +34,18 @@ const {_groupInternals, ...groupFunctions} = require("./groups");
 const {_verificationInternals, ...verificationFunctions} = require("./verification");
 Object.assign(exports, verificationFunctions);
 Object.assign(exports, groupFunctions);
+// Duhuze earnings: extra pages and boosted posts (IremboPay). See billing.js.
+// eslint-disable-next-line no-unused-vars
+const {_billingInternals, ...billingFunctions} = require("./billing");
+Object.assign(exports, billingFunctions);
+// Creating pages (paid slots) and the page team. See pages.js.
+// eslint-disable-next-line no-unused-vars
+const {_pagesInternals, ...pagesFunctions} = require("./pages");
+Object.assign(exports, pagesFunctions);
+// #hashtags and @mentions. See tags.js.
+// eslint-disable-next-line no-unused-vars
+const {_tagsInternals, ...tagsFunctions} = require("./tags");
+Object.assign(exports, tagsFunctions);
 // Status (24h stories): view counter + hourly cleanup. See status.js.
 Object.assign(exports, require("./status"));
 // Account deletion (Google Play requirement). See account.js.

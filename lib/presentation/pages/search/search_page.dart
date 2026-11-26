@@ -15,6 +15,7 @@ import '../../../data/models/post_model.dart';
 import '../../../core/widgets/post_thumb.dart';
 import '../business/post_detail_page.dart';
 import 'pages_map.dart';
+import 'hashtag_page.dart';
 
 enum SearchFilter { all, businesses, users, posts }
 
@@ -540,6 +541,36 @@ class _SearchPageState extends State<SearchPage> {
     return out;
   }
 
+  /// "#kigali" typed in search -> "kigali".
+  String? _hashtagOf(String query) {
+    final m = RegExp(r'^#([\p{L}\p{N}_]{2,40})$', unicode: true).firstMatch(query.trim());
+    return m?.group(1)?.toLowerCase();
+  }
+
+  Widget _hashtagTile(String tag) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Material(
+        color: AppColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        child: ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          leading: const CircleAvatar(
+            backgroundColor: AppColors.primary,
+            child: Text('#',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 20)),
+          ),
+          title: Text('#$tag', style: const TextStyle(fontWeight: FontWeight.w800)),
+          subtitle: Text(tr('See all posts with this hashtag')),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => HashtagPage(tag: tag),
+          )),
+        ),
+      ),
+    );
+  }
+
   void _openPost(Post post) {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => PostDetailPage(post: post),
@@ -654,6 +685,7 @@ class _SearchPageState extends State<SearchPage> {
                     _filter == SearchFilter.businesses)
                   _pageFiltersRow(),
                 const SizedBox(height: 8),
+                if (_hashtagOf(query) != null) _hashtagTile(_hashtagOf(query)!),
                 Expanded(
                   child: Builder(
                     builder: (context) {
@@ -1119,6 +1151,7 @@ class _SearchPageState extends State<SearchPage> {
                   ),
                   desktopFilters,
                   const SizedBox(height: 8),
+                  if (_hashtagOf(query) != null) _hashtagTile(_hashtagOf(query)!),
                   Expanded(child: _buildSearchResultsBody(query)),
                 ],
               ),

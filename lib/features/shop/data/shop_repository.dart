@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -83,16 +84,53 @@ class ShopRepository {
       .snapshots()
       .map((d) => d.exists ? ShopOrder.fromDoc(d) : null);
 
-  /// Orders I made (as a buyer) or, with [asShop], orders to my shops.
+  /// Orders I made (as a buyer) or, with [asShop], orders to my shops
+  /// and to pages where I'm a team admin (`staffIds`).
   Stream<List<ShopOrder>> myOrders({bool asShop = false}) {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    return _db
-        .collection('orders')
-        .where(asShop ? 'businessOwnerId' : 'buyerId', isEqualTo: uid)
-        .orderBy('createdAt', descending: true)
-        .limit(50)
-        .snapshots()
-        .map((s) => s.docs.map(ShopOrder.fromDoc).toList());
+    Stream<List<ShopOrder>> q(String field, {bool contains = false}) {
+      final col = _db.collection('orders');
+      final base = contains
+          ? col.where(field, arrayContains: uid)
+          : col.where(field, isEqualTo: uid);
+      return base
+          .orderBy('createdAt', descending: true)
+          .limit(50)
+          .snapshots()
+          .map((s) => s.docs.map(ShopOrder.fromDoc).toList());
+    }
+
+    if (!asShop) return q('buyerId');
+    // Old orders have no staffIds yet, so ask both ways and merge.
+    late final StreamController<List<ShopOrder>> out;
+    var owned = <ShopOrder>[];
+    var staffed = <ShopOrder>[];
+    final subs = <StreamSubscription>[];
+    void emit() {
+      final byId = {for (final o in [...owned, ...staffed]) o.id: o};
+      final list = byId.values.toList()
+        ..sort((a, b) => (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)));
+      out.add(list);
+    }
+
+    out = StreamController<List<ShopOrder>>(
+      onListen: () {
+        subs.add(q('businessOwnerId').listen((l) {
+          owned = l;
+          emit();
+        }, onError: out.addError));
+        subs.add(q('staffIds', contains: true).listen((l) {
+          staffed = l;
+          emit();
+        }, onError: (_) {})); // index still building: owner list still works
+      },
+      onCancel: () {
+        for (final s in subs) {
+          s.cancel();
+        }
+      },
+    );
+    return out.stream;
   }
 
   Future<void> _set(String orderId, Map<String, Object?> data) => _db

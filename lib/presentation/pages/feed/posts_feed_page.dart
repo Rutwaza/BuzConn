@@ -1,6 +1,8 @@
 import 'package:businessfinder/core/widgets/emoji_picker.dart';
 import 'package:businessfinder/core/services/media_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/widgets/tagged_text.dart';
+import 'package:businessfinder/features/billing/upgrade_sheets.dart';
 import 'package:businessfinder/features/moderation/moderation.dart';
 import 'package:businessfinder/features/shop/logic/page_index.dart';
 import 'package:businessfinder/features/shop/ui/catalog_page.dart'
@@ -360,6 +362,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 .where('hasVideo', isEqualTo: true)
                 .orderBy('createdAt', descending: true)
             : posts.orderBy('trendingScore', descending: true);
+        if (_feedMode == 'forYou' && _lastDoc == null && !_olderPostsPhase) {
+          await _loadSponsored();
+        }
         if (!_olderPostsPhase) {
           query = query.limit(_pageSize);
           if (_lastDoc != null) {
@@ -540,7 +545,37 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     setState(() {
       _posts.addAll(nextPosts);
       _posts.sort(_comparePostsForDisplay);
+      _placeSponsored();
     });
+  }
+
+  /// Boosted (paid) posts for For You: at most 6, read once per refresh.
+  Future<void> _loadSponsored() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('posts')
+          .where('boostUntil', isGreaterThan: Timestamp.now())
+          .orderBy('boostUntil')
+          .limit(6)
+          .get();
+      _appendPosts(snap.docs);
+    } catch (e) {
+      debugPrint('Sponsored posts: $e');
+    }
+  }
+
+  /// Spread boosted posts through For You (2nd, 7th, 12th, ...) instead
+  /// of piling them on top. Other tabs keep their normal order.
+  void _placeSponsored() {
+    if (_feedMode != 'forYou') return;
+    final boosted = _posts.where((p) => p.isBoosted).toList();
+    if (boosted.isEmpty) return;
+    _posts.removeWhere((p) => p.isBoosted);
+    var at = 1;
+    for (final p in boosted) {
+      _posts.insert(at.clamp(0, _posts.length), p);
+      at += 5;
+    }
   }
 
   int _comparePostsForDisplay(Post a, Post b) {
@@ -1248,10 +1283,11 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                 ),
                               ),
                               const SizedBox(height: 6),
-                              Text(
+                              TaggedText(
                                 post.content,
                                 maxLines: 3,
                                 overflow: TextOverflow.ellipsis,
+                                linkColor: Colors.white,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 14,
@@ -3572,9 +3608,10 @@ class _ExpandableCaptionState extends State<_ExpandableCaption> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          TaggedText(
             widget.text,
-            style: style,
+            style: style.copyWith(
+                color: Theme.of(context).textTheme.bodyMedium?.color),
             maxLines: _open ? null : 3,
             overflow: _open ? null : TextOverflow.ellipsis,
           ),
@@ -4455,6 +4492,26 @@ class PostCard extends StatelessWidget {
                             ),
                             Row(
                               children: [
+                                if (post.isBoosted) ...[
+                                  Tooltip(
+                                    message: post.ownerId == currentUserId
+                                        ? '${tr('Boosted until')} ${post.boostUntil!.day}/${post.boostUntil!.month}'
+                                        : tr('This post is paid to show in For You'),
+                                    child: const Row(children: [
+                                      Icon(Icons.campaign_rounded,
+                                          size: 13, color: AppColors.primary),
+                                      SizedBox(width: 3),
+                                    ]),
+                                  ),
+                                  Text(
+                                    '${tr('Sponsored')} · ',
+                                    style: const TextStyle(
+                                      color: AppColors.primary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
                                 Text(
                                   timeAgo,
                                   style: const TextStyle(
@@ -4536,16 +4593,40 @@ class PostCard extends StatelessWidget {
                               onEdit();
                             } else if (value == 'delete') {
                               onDelete();
+                            } else if (value == 'boost') {
+                              showBoostSheet(context, postId: post.id);
                             }
                           },
                           itemBuilder: (context) => [
                             PopupMenuItem(
+                              value: 'boost',
+                              child: ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(Icons.rocket_launch_rounded,
+                                    color: AppColors.primary),
+                                title: Text(post.isBoosted
+                                    ? tr('Boost more days')
+                                    : tr('Boost post')),
+                              ),
+                            ),
+                            PopupMenuItem(
                               value: 'edit',
-                              child: Text(tr('Edit')),
+                              child: ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(Icons.edit_rounded),
+                                title: Text(tr('Edit')),
+                              ),
                             ),
                             PopupMenuItem(
                               value: 'delete',
-                              child: Text(tr('Delete')),
+                              child: ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(Icons.delete_outline_rounded),
+                                title: Text(tr('Delete')),
+                              ),
                             ),
                           ],
                         )
@@ -4646,7 +4727,7 @@ class PostCard extends StatelessWidget {
                 ] else ...[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
-                    child: Text(
+                    child: TaggedText(
                       post.content,
                       style: const TextStyle(fontSize: 16),
                     ),

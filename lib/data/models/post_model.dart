@@ -29,6 +29,11 @@ class Post {
   /// A copy of name/price/photo is kept so the feed needs no extra read.
   final ProductTag? product;
 
+  /// Paid boost: shown in For You as "Sponsored" until this time
+  /// (set by the server, functions/billing.js).
+  final DateTime? boostUntil;
+  bool get isBoosted => boostUntil != null && boostUntil!.isAfter(DateTime.now());
+
   Post({
     required this.id,
     required this.ownerId,
@@ -49,6 +54,7 @@ class Post {
     required this.createdAt,
     required this.updatedAt,
     this.product,
+    this.boostUntil,
   })  : likeCount = likeCount ?? likes.length,
         commentCount = commentCount ?? comments.length;
 
@@ -79,6 +85,7 @@ class Post {
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       product: product,
+      boostUntil: boostUntil,
     );
   }
 
@@ -124,6 +131,9 @@ class Post {
       createdAt: _parseTimestamp(data['createdAt']),
       updatedAt: _parseTimestamp(data['updatedAt']),
       product: ProductTag.fromMap(data['product']),
+      boostUntil: data['boostUntil'] is Timestamp
+          ? (data['boostUntil'] as Timestamp).toDate()
+          : null,
     );
   }
 

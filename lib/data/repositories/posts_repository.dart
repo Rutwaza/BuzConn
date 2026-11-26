@@ -69,7 +69,10 @@ class PostsRepository {
         throw Exception('Business not found');
       }
       final business = businessSnap.data() as Map<String, dynamic>;
-      if (business['ownerId'] != user.uid) {
+      final team = business['team'] is Map ? business['team'] as Map : const {};
+      final role = team[user.uid];
+      // The owner and the page team (admins, editors) post as the page.
+      if (business['ownerId'] != user.uid && role != 'admin' && role != 'editor') {
         throw Exception('Not authorized for this business');
       }
       resolvedBusinessId = businessId.trim();

@@ -18,6 +18,8 @@ import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
+import '../../../features/billing/billing_service.dart';
+import '../../../features/billing/upgrade_sheets.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/services/r2_storage_service.dart';
@@ -142,148 +144,6 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
       try {
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
-          if (!_isEditMode) {
-            final existingBusinesses = await FirebaseFirestore.instance
-                .collection('businesses')
-                .where('ownerId', isEqualTo: user.uid)
-                .get();
-            if (existingBusinesses.docs.length >= 2) {
-              setState(() {
-                _isLoading = false;
-              });
-              if (mounted) {
-                showDialog(
-                  context: context,
-                  barrierDismissible: true,
-                  builder: (context) {
-                    final isDark =
-                        Theme.of(context).brightness == Brightness.dark;
-                    return Dialog(
-                      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color:
-                              isDark ? const Color(0xFF141821) : Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: isDark ? Colors.white10 : Colors.black12,
-                          ),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 54,
-                              height: 54,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LinearGradient(
-                                  colors: [
-                                    AppColors.primary.withValues(alpha: 0.95),
-                                    AppColors.primary.withValues(alpha: 0.55),
-                                  ],
-                                ),
-                              ),
-                              child: const Icon(
-                                Icons.stars_rounded,
-                                color: Colors.white,
-                                size: 28,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              tr('Go Premium'),
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              tr('Free accounts can create up to 2 pages. Upgrade to unlock more pages and reach more fans.'),
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
-                                  ?.copyWith(color: AppColors.grey),
-                            ),
-                            const SizedBox(height: 16),
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: isDark
-                                    ? Colors.white.withValues(alpha: 0.06)
-                                    : Colors.black.withValues(alpha: 0.04),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.check_circle,
-                                      color: AppColors.primary, size: 18),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      tr('Unlimited pages • Priority review • Featured boost'),
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: () =>
-                                        Navigator.of(context).pop(),
-                                    style: OutlinedButton.styleFrom(
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                    ),
-                                    child: Text(tr('Not now')),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: ElevatedButton(
-                                    onPressed: () {
-                                      Navigator.of(context).pop();
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            tr('Premium upgrade coming soon!'),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                    ),
-                                    child: Text(tr('Go Premium')),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                );
-              }
-              return;
-            }
-          }
-
           if (_selectedLocation == null &&
               _addressController.text.trim().isNotEmpty) {
             await _pinLocationFromAddress(showFeedback: false);
@@ -323,16 +183,22 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                 .doc(widget.editBusinessId);
             await businessRef.update(businessData);
           } else {
-            businessRef =
-                await FirebaseFirestore.instance.collection('businesses').add({
-              'ownerId': user.uid,
-              ...businessData,
-              'isVerified': false,
-              'isActive': true,
-              'rating': 0.0,
-              'reviewCount': 0,
-              'createdAt': FieldValue.serverTimestamp(),
+            // Made by the server: the first page is free, more pages need
+            // a paid place (functions/pages.js createPage).
+            final r = await BillingService.instance.createPage({
+              ...Map<String, Object?>.from(businessData)..remove('updatedAt'),
+              'googleMapsLink': mapsLink,
             });
+            if (r['needSlot'] == true) {
+              setState(() => _isLoading = false);
+              if (!mounted) return;
+              final bought = await showPageSlotsSheet(context);
+              if (bought && mounted) await _saveBusiness();
+              return;
+            }
+            businessRef = FirebaseFirestore.instance
+                .collection('businesses')
+                .doc(r['id'].toString());
           }
 
           // Upload image if selected
@@ -346,17 +212,6 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
             'googleMapsLink': mapsLink,
             if (imageUrl != null) 'imageUrl': imageUrl,
           });
-
-          if (!_isEditMode) {
-            await FirebaseFirestore.instance
-                .collection('users')
-                .doc(user.uid)
-                .update({
-              'businessId': businessRef.id,
-              'userType': 'business',
-              'updatedAt': FieldValue.serverTimestamp(),
-            });
-          }
 
           setState(() {
             _isLoading = false;

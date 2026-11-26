@@ -85,7 +85,11 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
           final isVerified = business['verified'] == true;
           final ownerId = business['ownerId'] ?? '';
           final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-          final isOwner = currentUserId == ownerId;
+          // Page team admins manage the page like the owner (pages.js).
+          final teamRole = (business['team'] is Map)
+              ? (business['team'] as Map)[currentUserId]
+              : null;
+          final isOwner = currentUserId == ownerId || teamRole == 'admin';
           final isDesktop = MediaQuery.of(context).size.width >= 1100;
 
           // Suspended by the Duhuze team: visitors see a notice only; the

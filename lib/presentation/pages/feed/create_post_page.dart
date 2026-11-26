@@ -121,17 +121,27 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
         _businesses = [];
         return;
       }
-      final snapshot = await FirebaseFirestore.instance
-          .collection('businesses')
-          .where('ownerId', isEqualTo: user.uid)
-          .where('isActive', isEqualTo: true)
-          .get();
-      _businesses = snapshot.docs
-          .map((doc) => {
+      final pages = FirebaseFirestore.instance.collection('businesses');
+      // My pages + pages where I'm on the team (admin or editor).
+      final results = await Future.wait([
+        pages
+            .where('ownerId', isEqualTo: user.uid)
+            .where('isActive', isEqualTo: true)
+            .get(),
+        pages.where('teamIds', arrayContains: user.uid).get(),
+      ]);
+      final seen = <String>{};
+      _businesses = [
+        for (final snap in results)
+          for (final doc in snap.docs)
+            if (doc.data()['isActive'] != false &&
+                doc.data()['suspended'] != true &&
+                seen.add(doc.id))
+              {
                 'id': doc.id,
-                'name': (doc.data())['name'] ?? 'Unnamed Page',
-              })
-          .toList();
+                'name': doc.data()['name'] ?? 'Unnamed Page',
+              },
+      ];
       _postAsProfile = !_isBusinessUser;
       if (_businesses.isNotEmpty && _isBusinessUser) {
         _selectedBusinessId = _businesses.first['id'] as String;
