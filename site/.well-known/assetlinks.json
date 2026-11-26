@@ -1,0 +1,15 @@
+[
+    {
+        "relation":  [
+                         "delegate_permission/common.handle_all_urls"
+                     ],
+        "target":  {
+                       "namespace":  "android_app",
+                       "package_name":  "rw.duhuze.app",
+                       "sha256_cert_fingerprints":  [
+                                                        "AA:49:65:E1:88:9E:18:12:23:3F:66:60:39:28:1F:3F:1D:16:94:63:04:24:6A:AB:29:37:20:6D:08:23:91:78",
+                                                        "AF:D3:64:48:A1:C5:A2:A9:30:DC:53:F1:85:BF:DA:F7:B3:1E:93:59:CF:2C:59:82:90:35:10:F6:77:0A:F3:75"
+                                                    ]
+                   }
+    }
+]
