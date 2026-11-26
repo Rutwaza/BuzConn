@@ -1,5 +1,15 @@
+import 'package:businessfinder/core/widgets/emoji_picker.dart';
+import 'package:businessfinder/core/services/media_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:businessfinder/features/moderation/moderation.dart';
+import 'package:businessfinder/features/shop/logic/page_index.dart';
+import 'package:businessfinder/features/shop/ui/catalog_page.dart'
+    show openShop, CatalogPage;
+import 'package:businessfinder/features/shop/ui/orders_page.dart';
+import 'package:businessfinder/features/shop/data/shop_models.dart'
+    show formatRwf;
+import 'package:businessfinder/core/widgets/verified_badge.dart';
+import 'package:businessfinder/features/onboarding/welcome_tour.dart';
 import 'package:businessfinder/core/services/lite_mode_service.dart';
 import 'package:businessfinder/features/status/ui/status_bar.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
@@ -55,7 +65,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   bool _isBootstrapping = true;
   bool _isRefreshing = false;
   bool _hasMore = true;
-  String _feedMode = 'reels';
+  String _feedMode = 'forYou';
   bool _showModeTabs = false;
   List<String> _followingPageIds = [];
   List<String> _followingUserIds = [];
@@ -109,6 +119,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   @override
   void dispose() {
     LikeStore.instance.removeListener(_onLikesChanged);
+    PageIndex.instance.removeListener(_onLikesChanged);
     _commentController.dispose();
     _scrollController.dispose();
     _reelsPageController.dispose();
@@ -124,6 +135,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   void initState() {
     super.initState();
     LikeStore.instance.addListener(_onLikesChanged);
+    // Which pages have a shop / are verified (for the Shop chip and ✓).
+    PageIndex.instance.addListener(_onLikesChanged);
+    unawaited(PageIndex.instance.refresh());
     _scrollController.addListener(_onScroll);
     _bootstrapFeed();
   }
@@ -139,6 +153,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     await _loadInitial();
     if (mounted) {
       setState(() => _isBootstrapping = false);
+      // First time on this account: a short tour.
+      unawaited(WelcomeTour.showIfNew(context));
     }
   }
 
@@ -165,14 +181,14 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
 
       if (mounted) {
         setState(() {
-          _feedMode = 'reels';
+          _feedMode = 'forYou';
         });
       }
       return true;
     } catch (_) {
       if (mounted) {
         setState(() {
-          _feedMode = 'reels';
+          _feedMode = 'forYou';
         });
       }
       return true;
@@ -554,6 +570,59 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     return Platform.isWindows ? width >= 700 : width >= 1200;
   }
 
+  /// Side menu "My shop": your page's shop (asks which one if you have
+  /// several, or offers to create a page if you have none).
+  Future<void> _openMyShop() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final snap = await FirebaseFirestore.instance
+        .collection('businesses')
+        .where('ownerId', isEqualTo: uid)
+        .limit(20)
+        .get();
+    if (!mounted) return;
+    final pages = snap.docs;
+    if (pages.isEmpty) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(tr('A shop belongs to a page. Create your page first.')),
+        action: SnackBarAction(
+          label: tr('Create page'),
+          onPressed: () => context.push(AppRoutes.businessSetup),
+        ),
+      ));
+      return;
+    }
+    var chosen = pages.first;
+    if (pages.length > 1) {
+      final pick =
+          await showDialog<QueryDocumentSnapshot<Map<String, dynamic>>>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: Text(tr('Which shop?')),
+          children: [
+            for (final p in pages)
+              SimpleDialogOption(
+                onPressed: () => Navigator.of(context).pop(p),
+                child: Text((p.data()['name'] ?? 'Page').toString()),
+              ),
+          ],
+        ),
+      );
+      if (pick == null || !mounted) return;
+      chosen = pick;
+    }
+    final data = chosen.data();
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => CatalogPage(
+        businessId: chosen.id,
+        businessName: (data['name'] ?? 'Shop').toString(),
+        isOwner: true,
+        hasMomoCode: (data['momoCode'] ?? '').toString().trim().isNotEmpty,
+      ),
+    ));
+  }
+
   void _stepReel(int direction) {
     if (!_reelsPageController.hasClients) return;
     final page = (_reelsPageController.page ?? 0).round() + direction;
@@ -638,6 +707,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
   }
 
   Future<void> _refreshFeed() async {
+    unawaited(PageIndex.instance.refresh(force: true));
     if (mounted) {
       setState(() => _isRefreshing = true);
     }
@@ -875,6 +945,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                   minLines: 2,
                   maxLines: 5,
                   decoration: InputDecoration(
+                    suffixIcon: EmojiButton(controller: _commentController),
                     hintText: tr('Write something nice...'),
                     filled: true,
                     fillColor: isDark
@@ -1082,11 +1153,14 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.video_library, size: 64, color: AppColors.grey),
+                    const Icon(Icons.video_library,
+                        size: 64, color: AppColors.grey),
                     const SizedBox(height: 14),
-                    Text(tr('No reels yet'), style: const TextStyle(fontSize: 18)),
+                    Text(tr('No reels yet'),
+                        style: const TextStyle(fontSize: 18)),
                     const SizedBox(height: 6),
-                    Text(tr('Video posts will appear here once creators upload.')),
+                    Text(tr(
+                        'Video posts will appear here once creators upload.')),
                   ],
                 ),
               );
@@ -1140,6 +1214,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                         Positioned.fill(
                           child: _AutoPlayVideoPreview(
                             url: videoMedia.url,
+                            thumbnailUrl: videoMedia.thumbnailUrl,
                             height: MediaQuery.of(context).size.height,
                             rounded: false,
                             showReelLabel: true,
@@ -1368,9 +1443,9 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                                               .isEmpty &&
                                                           _followingUserIds
                                                               .isEmpty
-                                                      ? 'You are not following anyone yet'
-                                                      : 'No posts from creators you follow yet')
-                                                  : 'No posts yet',
+                                                      ? tr('Follow 3 pages to start 👇')
+                                                      : tr('No posts from creators you follow yet'))
+                                                  : tr('No posts yet'),
                                               textAlign: TextAlign.center,
                                               style: Theme.of(context)
                                                   .textTheme
@@ -1379,8 +1454,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                             const SizedBox(height: 8),
                                             Text(
                                               _feedMode == 'following'
-                                                  ? 'Follow creators to see their posts here.'
-                                                  : 'Follow creators to discover their posts, or create the first one.',
+                                                  ? tr('Their new posts will show up here.')
+                                                  : tr('Follow creators to discover their posts, or create the first one.'),
                                               textAlign: TextAlign.center,
                                               style: Theme.of(context)
                                                   .textTheme
@@ -1390,11 +1465,28 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                                                   ),
                                             ),
                                             const SizedBox(height: 18),
+                                            if (_feedMode == 'following') ...[
+                                              _StarterPages(
+                                                followingIds: _followingPageIds,
+                                                onFollow: (id) {
+                                                  setState(() =>
+                                                      _followingPageIds.add(id));
+                                                  _toggleFollowPage(id, false);
+                                                },
+                                              ),
+                                              const SizedBox(height: 12),
+                                              OutlinedButton.icon(
+                                                onPressed: () =>
+                                                    _toggleFeedMode('forYou'),
+                                                icon: const Icon(
+                                                    Icons.auto_awesome_rounded),
+                                                label: Text(tr('Browse For You')),
+                                              ),
+                                            ] else
                                             FilledButton.icon(
                                               onPressed: _showCreateOptions,
                                               icon: const Icon(Icons.add),
-                                              label:
-                                                  Text(tr('Create a post')),
+                                              label: Text(tr('Create a post')),
                                             ),
                                           ],
                                         ),
@@ -1734,8 +1826,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
           }
 
           return Padding(
-            padding: EdgeInsets.fromLTRB(
-                12, 12, showRightRail ? 16 : 12, 12),
+            padding: EdgeInsets.fromLTRB(12, 12, showRightRail ? 16 : 12, 12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1752,10 +1843,14 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     onOpenSaved: () => context.push(AppRoutes.favorites),
                     onOpenProfile: currentUser == null
                         ? () => context.go(AppRoutes.profile)
-                        : () => context.push(
-                            AppRoutes.clientProfilePath(currentUser.uid)),
+                        : () => context
+                            .push(AppRoutes.clientProfilePath(currentUser.uid)),
                     onOpenSettings: () => context.push(AppRoutes.settings),
                     onCreatePost: _showCreateOptions,
+                    onOpenMyShop: _openMyShop,
+                    onOpenOrders: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const OrdersPage()),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -1824,39 +1919,39 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     width: 300,
                     child: SingleChildScrollView(
                       child: _DesktopSpotlightRail(
-                      feedMode: _feedMode,
-                      followingCount:
-                          _followingPageIds.length + _followingUserIds.length,
-                      recommendedCreators: suggestionList,
-                      onOpenCreator: (post) {
-                        if (post.businessId.isNotEmpty) {
-                          context.push(
-                              AppRoutes.businessProfilePath(post.businessId));
-                        } else {
-                          context
-                              .push(AppRoutes.clientProfilePath(post.ownerId));
-                        }
-                      },
-                      onFollowCreator: (post) {
-                        if (post.businessId.isNotEmpty) {
-                          if (!_followingPageIds.contains(post.businessId)) {
-                            setState(() {
-                              _followingPageIds.add(post.businessId);
-                            });
+                        feedMode: _feedMode,
+                        followingCount:
+                            _followingPageIds.length + _followingUserIds.length,
+                        recommendedCreators: suggestionList,
+                        onOpenCreator: (post) {
+                          if (post.businessId.isNotEmpty) {
+                            context.push(
+                                AppRoutes.businessProfilePath(post.businessId));
+                          } else {
+                            context.push(
+                                AppRoutes.clientProfilePath(post.ownerId));
                           }
-                          _toggleFollowPage(post.businessId, false);
-                        } else {
-                          if (!_followingUserIds.contains(post.ownerId)) {
-                            setState(() {
-                              _followingUserIds.add(post.ownerId);
-                            });
+                        },
+                        onFollowCreator: (post) {
+                          if (post.businessId.isNotEmpty) {
+                            if (!_followingPageIds.contains(post.businessId)) {
+                              setState(() {
+                                _followingPageIds.add(post.businessId);
+                              });
+                            }
+                            _toggleFollowPage(post.businessId, false);
+                          } else {
+                            if (!_followingUserIds.contains(post.ownerId)) {
+                              setState(() {
+                                _followingUserIds.add(post.ownerId);
+                              });
+                            }
+                            _toggleFollowUser(post.ownerId, false);
                           }
-                          _toggleFollowUser(post.ownerId, false);
-                        }
-                      },
-                      onSwitchFeed: () => _showFeedModePicker(),
-                      onOpenDiscover: () => context.push(AppRoutes.search),
-                      onCreatePost: _showCreateOptions,
+                        },
+                        onSwitchFeed: () => _showFeedModePicker(),
+                        onOpenDiscover: () => context.push(AppRoutes.search),
+                        onCreatePost: _showCreateOptions,
                         onOpenMessages: () => context.push(AppRoutes.chats),
                       ),
                     ),
@@ -1870,96 +1965,96 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       bottomNavigationBar: _useDesktopShell(context)
           ? null
           : SafeArea(
-        top: false,
-        child: Align(
-          alignment: Alignment.center,
-          heightFactor: 1,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 900),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .outlineVariant
-                        .withValues(alpha: 0.55),
+              top: false,
+              child: Align(
+                alignment: Alignment.center,
+                heightFactor: 1,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outlineVariant
+                              .withValues(alpha: 0.55),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.10),
+                            blurRadius: 20,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _bottomNavigationItem(
+                              icon: Icons.home_rounded,
+                              label: tr('Home'),
+                              selected: true,
+                              onTap: () {
+                                if (_feedMode != 'forYou') {
+                                  setState(() => _feedMode = 'forYou');
+                                }
+                                if (_scrollController.hasClients) {
+                                  _scrollController.jumpTo(0);
+                                }
+                                _refreshFeed();
+                              },
+                            ),
+                          ),
+                          Expanded(
+                            child: _bottomNavigationItem(
+                              icon: Icons.search_rounded,
+                              label: tr('Discover'),
+                              onTap: () => context.push(AppRoutes.search),
+                            ),
+                          ),
+                          Expanded(
+                            child: _bottomNavigationItem(
+                              icon: Icons.add_rounded,
+                              label: tr('Create'),
+                              emphasized: true,
+                              onTap: _showCreateOptions,
+                            ),
+                          ),
+                          Expanded(
+                            child: _bottomNavigationItem(
+                              icon: Icons.message_rounded,
+                              label: tr('Messages'),
+                              onTap: () => context.push(AppRoutes.chats),
+                            ),
+                          ),
+                          Expanded(
+                            child: _bottomNavigationItem(
+                              icon: Icons.person_rounded,
+                              label: tr('Profile'),
+                              onTap: currentUser == null
+                                  ? () => context.go(AppRoutes.profile)
+                                  : () => context.push(
+                                        AppRoutes.clientProfilePath(
+                                          currentUser.uid,
+                                        ),
+                                      ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.10),
-                      blurRadius: 20,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _bottomNavigationItem(
-                        icon: Icons.home_rounded,
-                        label: tr('Home'),
-                        selected: true,
-                        onTap: () {
-                          if (_feedMode != 'forYou') {
-                            setState(() => _feedMode = 'forYou');
-                          }
-                          if (_scrollController.hasClients) {
-                            _scrollController.jumpTo(0);
-                          }
-                          _refreshFeed();
-                        },
-                      ),
-                    ),
-                    Expanded(
-                      child: _bottomNavigationItem(
-                        icon: Icons.search_rounded,
-                        label: tr('Discover'),
-                        onTap: () => context.push(AppRoutes.search),
-                      ),
-                    ),
-                    Expanded(
-                      child: _bottomNavigationItem(
-                        icon: Icons.add_rounded,
-                        label: tr('Create'),
-                        emphasized: true,
-                        onTap: _showCreateOptions,
-                      ),
-                    ),
-                    Expanded(
-                      child: _bottomNavigationItem(
-                        icon: Icons.message_rounded,
-                        label: tr('Messages'),
-                        onTap: () => context.push(AppRoutes.chats),
-                      ),
-                    ),
-                    Expanded(
-                      child: _bottomNavigationItem(
-                        icon: Icons.person_rounded,
-                        label: tr('Profile'),
-                        onTap: currentUser == null
-                            ? () => context.go(AppRoutes.profile)
-                            : () => context.push(
-                                  AppRoutes.clientProfilePath(
-                                    currentUser.uid,
-                                  ),
-                                ),
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ),
-          ),
-        ),
-      ),
     );
     if (!Platform.isWindows) return scaffold;
     // Desktop keyboard shortcuts (shown in the side menu tooltips).
@@ -2219,7 +2314,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                   context: context,
                   icon: Icons.auto_awesome,
                   title: tr('For You'),
-                  subtitle: tr('Trending picks, fresh posts, and discovery energy'),
+                  subtitle:
+                      tr('Trending picks, fresh posts, and discovery energy'),
                   selected: _feedMode == 'forYou',
                   onTap: () => Navigator.of(context).pop('forYou'),
                 ),
@@ -2237,8 +2333,8 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                   context: context,
                   icon: Icons.favorite_border,
                   title: tr('Following'),
-                  subtitle:
-                      tr('Only the pages and creators you chose to keep up with'),
+                  subtitle: tr(
+                      'Only the pages and creators you chose to keep up with'),
                   selected: _feedMode == 'following',
                   onTap: () => Navigator.of(context).pop('following'),
                 ),
@@ -2503,6 +2599,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                 TextField(
                   controller: controller,
                   decoration: InputDecoration(
+                    suffixIcon: EmojiButton(controller: controller),
                     hintText: tr('Update your post...'),
                     border: const OutlineInputBorder(),
                   ),
@@ -2568,8 +2665,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                             ? null
                             : () async {
                                 setLocalState(() => pickingMedia = true);
-                                final picker = ImagePicker();
-                                final picked = await picker.pickImage(
+                                final picked = await MediaPicker.pickImage(
                                     source: ImageSource.gallery);
                                 if (picked != null) {
                                   setLocalState(() {
@@ -2587,28 +2683,27 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     // Windows has no camera in image_picker: gallery only.
                     if (!Platform.isWindows) ...[
                       const SizedBox(width: 8),
-                    Expanded(
-                      child: TextButton.icon(
-                        onPressed: pickingMedia
-                            ? null
-                            : () async {
-                                setLocalState(() => pickingMedia = true);
-                                final picker = ImagePicker();
-                                final picked = await picker.pickImage(
-                                    source: ImageSource.camera);
-                                if (picked != null) {
-                                  setLocalState(() {
-                                    pickedImage = File(picked.path);
-                                    pickedVideo = null;
-                                    removeMedia = false;
-                                  });
-                                }
-                                setLocalState(() => pickingMedia = false);
-                              },
-                        icon: const Icon(Icons.photo_camera),
-                        label: Text(tr('Take photo')),
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: pickingMedia
+                              ? null
+                              : () async {
+                                  setLocalState(() => pickingMedia = true);
+                                  final picked = await MediaPicker.pickImage(
+                                      source: ImageSource.camera);
+                                  if (picked != null) {
+                                    setLocalState(() {
+                                      pickedImage = File(picked.path);
+                                      pickedVideo = null;
+                                      removeMedia = false;
+                                    });
+                                  }
+                                  setLocalState(() => pickingMedia = false);
+                                },
+                          icon: const Icon(Icons.photo_camera),
+                          label: Text(tr('Take photo')),
+                        ),
                       ),
-                    ),
                     ],
                   ],
                 ),
@@ -2621,8 +2716,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                             ? null
                             : () async {
                                 setLocalState(() => pickingMedia = true);
-                                final picker = ImagePicker();
-                                final picked = await picker.pickVideo(
+                                final picked = await MediaPicker.pickVideo(
                                     source: ImageSource.gallery);
                                 if (picked != null) {
                                   setLocalState(() {
@@ -2640,28 +2734,27 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
                     // Windows has no camera in image_picker: gallery only.
                     if (!Platform.isWindows) ...[
                       const SizedBox(width: 8),
-                    Expanded(
-                      child: TextButton.icon(
-                        onPressed: pickingMedia
-                            ? null
-                            : () async {
-                                setLocalState(() => pickingMedia = true);
-                                final picker = ImagePicker();
-                                final picked = await picker.pickVideo(
-                                    source: ImageSource.camera);
-                                if (picked != null) {
-                                  setLocalState(() {
-                                    pickedVideo = File(picked.path);
-                                    pickedImage = null;
-                                    removeMedia = false;
-                                  });
-                                }
-                                setLocalState(() => pickingMedia = false);
-                              },
-                        icon: const Icon(Icons.videocam),
-                        label: Text(tr('Record video')),
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: pickingMedia
+                              ? null
+                              : () async {
+                                  setLocalState(() => pickingMedia = true);
+                                  final picked = await MediaPicker.pickVideo(
+                                      source: ImageSource.camera);
+                                  if (picked != null) {
+                                    setLocalState(() {
+                                      pickedVideo = File(picked.path);
+                                      pickedImage = null;
+                                      removeMedia = false;
+                                    });
+                                  }
+                                  setLocalState(() => pickingMedia = false);
+                                },
+                          icon: const Icon(Icons.videocam),
+                          label: Text(tr('Record video')),
+                        ),
                       ),
-                    ),
                     ],
                   ],
                 ),
@@ -2860,7 +2953,11 @@ class _AutoPlayVideoPreview extends StatefulWidget {
     this.onActivePlayback,
     this.showReelLabel = false,
     this.alwaysLoad = false,
+    this.thumbnailUrl,
   });
+
+  /// Cover picture shown until the video is ready.
+  final String? thumbnailUrl;
 
   /// Reels load at once; feed videos wait for a tap in Lite mode.
   final bool alwaysLoad;
@@ -3042,7 +3139,8 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 64),
+              const Icon(Icons.play_circle_fill_rounded,
+                  color: Colors.white, size: 64),
               const SizedBox(height: 8),
               Text(tr('Tap to play · Lite mode'),
                   style: const TextStyle(color: Colors.white70)),
@@ -3061,8 +3159,7 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
           _startLoading();
         }
         // Desktop windows are short: 60% visible is enough to play.
-        _isVisible =
-            info.visibleFraction >= (Platform.isWindows ? 0.6 : 0.8);
+        _isVisible = info.visibleFraction >= (Platform.isWindows ? 0.6 : 0.8);
         if (_isVisible) {
           if (!_didNotifyActivePlayback) {
             _didNotifyActivePlayback = true;
@@ -3216,10 +3313,28 @@ class _AutoPlayVideoPreviewState extends State<_AutoPlayVideoPreview> {
                     ],
                   ),
                 )
-              : Center(
-                  child: Icon(Icons.play_circle_fill,
-                      size: 48,
-                      color: Platform.isWindows ? Colors.white70 : null),
+              : Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (widget.thumbnailUrl != null &&
+                        widget.thumbnailUrl!.isNotEmpty)
+                      ClipRRect(
+                        borderRadius: widget.rounded
+                            ? BorderRadius.circular(8)
+                            : BorderRadius.zero,
+                        child: CachedNetworkImage(
+                          imageUrl: widget.thumbnailUrl!,
+                          fit: BoxFit.contain,
+                          fadeInDuration: const Duration(milliseconds: 200),
+                          errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    Center(
+                      child: Icon(Icons.play_circle_fill,
+                          size: 48,
+                          color: Platform.isWindows ? Colors.white70 : null),
+                    ),
+                  ],
                 ),
         ),
       ),
@@ -3316,6 +3431,7 @@ class _PostMediaCarouselState extends State<_PostMediaCarousel> {
                   if (item.isVideo) {
                     return _AutoPlayVideoPreview(
                       url: item.url,
+                      thumbnailUrl: item.thumbnailUrl,
                       height: height,
                       onActivePlayback: () =>
                           widget.onMediaEngaged?.call(index),
@@ -3586,6 +3702,145 @@ class _ExpandableCaptionState extends State<_ExpandableCaption> {
         ],
       );
     });
+  }
+}
+
+/// "Buy · 5,000 RWF" under a post that tags a product.
+class _ProductBuyBar extends StatelessWidget {
+  const _ProductBuyBar({required this.post});
+  final Post post;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = post.product!;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    void open() => openShop(
+          context,
+          businessId: post.businessId,
+          businessName: post.businessName,
+          ownerId: post.ownerId,
+          productId: p.productId,
+        );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: Material(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : AppColors.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: open,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: p.imageUrl == null
+                        ? const ColoredBox(
+                            color: AppColors.mist,
+                            child: Icon(Icons.shopping_bag_rounded,
+                                color: AppColors.primaryLight))
+                        : CachedNetworkImage(
+                            imageUrl: p.imageUrl!,
+                            fit: BoxFit.cover,
+                            memCacheWidth: 132,
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(p.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                      Text(formatRwf(p.price),
+                          style: const TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w800)),
+                    ],
+                  ),
+                ),
+                FilledButton.icon(
+                  onPressed: open,
+                  icon: const Icon(Icons.shopping_cart_rounded, size: 18),
+                  label: Text(tr('Buy')),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pages to follow when the Following feed is empty.
+class _StarterPages extends StatelessWidget {
+  const _StarterPages({required this.followingIds, required this.onFollow});
+  final List<String> followingIds;
+  final ValueChanged<String> onFollow;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      future: FirebaseFirestore.instance.collection('businesses').limit(12).get(),
+      builder: (context, snap) {
+        final me = FirebaseAuth.instance.currentUser?.uid;
+        final pages = (snap.data?.docs ?? const [])
+            .where((d) => d.data()['ownerId'] != me && d.data()['isActive'] != false)
+            .take(6)
+            .toList();
+        if (pages.isEmpty) return const SizedBox.shrink();
+        return ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Card(
+            child: Column(
+              children: [
+                for (final d in pages)
+                  ListTile(
+                    leading: CircleAvatar(
+                      backgroundImage: (d.data()['imageUrl'] ?? '').toString().isEmpty
+                          ? null
+                          : CachedNetworkImageProvider(d.data()['imageUrl'].toString()),
+                      child: (d.data()['imageUrl'] ?? '').toString().isEmpty
+                          ? const Icon(Icons.storefront_rounded)
+                          : null,
+                    ),
+                    title: Row(children: [
+                      Flexible(
+                        child: Text((d.data()['name'] ?? 'Page').toString(),
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
+                      if (d.data()['verified'] == true) ...[
+                        const SizedBox(width: 4),
+                        const VerifiedBadge(size: 14),
+                      ],
+                    ]),
+                    subtitle: Text((d.data()['category'] ?? '').toString(),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: followingIds.contains(d.id)
+                        ? const Icon(Icons.check_circle_rounded,
+                            color: AppColors.success)
+                        : FilledButton.tonal(
+                            onPressed: () => onFollow(d.id),
+                            child: Text(tr('Follow')),
+                          ),
+                    onTap: () => context.push(AppRoutes.businessProfilePath(d.id)),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -4165,32 +4420,41 @@ class PostCard extends StatelessWidget {
                           children: [
                             Row(
                               children: [
-                                GestureDetector(
-                                  onTap: () {
-                                    if (post.businessId.isNotEmpty) {
-                                      context.push(
-                                        AppRoutes.businessProfilePath(
-                                          post.businessId,
-                                        ),
-                                      );
-                                    } else {
-                                      context.push(
-                                        AppRoutes.clientProfilePath(
-                                          post.ownerId,
-                                        ),
-                                      );
-                                    }
-                                  },
-                                  child: Text(
-                                    post.businessName.isNotEmpty
-                                        ? post.businessName
-                                        : 'Unknown Creator',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
+                                Flexible(
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      if (post.businessId.isNotEmpty) {
+                                        context.push(
+                                          AppRoutes.businessProfilePath(
+                                            post.businessId,
+                                          ),
+                                        );
+                                      } else {
+                                        context.push(
+                                          AppRoutes.clientProfilePath(
+                                            post.ownerId,
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: Text(
+                                      post.businessName.isNotEmpty
+                                          ? post.businessName
+                                          : 'Unknown Creator',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
                                     ),
                                   ),
                                 ),
+                                if (PageIndex.instance
+                                    .isVerified(post.businessId)) ...[
+                                  const SizedBox(width: 4),
+                                  const VerifiedBadge(),
+                                ],
                                 const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
@@ -4332,12 +4596,17 @@ class PostCard extends StatelessWidget {
                                   targetOwnerId: post.ownerId,
                                   preview: post.content);
                             } else if (value == 'block') {
-                              confirmBlock(context, userId: post.ownerId, name: name);
+                              confirmBlock(context,
+                                  userId: post.ownerId, name: name);
                             }
                           },
                           itemBuilder: (context) => [
-                            PopupMenuItem(value: 'report', child: Text(tr('Report post'))),
-                            PopupMenuItem(value: 'block', child: Text(tr('Block this person'))),
+                            PopupMenuItem(
+                                value: 'report',
+                                child: Text(tr('Report post'))),
+                            PopupMenuItem(
+                                value: 'block',
+                                child: Text(tr('Block this person'))),
                           ],
                         ),
                     ],
@@ -4369,6 +4638,25 @@ class PostCard extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (post.product != null && post.businessId.isNotEmpty)
+                  _ProductBuyBar(post: post)
+                else if (PageIndex.instance.hasShop(post.businessId))
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: ActionChip(
+                        avatar: const Text('🛍'),
+                        label: Text(tr('Shop')),
+                        onPressed: () => openShop(
+                          context,
+                          businessId: post.businessId,
+                          businessName: post.businessName,
+                          ownerId: post.ownerId,
+                        ),
+                      ),
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
                   child: Row(
@@ -4754,7 +5042,8 @@ class _DesktopSpotlightRail extends StatelessWidget {
             children: [
               Text(
                 tr('Duhuze on desktop'),
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                style:
+                    const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
               Text(
@@ -4791,7 +5080,8 @@ class _DesktopSpotlightRail extends StatelessWidget {
               children: [
                 Text(
                   tr('Reels tuned for you'),
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                  style: const TextStyle(
+                      fontSize: 17, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -4826,7 +5116,8 @@ class _DesktopSpotlightRail extends StatelessWidget {
             children: [
               Text(
                 tr('Follow recommendations'),
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                style:
+                    const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 10),
               if (recommendedCreators.isEmpty)
@@ -4919,8 +5210,12 @@ class _DesktopSpotlightDock extends StatelessWidget {
     required this.onOpenProfile,
     required this.onOpenSettings,
     required this.onCreatePost,
+    required this.onOpenMyShop,
+    required this.onOpenOrders,
   });
 
+  final VoidCallback onOpenMyShop;
+  final VoidCallback onOpenOrders;
   final String feedMode;
 
   /// Wide window: icon + text in a row. Otherwise: small icon column.
@@ -4970,8 +5265,8 @@ class _DesktopSpotlightDock extends StatelessWidget {
         );
 
     return Container(
-      padding: EdgeInsets.symmetric(
-          horizontal: extended ? 10 : 8, vertical: 12),
+      padding:
+          EdgeInsets.symmetric(horizontal: extended ? 10 : 8, vertical: 12),
       decoration: BoxDecoration(
         color: isDark
             ? const Color(0xFF131923)
@@ -4989,14 +5284,12 @@ class _DesktopSpotlightDock extends StatelessWidget {
         ],
       ),
       child: Column(
-        crossAxisAlignment: extended
-            ? CrossAxisAlignment.stretch
-            : CrossAxisAlignment.center,
+        crossAxisAlignment:
+            extended ? CrossAxisAlignment.stretch : CrossAxisAlignment.center,
         children: [
           Row(
-            mainAxisAlignment: extended
-                ? MainAxisAlignment.start
-                : MainAxisAlignment.center,
+            mainAxisAlignment:
+                extended ? MainAxisAlignment.start : MainAxisAlignment.center,
             children: [
               SizedBox(
                 width: 44,
@@ -5042,12 +5335,15 @@ class _DesktopSpotlightDock extends StatelessWidget {
                   item(Icons.travel_explore_rounded, tr('Discover'),
                       onOpenDiscover,
                       shortcut: 'Ctrl+K'),
-                  item(Icons.chat_bubble_rounded, tr('Messages'),
-                      onOpenMessages,
+                  item(
+                      Icons.chat_bubble_rounded, tr('Messages'), onOpenMessages,
                       shortcut: 'Ctrl+M'),
                   item(Icons.notifications_rounded, tr('Notifications'),
                       onOpenNotifications),
                   item(Icons.bookmark_rounded, tr('Saved'), onOpenSaved),
+                  section(tr('Shop')),
+                  item(Icons.storefront_rounded, tr('My shop'), onOpenMyShop),
+                  item(Icons.receipt_long_rounded, tr('Orders'), onOpenOrders),
                   section(tr('You')),
                   item(Icons.person_rounded, tr('Profile'), onOpenProfile),
                   item(Icons.settings_rounded, tr('Settings'), onOpenSettings),
@@ -5178,8 +5474,8 @@ class _ReelStepButtons extends StatelessWidget {
       children: [
         Tooltip(
           message: tr('Previous') + '  (↑)',
-          child: _MediaArrow(
-              icon: Icons.keyboard_arrow_up_rounded, onTap: onUp),
+          child:
+              _MediaArrow(icon: Icons.keyboard_arrow_up_rounded, onTap: onUp),
         ),
         const SizedBox(height: 10),
         Tooltip(

@@ -56,7 +56,8 @@ class _OrderList extends StatelessWidget {
                 style: const TextStyle(color: AppColors.grey)),
           );
         }
-        return DesktopWidth(child: ListView.separated(
+        return DesktopWidth(
+            child: ListView.separated(
           padding: const EdgeInsets.all(12),
           itemCount: orders.length,
           separatorBuilder: (_, __) => const SizedBox(height: 10),
@@ -78,6 +79,8 @@ class _OrderCard extends StatelessWidget {
         OrderStatus.notReceived => AppColors.warning,
         OrderStatus.cancelled => AppColors.grey,
         OrderStatus.pendingPayment => AppColors.primary,
+        OrderStatus.ready => AppColors.secondary,
+        OrderStatus.delivered => AppColors.success,
       };
 
   @override
@@ -106,6 +109,24 @@ class _OrderCard extends StatelessWidget {
         buttons.add(TextButton(
           onPressed: () => repo.shopConfirmed(o.id),
           child: Text(tr('Mark as paid')),
+        ));
+      } else if (o.status == OrderStatus.confirmed) {
+        buttons.addAll([
+          OutlinedButton(
+            onPressed: () => repo.shopDelivered(o.id),
+            child: Text(tr('Delivered')),
+          ),
+          FilledButton.icon(
+            onPressed: () => repo.shopReady(o.id),
+            icon: const Icon(Icons.inventory_2_rounded, size: 18),
+            label: Text(tr('Ready')),
+          ),
+        ]);
+      } else if (o.status == OrderStatus.ready) {
+        buttons.add(FilledButton.icon(
+          onPressed: () => repo.shopDelivered(o.id),
+          icon: const Icon(Icons.local_shipping_rounded, size: 18),
+          label: Text(tr('Mark delivered')),
         ));
       }
     } else if (o.status == OrderStatus.pendingPayment ||
@@ -165,6 +186,10 @@ class _OrderCard extends StatelessWidget {
                   style: const TextStyle(fontSize: 12, color: AppColors.grey),
                 ),
               ),
+            if (o.status != OrderStatus.cancelled) ...[
+              const SizedBox(height: 10),
+              OrderTracker(status: o.status),
+            ],
             if (buttons.isNotEmpty) ...[
               const SizedBox(height: 10),
               Wrap(alignment: WrapAlignment.end, spacing: 8, children: buttons),
@@ -172,6 +197,81 @@ class _OrderCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Ordered → Paid → Confirmed → Ready → Delivered, with the current step lit.
+class OrderTracker extends StatelessWidget {
+  const OrderTracker({super.key, required this.status});
+  final OrderStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final labels = [
+      tr('Ordered'),
+      tr('Paid'),
+      tr('Confirmed'),
+      tr('Ready'),
+      tr('Delivered'),
+    ];
+    final step = status.step;
+    final muted = Theme.of(context).colorScheme.outlineVariant;
+    final warn = status == OrderStatus.notReceived;
+    return Row(
+      children: [
+        for (var i = 0; i < labels.length; i++) ...[
+          Expanded(
+            child: Column(
+              children: [
+                Row(children: [
+                  Expanded(
+                    child: Container(
+                      height: 3,
+                      color: i == 0
+                          ? Colors.transparent
+                          : (i <= step ? AppColors.success : muted),
+                    ),
+                  ),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    width: i == step ? 18 : 12,
+                    height: i == step ? 18 : 12,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: i < step || (i == step && !warn)
+                          ? AppColors.success
+                          : (i == step ? AppColors.warning : muted),
+                    ),
+                    child: i < step
+                        ? const Icon(Icons.check, size: 9, color: Colors.white)
+                        : null,
+                  ),
+                  Expanded(
+                    child: Container(
+                      height: 3,
+                      color: i == labels.length - 1
+                          ? Colors.transparent
+                          : (i < step ? AppColors.success : muted),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 4),
+                Text(
+                  labels[i],
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: i == step ? FontWeight.w800 : FontWeight.w500,
+                    color: i <= step ? null : AppColors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

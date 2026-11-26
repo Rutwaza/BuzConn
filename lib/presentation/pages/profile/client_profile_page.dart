@@ -1,15 +1,15 @@
+import 'package:businessfinder/core/services/media_picker.dart';
 import 'dart:io';
 import 'package:businessfinder/features/moderation/moderation.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
-import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/widgets/post_thumb.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/services/r2_storage_service.dart';
@@ -188,7 +188,8 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                         Navigator.of(context).pop();
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                              content: Text(tr('Premium upgrade is coming soon!'))),
+                              content:
+                                  Text(tr('Premium upgrade is coming soon!'))),
                         );
                       },
                       child: Text(tr('Go Premium')),
@@ -226,7 +227,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
   }
 
   Future<void> _pickLogo(String businessId) async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    final picked = await MediaPicker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
     setState(() => _selectedLogo = File(picked.path));
     try {
@@ -715,7 +716,8 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(tr('Who to follow'),
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              style:
+                  const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
           const SizedBox(height: 12),
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
@@ -956,7 +958,8 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                                 PopupMenuItem(
                                     value: 'edit', child: Text(tr('Edit'))),
                                 PopupMenuItem(
-                                    value: 'logo', child: Text(tr('Update logo'))),
+                                    value: 'logo',
+                                    child: Text(tr('Update logo'))),
                                 PopupMenuItem(
                                     value: 'toggle',
                                     child: Text(isActive
@@ -1043,9 +1046,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
         final docs = snapshot.data?.docs ?? [];
         if (docs.isEmpty) {
           return _emptyCard(
-            _isSelf
-                ? 'No posts yet. Share your first post.'
-                : 'No posts yet.',
+            _isSelf ? 'No posts yet. Share your first post.' : 'No posts yet.',
           );
         }
 
@@ -1405,7 +1406,9 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                 color: AppColors.lightGrey,
                 child: const Icon(Icons.image_outlined, color: AppColors.grey))
           else if (isVideo)
-            _VideoThumb(url: previewUrl)
+            _VideoThumb(
+                url: previewUrl,
+                thumb: media.isNotEmpty ? media.first.thumbnailUrl : null)
           else
             Image.network(previewUrl,
                 fit: BoxFit.cover,
@@ -1473,7 +1476,9 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
               ),
             )
           else if (isVideo)
-            _VideoThumb(url: previewUrl)
+            _VideoThumb(
+                url: previewUrl,
+                thumb: media.isNotEmpty ? media.first.thumbnailUrl : null)
           else
             Image.network(
               previewUrl,
@@ -1537,35 +1542,28 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
 }
 
 class _VideoThumb extends StatelessWidget {
-  const _VideoThumb({required this.url});
+  const _VideoThumb({required this.url, this.thumb});
 
   final String url;
+  final String? thumb;
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Uint8List?>(
-      future: VideoThumbnail.thumbnailData(
-          video: url,
-          imageFormat: ImageFormat.JPEG,
-          maxWidth: 300,
-          quality: 70),
-      builder: (context, snapshot) {
-        final bytes = snapshot.data;
-        if (bytes == null) {
-          return Container(
-              color: Colors.black26,
-              child: const Center(
-                  child: Icon(Icons.play_circle_fill, color: Colors.white70)));
-        }
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            Image.memory(bytes, fit: BoxFit.cover),
-            const Center(
-                child: Icon(Icons.play_circle_fill, color: Colors.white70)),
-          ],
-        );
-      },
+    // Cover picture, or a frame taken from the video (works on Windows too).
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        VideoCover(
+          media: PostMedia(
+              type: PostMediaType.video, url: url, thumbnailUrl: thumb),
+          width: 320,
+        ),
+        const Center(
+          child: Icon(Icons.play_circle_fill,
+              color: Colors.white,
+              shadows: [Shadow(blurRadius: 6, color: Colors.black54)]),
+        ),
+      ],
     );
   }
 }

@@ -143,14 +143,21 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
+    // Page fields only the server writes: search words, the verified
+    // badge, the shop counter and the review average.
+    function businessServerFields() {
+      return ['searchKeywords', 'verified', 'verifiedAt', 'verifiedBy',
+        'productCount', 'ratingAvg', 'ratingCount'];
+    }
+
     match /businesses/{businessId} {
       allow read: if true;
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid
-        && !request.resource.data.keys().hasAny(['searchKeywords']);
+        && !request.resource.data.keys().hasAny(businessServerFields());
       // searchKeywords are made by the server (functions/feed.js).
       allow update: if isSignedIn() && resource.data.ownerId == request.auth.uid
         && !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['searchKeywords']);
+          .hasAny(businessServerFields());
       allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
     }
 
@@ -158,6 +165,9 @@ service cloud.firestore {
     match /businesses/{businessId}/products/{productId} {
       allow read: if true;
       allow create, update: if isBusinessOwner(businessId)
+        // soldCount is counted by the server when orders are confirmed.
+        && request.resource.data.get('soldCount', 0)
+          == (resource == null ? 0 : resource.data.get('soldCount', 0))
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
         && request.resource.data.name.size() <= 80
@@ -165,6 +175,22 @@ service cloud.firestore {
         && request.resource.data.price > 0
         && request.resource.data.price <= 10000000;
       allow delete: if isBusinessOwner(businessId);
+    }
+
+    // Reviews: one per person (the id is their uid), 1-5 stars. The page
+    // owner can't review their own page. The average is kept by the server.
+    match /businesses/{businessId}/reviews/{uid} {
+      allow read: if true;
+      allow create, update: if isOwner(uid)
+        && get(/databases/$(database)/documents/businesses/$(businessId)).data.ownerId != uid
+        && request.resource.data.keys().hasOnly(['rating', 'text', 'userName',
+          'userImageUrl', 'createdAt', 'updatedAt'])
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.get('text', '') is string
+        && request.resource.data.get('text', '').size() <= 500;
+      allow delete: if isOwner(uid);
     }
 
     // Status (24h stories). Signed-in users can watch; you post and delete
@@ -210,9 +236,15 @@ service cloud.firestore {
           && ((resource.data.status in ['pending_payment', 'paid_claimed', 'not_received']
                 && request.resource.data.status == 'confirmed')
             || (resource.data.status == 'paid_claimed'
-                && request.resource.data.status == 'not_received'))
+                && request.resource.data.status == 'not_received')
+            // After payment: ready -> delivered (order tracking).
+            || (resource.data.status == 'confirmed'
+                && request.resource.data.status == 'ready')
+            || (resource.data.status in ['confirmed', 'ready']
+                && request.resource.data.status == 'delivered'))
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status', 'ownerNote', 'updatedAt', 'confirmedAt']))
+            .hasOnly(['status', 'ownerNote', 'updatedAt', 'confirmedAt',
+              'readyAt', 'deliveredAt']))
       );
     }
 

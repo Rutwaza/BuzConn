@@ -49,6 +49,110 @@ class _SearchPageState extends State<SearchPage> {
   SearchFilter _lastResultFilter = SearchFilter.all;
   static const LatLng _defaultDiscoverCenter = LatLng(-1.9441, 30.0619);
   final Map<String, LatLng> _resolvedPageLocations = {};
+  // Page filters (Discover): category, place, shop, verified, rating.
+  String? _category;
+  String _place = '';
+  bool _onlyShops = false;
+  bool _onlyVerified = false;
+  bool _topRated = false;
+
+  bool get _anyPageFilter =>
+      _category != null || _place.isNotEmpty || _onlyShops || _onlyVerified || _topRated;
+
+  bool _passesPageFilters(Map<String, dynamic> b) {
+    if (_category != null &&
+        (b['category'] ?? '').toString().toLowerCase() != _category!.toLowerCase()) {
+      return false;
+    }
+    if (_place.isNotEmpty) {
+      final where = '${b['location'] ?? ''} ${b['address'] ?? ''}'.toLowerCase();
+      if (!where.contains(_place.toLowerCase())) return false;
+    }
+    if (_onlyShops && ((b['productCount'] as num?) ?? 0) <= 0) return false;
+    if (_onlyVerified && b['verified'] != true) return false;
+    if (_topRated && ((b['ratingAvg'] as num?) ?? 0) < 4) return false;
+    return true;
+  }
+
+  Widget _pageFiltersRow() {
+    final categories = <String>{
+      for (final b in _businessResults)
+        if ((b['category'] ?? '').toString().trim().isNotEmpty)
+          (b['category']).toString().trim(),
+    }.toList()
+      ..sort();
+    Widget chip(String label, bool on, VoidCallback onTap) => Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: FilterChip(
+            label: Text(label),
+            selected: on,
+            onSelected: (_) => setState(onTap),
+            visualDensity: VisualDensity.compact,
+          ),
+        );
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      child: Row(
+        children: [
+          PopupMenuButton<String>(
+            tooltip: tr('Category'),
+            onSelected: (v) => setState(() => _category = v == '*' ? null : v),
+            itemBuilder: (_) => [
+              PopupMenuItem(value: '*', child: Text(tr('All categories'))),
+              for (final c in categories) PopupMenuItem(value: c, child: Text(c)),
+            ],
+            child: Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Chip(
+                avatar: const Icon(Icons.category_rounded, size: 16),
+                label: Text(_category ?? tr('Category')),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
+          ActionChip(
+            avatar: const Icon(Icons.place_rounded, size: 16),
+            label: Text(_place.isEmpty ? tr('Place') : _place),
+            visualDensity: VisualDensity.compact,
+            onPressed: () async {
+              final c = TextEditingController(text: _place);
+              final v = await showDialog<String>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: Text(tr('Where?')),
+                  content: TextField(
+                    controller: c,
+                    autofocus: true,
+                    decoration: InputDecoration(hintText: tr('e.g. Kigali, Musanze, Kimironko')),
+                    onSubmitted: (t) => Navigator.pop(context, t),
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context, ''), child: Text(tr('Clear'))),
+                    FilledButton(onPressed: () => Navigator.pop(context, c.text), child: Text(tr('OK'))),
+                  ],
+                ),
+              );
+              if (v != null) setState(() => _place = v.trim());
+            },
+          ),
+          const SizedBox(width: 6),
+          chip('🛍 ${tr('Has a shop')}', _onlyShops, () => _onlyShops = !_onlyShops),
+          chip('✓ ${tr('Verified')}', _onlyVerified, () => _onlyVerified = !_onlyVerified),
+          chip('⭐ 4+', _topRated, () => _topRated = !_topRated),
+          if (_anyPageFilter)
+            TextButton(
+              onPressed: () => setState(() {
+                _category = null;
+                _place = '';
+                _onlyShops = _onlyVerified = _topRated = false;
+              }),
+              child: Text(tr('Reset')),
+            ),
+        ],
+      ),
+    );
+  }
   final Set<String> _resolvingPageLocations = {};
 
   @override
@@ -599,6 +703,9 @@ class _SearchPageState extends State<SearchPage> {
                     ],
                   ),
                 ),
+                if (_filter == SearchFilter.all ||
+                    _filter == SearchFilter.businesses)
+                  _pageFiltersRow(),
                 const SizedBox(height: 8),
                 Expanded(
                   child: Builder(
@@ -821,7 +928,10 @@ class _SearchPageState extends State<SearchPage> {
           )
         : const SizedBox.shrink();
 
-    final desktopFilters = SingleChildScrollView(
+    final desktopFilters = Column(
+     crossAxisAlignment: CrossAxisAlignment.start,
+     children: [
+     SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
@@ -867,6 +977,10 @@ class _SearchPageState extends State<SearchPage> {
           ),
         ],
       ),
+     ),
+     if (_filter == SearchFilter.all || _filter == SearchFilter.businesses)
+       _pageFiltersRow(),
+     ],
     );
 
     final locationPages = _businessResults.where((business) {
@@ -1345,6 +1459,7 @@ class _SearchPageState extends State<SearchPage> {
         });
       }
       for (final b in orderedBusinesses) {
+        if (!_passesPageFilters(b)) continue;
         final name = (b['name'] ?? '').toString();
         final category = (b['category'] ?? '').toString();
         if (matches(name) || matches(category)) {
@@ -1368,7 +1483,8 @@ class _SearchPageState extends State<SearchPage> {
       }
     }
 
-    if (_filter == SearchFilter.all || _filter == SearchFilter.users) {
+    if ((_filter == SearchFilter.all && !_anyPageFilter) ||
+        _filter == SearchFilter.users) {
       for (final u in users) {
         final name = (u['name'] ?? '').toString();
         final userType = (u['userType'] ?? '').toString();

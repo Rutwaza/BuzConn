@@ -1,3 +1,5 @@
+import 'package:businessfinder/core/widgets/emoji_picker.dart';
+import 'package:businessfinder/core/services/media_picker.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -8,6 +10,7 @@ import '../../../core/i18n/tr.dart';
 import '../../../core/services/image_shrinker.dart';
 import '../../../core/theme/colors.dart';
 import '../data/status_repository.dart';
+import 'story_photo_editor.dart';
 
 /// Make a status: a photo, a short video, or coloured text.
 /// Returns true when it was posted.
@@ -25,9 +28,14 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
     0xFF14B8A6,
     0xFFE5484D,
     0xFF7B61FF,
-    0xFFE8B931
+    0xFFE8B931,
+    0xFF111111,
+    0xFFFF6B35,
+    0xFF2D6A4F,
+    0xFFC2185B,
   ];
   final _text = TextEditingController();
+  final _editor = GlobalKey<StoryPhotoEditorState>();
   Uint8List? _image;
   File? _video;
   int _color = _colors.first;
@@ -47,10 +55,9 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
 
   Future<void> _pick(ImageSource source, {required bool video}) async {
     if (_preparing) return;
-    final picker = ImagePicker();
     final messenger = ScaffoldMessenger.of(context);
     if (video) {
-      final f = await picker.pickVideo(
+      final f = await MediaPicker.pickVideo(
           source: source, maxDuration: const Duration(seconds: 60));
       if (f == null || !mounted) return;
       final file = File(f.path);
@@ -64,7 +71,7 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
         _image = null;
       });
     } else {
-      final f = await picker.pickImage(
+      final f = await MediaPicker.pickImage(
           source: source, maxWidth: 1440, imageQuality: 80);
       if (f == null || !mounted) return;
       setState(() => _preparing = true);
@@ -90,8 +97,14 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
     final nav = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     try {
+      // Filters, texts and stickers are drawn into the photo here.
+      final image = _image == null
+          ? null
+          : (_editor.currentState?.edited ?? false)
+              ? await _editor.currentState!.export()
+              : _image;
       await StatusRepository.instance.post(
-        image: _image,
+        image: image,
         video: _video,
         text: _text.text,
         bgColor: _color,
@@ -138,11 +151,7 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
                           style: const TextStyle(color: Colors.white70)),
                     ])
                   : _image != null
-                      ? Image.memory(_image!,
-                          fit: BoxFit.contain,
-                          cacheHeight: (MediaQuery.sizeOf(context).height *
-                                  MediaQuery.devicePixelRatioOf(context))
-                              .round())
+                      ? StoryPhotoEditor(key: _editor, image: _image!)
                       : _video != null
                           ? Column(mainAxisSize: MainAxisSize.min, children: [
                               const Icon(Icons.movie_rounded,
@@ -164,6 +173,7 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
                                     fontSize: 28,
                                     fontWeight: FontWeight.w700),
                                 decoration: InputDecoration(
+                                  suffixIcon: EmojiButton(controller: _text),
                                   border: InputBorder.none,
                                   counterStyle:
                                       const TextStyle(color: Colors.white70),
@@ -183,6 +193,7 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
                 maxLength: 300,
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
+                  suffixIcon: EmojiButton(controller: _text),
                   hintText: tr('Add a caption…'),
                   hintStyle: const TextStyle(color: Colors.white60),
                   counterStyle: const TextStyle(color: Colors.white54),
@@ -223,6 +234,23 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
                     icon:
                         const Icon(Icons.videocam_rounded, color: Colors.white),
                   ),
+                  if (_image != null) ...[
+                    IconButton(
+                      tooltip: tr('Add text'),
+                      onPressed: _posting
+                          ? null
+                          : () => _editor.currentState?.addText(),
+                      icon: const Icon(Icons.title_rounded, color: Colors.white),
+                    ),
+                    IconButton(
+                      tooltip: tr('Sticker'),
+                      onPressed: _posting
+                          ? null
+                          : () => _editor.currentState?.addSticker(),
+                      icon: const Icon(Icons.emoji_emotions_rounded,
+                          color: Colors.white),
+                    ),
+                  ],
                   if (!isText)
                     IconButton(
                       tooltip: tr('Text'),

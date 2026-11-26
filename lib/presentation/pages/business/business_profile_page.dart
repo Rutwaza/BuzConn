@@ -5,12 +5,14 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:businessfinder/core/widgets/post_thumb.dart';
+import 'package:businessfinder/features/admin/admin_verify_button.dart';
+import 'package:businessfinder/features/shop/ui/page_shop_widgets.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import 'package:url_launcher/url_launcher.dart';
-import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
@@ -31,7 +33,6 @@ class BusinessProfilePage extends StatefulWidget {
 }
 
 class _BusinessProfilePageState extends State<BusinessProfilePage> {
-  final Map<String, Future<Uint8List?>> _thumbCache = {};
   final Map<String, Future<LatLng?>> _locationCache = {};
 
   bool get _supportsNativeGoogleMap =>
@@ -46,24 +47,6 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
       return;
     }
     context.go(AppRoutes.dashboard);
-  }
-
-  Future<Uint8List?> _getVideoThumbnail(String url) {
-    return _thumbCache.putIfAbsent(
-      url,
-      () async {
-        if (Platform.isWindows) {
-          // VideoThumbnail doesn't work on Windows, return null
-          return null;
-        }
-        return VideoThumbnail.thumbnailData(
-          video: url,
-          imageFormat: ImageFormat.JPEG,
-          maxWidth: 420,
-          quality: 70,
-        );
-      },
-    );
   }
 
   @override
@@ -92,13 +75,14 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
           final category = business['category'] ?? '';
           final phone = business['phone'] ?? '';
           final email = (business['email'] ?? '').toString().trim();
-          final description =
-              (business['description'] ?? '').toString().trim();
+          final description = (business['description'] ?? '').toString().trim();
           final address = (business['address'] ?? business['location'] ?? '')
               .toString()
               .trim();
           final mapsLink = (business['googleMapsLink'] ?? '').toString().trim();
-          final isVerified = business['isVerified'] == true;
+          // The badge is given by an admin (functions/admin.js), not by the
+          // owner, so only the server field `verified` counts.
+          final isVerified = business['verified'] == true;
           final ownerId = business['ownerId'] ?? '';
           final currentUserId = FirebaseAuth.instance.currentUser?.uid;
           final isOwner = currentUserId == ownerId;
@@ -167,7 +151,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                             const SizedBox(width: 8),
                             _circleIconButton(
                               icon: Icons.message,
-                              onTap: () => _openBusinessChat(ownerId.toString()),
+                              onTap: () =>
+                                  _openBusinessChat(ownerId.toString()),
                             ),
                           ],
                         ),
@@ -193,7 +178,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                             ),
                             if (isVerified)
                               const Icon(
-                                Icons.verified,
+                                Icons.verified_rounded,
                                 color: Colors.green,
                                 size: 16,
                               ),
@@ -201,13 +186,20 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          isVerified ? 'Verified page' : 'Not verified',
+                          isVerified
+                              ? tr('Verified business')
+                              : tr('Not verified'),
                           style: TextStyle(
-                            color: isVerified ? Colors.green : AppColors.grey,
+                            color: isVerified
+                                ? const Color(0xFF1D9BF0)
+                                : AppColors.grey,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
+                        AdminVerifyButton(
+                            businessId: widget.businessId,
+                            verified: isVerified),
                         if (description.isNotEmpty) ...[
                           const SizedBox(height: 10),
                           Text(
@@ -241,9 +233,10 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                               : Colors.white,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: Theme.of(context).brightness == Brightness.dark
-                                ? Colors.white10
-                                : Colors.black12,
+                            color:
+                                Theme.of(context).brightness == Brightness.dark
+                                    ? Colors.white10
+                                    : Colors.black12,
                           ),
                         ),
                         child: StreamBuilder<QuerySnapshot>(
@@ -274,12 +267,17 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                       value: followersCount,
                                     ),
                                     ElevatedButton.icon(
-                                      onPressed: () => _openShop(business, isOwner),
-                                      icon: const Icon(Icons.storefront_rounded),
-                                      label: Text(isOwner ? 'My shop' : 'Shop'),
+                                      onPressed: () =>
+                                          _openShop(business, isOwner),
+                                      icon:
+                                          const Icon(Icons.storefront_rounded),
+                                      label: Text(
+                                          isOwner ? tr('My shop') : tr('Shop')),
                                     ),
                                     if (!isOwner && currentUserId != null)
-                                      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                                      StreamBuilder<
+                                          DocumentSnapshot<
+                                              Map<String, dynamic>>>(
                                         stream: _pageFollowDoc(
                                           currentUserId,
                                           widget.businessId,
@@ -304,10 +302,13 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                             icon: Icon(
                                               isFollowing
                                                   ? Icons.favorite_rounded
-                                                  : Icons.favorite_border_rounded,
+                                                  : Icons
+                                                      .favorite_border_rounded,
                                             ),
                                             label: Text(
-                                              isFollowing ? 'Following' : 'Follow',
+                                              isFollowing
+                                                  ? 'Following'
+                                                  : 'Follow',
                                             ),
                                           );
                                         },
@@ -320,59 +321,61 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                           ),
                                         );
                                       },
-                                      icon: const Icon(Icons.people_outline_rounded),
+                                      icon: const Icon(
+                                          Icons.people_outline_rounded),
                                       label: Text(tr('View followers')),
                                     ),
                                   ],
                                 ),
                                 if (category.toString().isNotEmpty ||
                                     phone.toString().isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  if (category.toString().isNotEmpty)
-                                    Expanded(
-                                      child: _buildInfoLine(
-                                        icon: Icons.category_outlined,
-                                        label: tr('Category'),
-                                        value: category.toString(),
-                                      ),
-                                    ),
-                                  if (category.toString().isNotEmpty &&
-                                      phone.toString().isNotEmpty)
-                                    const SizedBox(width: 12),
-                                  if (phone.toString().isNotEmpty)
-                                    Expanded(
-                                      child: _buildInfoLine(
-                                        icon: Icons.call_outlined,
-                                        label: tr('Phone'),
-                                        value: phone.toString(),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ],
-                            if (email.isNotEmpty) ...[
-                              const SizedBox(height: 10),
-                              Center(
-                                child: ConstrainedBox(
-                                  constraints: const BoxConstraints(maxWidth: 360),
-                                  child: _buildInfoLine(
-                                    icon: Icons.email_outlined,
-                                    label: tr('Email'),
-                                    value: email,
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      if (category.toString().isNotEmpty)
+                                        Expanded(
+                                          child: _buildInfoLine(
+                                            icon: Icons.category_outlined,
+                                            label: tr('Category'),
+                                            value: category.toString(),
+                                          ),
+                                        ),
+                                      if (category.toString().isNotEmpty &&
+                                          phone.toString().isNotEmpty)
+                                        const SizedBox(width: 12),
+                                      if (phone.toString().isNotEmpty)
+                                        Expanded(
+                                          child: _buildInfoLine(
+                                            icon: Icons.call_outlined,
+                                            label: tr('Phone'),
+                                            value: phone.toString(),
+                                          ),
+                                        ),
+                                    ],
                                   ),
-                                ),
-                              ),
-                            ],
-                            if (address.isNotEmpty) ...[
-                              const SizedBox(height: 10),
-                              _buildInfoLine(
-                                icon: Icons.place_outlined,
-                                label: tr('Address'),
-                                value: address,
-                              ),
-                            ],
+                                ],
+                                if (email.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  Center(
+                                    child: ConstrainedBox(
+                                      constraints:
+                                          const BoxConstraints(maxWidth: 360),
+                                      child: _buildInfoLine(
+                                        icon: Icons.email_outlined,
+                                        label: tr('Email'),
+                                        value: email,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                if (address.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  _buildInfoLine(
+                                    icon: Icons.place_outlined,
+                                    label: tr('Address'),
+                                    value: address,
+                                  ),
+                                ],
                               ],
                             );
                           },
@@ -390,13 +393,29 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                 ),
               ),
               SliverToBoxAdapter(
+                child: PopularProductsStrip(
+                  businessId: widget.businessId,
+                  businessName: name.toString(),
+                  ownerId: ownerId,
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: PageReviewsSection(
+                  businessId: widget.businessId,
+                  ownerId: ownerId,
+                  ratingAvg: ((business['ratingAvg'] as num?) ?? 0).toDouble(),
+                  ratingCount: ((business['ratingCount'] as num?) ?? 0).toInt(),
+                ),
+              ),
+              SliverToBoxAdapter(
                 child: StreamBuilder<QuerySnapshot>(
                   stream: FirebaseFirestore.instance
                       .collection('posts')
                       .where('ownerId', isEqualTo: ownerId)
                       .snapshots(),
                   builder: (context, postsSnapshot) {
-                    if (postsSnapshot.connectionState == ConnectionState.waiting) {
+                    if (postsSnapshot.connectionState ==
+                        ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator());
                     }
                     final docs = postsSnapshot.data?.docs ?? [];
@@ -415,8 +434,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                       );
                     }
 
-                    final totalLikes = posts.fold<int>(
-                        0, (total, p) => total + p.likeCount);
+                    final totalLikes =
+                        posts.fold<int>(0, (total, p) => total + p.likeCount);
                     final avgLikes =
                         totalLikes / (posts.isEmpty ? 1 : posts.length);
 
@@ -449,8 +468,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                           physics: const NeverScrollableScrollPhysics(),
                           padding: const EdgeInsets.all(8),
                           gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
+                              const SliverGridDelegateWithMaxCrossAxisExtent(
+                            maxCrossAxisExtent: 150,
                             crossAxisSpacing: 6,
                             mainAxisSpacing: 6,
                           ),
@@ -465,47 +484,9 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                   ),
                                 );
                               },
-                              child: Container(
-                                color: AppColors.lightGrey,
-                                child: post.media.isNotEmpty &&
-                                        !post.media.first.isVideo
-                                    ? CachedNetworkImage(
-                                        imageUrl: post.media.first.url,
-                                        fit: BoxFit.cover,
-                                      )
-                                    : post.media.isNotEmpty &&
-                                            post.media.first.isVideo
-                                        ? FutureBuilder<Uint8List?>(
-                                            future: _getVideoThumbnail(
-                                                post.media.first.url),
-                                            builder: (context, thumbSnap) {
-                                              final bytes = thumbSnap.data;
-                                              if (bytes == null) {
-                                                return const Center(
-                                                  child: Icon(
-                                                    Icons.play_circle_fill,
-                                                    color: Colors.white70,
-                                                    size: 32,
-                                                  ),
-                                                );
-                                              }
-                                              return Stack(
-                                                fit: StackFit.expand,
-                                                children: [
-                                                  Image.memory(bytes,
-                                                      fit: BoxFit.cover),
-                                                  const Center(
-                                                    child: Icon(
-                                                      Icons.play_circle_fill,
-                                                      color: Colors.white70,
-                                                      size: 32,
-                                                    ),
-                                                  ),
-                                                ],
-                                              );
-                                            },
-                                          )
-                                        : const Icon(Icons.text_snippet_outlined),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: PostThumb(post: post),
                               ),
                             );
                           },
@@ -568,9 +549,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                 posts.fold<int>(0, (total, p) => total + p.likeCount);
             final avgLikes = posts.isEmpty ? 0.0 : totalLikes / posts.length;
             final mediaPosts = posts.where((p) => p.media.isNotEmpty).length;
-            final videoPosts = posts
-                .where((p) => p.media.any((item) => item.isVideo))
-                .length;
+            final videoPosts =
+                posts.where((p) => p.media.any((item) => item.isVideo)).length;
 
             return SafeArea(
               child: SingleChildScrollView(
@@ -590,7 +570,10 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                             const SizedBox(width: 10),
                             Text(
                               tr('Business profile'),
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
                                     fontWeight: FontWeight.w700,
                                   ),
                             ),
@@ -619,7 +602,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                 child: imageUrl == null || imageUrl.isEmpty
                                     ? Text(
                                         name.isNotEmpty
-                                            ? name.characters.first.toUpperCase()
+                                            ? name.characters.first
+                                                .toUpperCase()
                                             : 'P',
                                         style: const TextStyle(
                                           color: Colors.white,
@@ -635,7 +619,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
                                       children: [
                                         Flexible(
                                           child: Text(
@@ -669,7 +654,9 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                         maxLines: 3,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                          color: isDark ? Colors.white70 : Colors.black87,
+                                          color: isDark
+                                              ? Colors.white70
+                                              : Colors.black87,
                                           height: 1.35,
                                         ),
                                       ),
@@ -682,20 +669,33 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                       children: [
                                         if (phone.isNotEmpty)
                                           OutlinedButton.icon(
-                                            onPressed: () => _dialPhone(context, phone),
-                                            icon: const Icon(Icons.call_rounded),
+                                            onPressed: () =>
+                                                _dialPhone(context, phone),
+                                            icon:
+                                                const Icon(Icons.call_rounded),
                                             label: Text(tr('Call')),
                                           ),
                                         ElevatedButton.icon(
-                                          onPressed: () => _openBusinessChat(ownerId),
-                                          icon: const Icon(Icons.message_outlined),
-                                          label: Text(isOwner ? 'Open inbox' : 'Message'),
+                                          onPressed: () =>
+                                              _openBusinessChat(ownerId),
+                                          icon: const Icon(
+                                              Icons.message_outlined),
+                                          label: Text(isOwner
+                                              ? 'Open inbox'
+                                              : 'Message'),
                                         ),
                                         OutlinedButton.icon(
-                                          onPressed: () => _openShop(business, isOwner),
-                                          icon: const Icon(Icons.storefront_rounded),
-                                          label: Text(isOwner ? 'My shop' : 'Shop'),
+                                          onPressed: () =>
+                                              _openShop(business, isOwner),
+                                          icon: const Icon(
+                                              Icons.storefront_rounded),
+                                          label: Text(isOwner
+                                              ? tr('My shop')
+                                              : tr('Shop')),
                                         ),
+                                        AdminVerifyButton(
+                                            businessId: widget.businessId,
+                                            verified: isVerified),
                                       ],
                                     ),
                                   ],
@@ -708,7 +708,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                 decoration: BoxDecoration(
                                   color: isDark
                                       ? Colors.white.withValues(alpha: 0.03)
-                                      : AppColors.primary.withValues(alpha: 0.05),
+                                      : AppColors.primary
+                                          .withValues(alpha: 0.05),
                                   borderRadius: BorderRadius.circular(18),
                                 ),
                                 child: Column(
@@ -758,8 +759,10 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                       Expanded(
                                         child: _desktopMetricCard(
                                           title: tr('Total likes'),
-                                          value: _formatCompactNumber(totalLikes),
-                                          subtitle: 'Across ${posts.length} published posts',
+                                          value:
+                                              _formatCompactNumber(totalLikes),
+                                          subtitle:
+                                              'Across ${posts.length} published posts',
                                           icon: Icons.favorite_border_rounded,
                                         ),
                                       ),
@@ -768,7 +771,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                         child: _desktopMetricCard(
                                           title: tr('Media posts'),
                                           value: mediaPosts.toString(),
-                                          subtitle: tr('Photos and videos combined'),
+                                          subtitle:
+                                              tr('Photos and videos combined'),
                                           icon: Icons.perm_media_rounded,
                                         ),
                                       ),
@@ -777,8 +781,10 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                         child: _desktopMetricCard(
                                           title: tr('Videos'),
                                           value: videoPosts.toString(),
-                                          subtitle: tr('Motion content on the page'),
-                                          icon: Icons.play_circle_outline_rounded,
+                                          subtitle:
+                                              tr('Motion content on the page'),
+                                          icon:
+                                              Icons.play_circle_outline_rounded,
                                         ),
                                       ),
                                     ],
@@ -791,12 +797,33 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                       color: surfaceColor,
                                       borderRadius: BorderRadius.circular(22),
                                       border: Border.all(
-                                        color: isDark ? Colors.white10 : Colors.black12,
+                                        color: isDark
+                                            ? Colors.white10
+                                            : Colors.black12,
                                       ),
                                     ),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
+                                        PopularProductsStrip(
+                                          businessId: widget.businessId,
+                                          businessName: name.toString(),
+                                          ownerId: ownerId,
+                                        ),
+                                        PageReviewsSection(
+                                          businessId: widget.businessId,
+                                          ownerId: ownerId,
+                                          ratingAvg: ((business['ratingAvg']
+                                                      as num?) ??
+                                                  0)
+                                              .toDouble(),
+                                          ratingCount: ((business['ratingCount']
+                                                      as num?) ??
+                                                  0)
+                                              .toInt(),
+                                        ),
+                                        const Divider(height: 24),
                                         Row(
                                           children: [
                                             Expanded(
@@ -808,7 +835,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                                     tr('Recent posts'),
                                                     style: const TextStyle(
                                                       fontSize: 18,
-                                                      fontWeight: FontWeight.w800,
+                                                      fontWeight:
+                                                          FontWeight.w800,
                                                     ),
                                                   ),
                                                   const SizedBox(height: 4),
@@ -840,9 +868,12 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                             padding: const EdgeInsets.all(28),
                                             decoration: BoxDecoration(
                                               color: isDark
-                                                  ? Colors.white.withValues(alpha: 0.03)
-                                                  : Colors.black.withValues(alpha: 0.02),
-                                              borderRadius: BorderRadius.circular(16),
+                                                  ? Colors.white
+                                                      .withValues(alpha: 0.03)
+                                                  : Colors.black
+                                                      .withValues(alpha: 0.02),
+                                              borderRadius:
+                                                  BorderRadius.circular(16),
                                             ),
                                             child: Column(
                                               children: [
@@ -859,13 +890,16 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                         else
                                           GridView.builder(
                                             shrinkWrap: true,
-                                            physics: const NeverScrollableScrollPhysics(),
+                                            physics:
+                                                const NeverScrollableScrollPhysics(),
                                             itemCount: posts.length,
+                                            // Smaller previews: more posts fit, and
+                                            // there is room for products above.
                                             gridDelegate:
-                                                const SliverGridDelegateWithFixedCrossAxisCount(
-                                              crossAxisCount: 3,
-                                              crossAxisSpacing: 10,
-                                              mainAxisSpacing: 10,
+                                                const SliverGridDelegateWithMaxCrossAxisExtent(
+                                              maxCrossAxisExtent: 170,
+                                              crossAxisSpacing: 8,
+                                              mainAxisSpacing: 8,
                                             ),
                                             itemBuilder: (context, index) {
                                               final post = posts[index];
@@ -873,63 +907,18 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                                 onTap: () {
                                                   Navigator.of(context).push(
                                                     MaterialPageRoute(
-                                                      builder: (_) => PostDetailPage(post: post),
+                                                      builder: (_) =>
+                                                          PostDetailPage(
+                                                              post: post),
                                                     ),
                                                   );
                                                 },
-                                                borderRadius: BorderRadius.circular(16),
-                                                child: Container(
-                                                  decoration: BoxDecoration(
-                                                    color: AppColors.lightGrey,
-                                                    borderRadius: BorderRadius.circular(16),
-                                                  ),
-                                                  clipBehavior: Clip.antiAlias,
-                                                  child: post.media.isNotEmpty &&
-                                                          !post.media.first.isVideo
-                                                      ? CachedNetworkImage(
-                                                          imageUrl: post.media.first.url,
-                                                          fit: BoxFit.cover,
-                                                        )
-                                                      : post.media.isNotEmpty &&
-                                                              post.media.first.isVideo
-                                                          ? FutureBuilder<Uint8List?>(
-                                                              future: _getVideoThumbnail(
-                                                                post.media.first.url,
-                                                              ),
-                                                              builder: (context, thumbSnap) {
-                                                                final bytes = thumbSnap.data;
-                                                                if (bytes == null) {
-                                                                  return const Center(
-                                                                    child: Icon(
-                                                                      Icons.play_circle_fill,
-                                                                      color: Colors.white70,
-                                                                      size: 38,
-                                                                    ),
-                                                                  );
-                                                                }
-                                                                return Stack(
-                                                                  fit: StackFit.expand,
-                                                                  children: [
-                                                                    Image.memory(
-                                                                      bytes,
-                                                                      fit: BoxFit.cover,
-                                                                    ),
-                                                                    const Center(
-                                                                      child: Icon(
-                                                                        Icons.play_circle_fill,
-                                                                        color: Colors.white70,
-                                                                        size: 38,
-                                                                      ),
-                                                                    ),
-                                                                  ],
-                                                                );
-                                                              },
-                                                            )
-                                                          : const Center(
-                                                              child: Icon(
-                                                                Icons.text_snippet_outlined,
-                                                              ),
-                                                            ),
+                                                borderRadius:
+                                                    BorderRadius.circular(16),
+                                                child: ClipRRect(
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                  child: PostThumb(post: post),
                                                 ),
                                               );
                                             },
@@ -952,24 +941,27 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                       color: surfaceColor,
                                       borderRadius: BorderRadius.circular(22),
                                       border: Border.all(
-                                        color: isDark ? Colors.white10 : Colors.black12,
+                                        color: isDark
+                                            ? Colors.white10
+                                            : Colors.black12,
                                       ),
                                     ),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Align(
-                                            alignment: Alignment.center,
-                                            child: Text(
-                                              tr('About this page'),
-                                              style: const TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w800,
-                                              ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Align(
+                                          alignment: Alignment.center,
+                                          child: Text(
+                                            tr('About this page'),
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w800,
                                             ),
                                           ),
-                                          const SizedBox(height: 12),
-                                          Wrap(
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Wrap(
                                           spacing: 8,
                                           runSpacing: 8,
                                           children: [
@@ -977,15 +969,19 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                               label: tr('Followers'),
                                               value: followersCount,
                                             ),
-                                            if (!isOwner && currentUserId != null)
-                                              StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                                            if (!isOwner &&
+                                                currentUserId != null)
+                                              StreamBuilder<
+                                                  DocumentSnapshot<
+                                                      Map<String, dynamic>>>(
                                                 stream: _pageFollowDoc(
                                                   currentUserId,
                                                   widget.businessId,
                                                 ),
                                                 builder: (context, followSnap) {
                                                   final isFollowing =
-                                                      followSnap.data?.exists == true;
+                                                      followSnap.data?.exists ==
+                                                          true;
                                                   return ElevatedButton.icon(
                                                     onPressed: () async {
                                                       if (isFollowing) {
@@ -1002,11 +998,15 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                                     },
                                                     icon: Icon(
                                                       isFollowing
-                                                          ? Icons.favorite_rounded
-                                                          : Icons.favorite_border_rounded,
+                                                          ? Icons
+                                                              .favorite_rounded
+                                                          : Icons
+                                                              .favorite_border_rounded,
                                                     ),
                                                     label: Text(
-                                                      isFollowing ? 'Following' : 'Follow page',
+                                                      isFollowing
+                                                          ? 'Following'
+                                                          : 'Follow page',
                                                     ),
                                                   );
                                                 },
@@ -1019,24 +1019,28 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                                   ),
                                                 );
                                               },
-                                              icon: const Icon(Icons.people_outline_rounded),
+                                              icon: const Icon(
+                                                  Icons.people_outline_rounded),
                                               label: Text(tr('View followers')),
                                             ),
                                           ],
                                         ),
                                         const SizedBox(height: 12),
-                                        if (category.isNotEmpty || phone.isNotEmpty) ...[
+                                        if (category.isNotEmpty ||
+                                            phone.isNotEmpty) ...[
                                           Row(
                                             children: [
                                               if (category.isNotEmpty)
                                                 Expanded(
                                                   child: _buildInfoLine(
-                                                    icon: Icons.category_outlined,
+                                                    icon:
+                                                        Icons.category_outlined,
                                                     label: tr('Category'),
                                                     value: category,
                                                   ),
                                                 ),
-                                              if (category.isNotEmpty && phone.isNotEmpty)
+                                              if (category.isNotEmpty &&
+                                                  phone.isNotEmpty)
                                                 const SizedBox(width: 12),
                                               if (phone.isNotEmpty)
                                                 Expanded(
@@ -1053,8 +1057,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                                           const SizedBox(height: 10),
                                           Center(
                                             child: ConstrainedBox(
-                                              constraints:
-                                                  const BoxConstraints(maxWidth: 320),
+                                              constraints: const BoxConstraints(
+                                                  maxWidth: 320),
                                               child: _buildInfoLine(
                                                 icon: Icons.email_outlined,
                                                 label: tr('Email'),
@@ -1194,7 +1198,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                       markers: {
                         gmaps.Marker(
                           markerId: gmaps.MarkerId(widget.businessId),
-                          position: gmaps.LatLng(point.latitude, point.longitude),
+                          position:
+                              gmaps.LatLng(point.latitude, point.longitude),
                           infoWindow: gmaps.InfoWindow(title: name),
                         ),
                       },
@@ -1468,8 +1473,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
       }
     }
 
-    final atMatch = RegExp(r'@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)')
-        .firstMatch(mapsLink);
+    final atMatch =
+        RegExp(r'@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)').firstMatch(mapsLink);
     if (atMatch != null) {
       final lat = double.tryParse(atMatch.group(1) ?? '');
       final lng = double.tryParse(atMatch.group(2) ?? '');
@@ -1481,7 +1486,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
     return null;
   }
 
-  Future<LatLng?> _resolveBusinessLocation(Map<String, dynamic> business) async {
+  Future<LatLng?> _resolveBusinessLocation(
+      Map<String, dynamic> business) async {
     final directPoint = _extractBusinessPoint(business);
     if (directPoint != null) return directPoint;
 
@@ -1554,10 +1560,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
 
   Future<void> _followPage(String followerId, String pageId) async {
     final docId = '${followerId}_$pageId';
-    await FirebaseFirestore.instance
-        .collection('page_follows')
-        .doc(docId)
-        .set({
+    await FirebaseFirestore.instance.collection('page_follows').doc(docId).set({
       'followerId': followerId,
       'pageId': pageId,
       'createdAt': FieldValue.serverTimestamp(),
@@ -1603,7 +1606,6 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
       );
     }
   }
-
 }
 
 class _StatPill extends StatelessWidget {

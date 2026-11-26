@@ -1,4 +1,5 @@
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, SocketException;
+import 'dart:math' show Random;
 
 import 'package:flutter/material.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
@@ -9,6 +10,16 @@ import '../data/payment_methods.dart';
 import '../data/shop_models.dart';
 import '../data/shop_repository.dart';
 
+bool _checkoutRunning = false;
+
+/// A random id for one checkout (letters and digits, 20 long).
+String newRequestId() {
+  final r = Random.secure();
+  const chars =
+      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  return List.generate(20, (_) => chars[r.nextInt(chars.length)]).join();
+}
+
 /// Makes the order on the server, then walks the buyer through paying.
 /// Returns true when the buyer finished (paid or cancelled).
 Future<bool> showCheckout(
@@ -16,16 +27,39 @@ Future<bool> showCheckout(
   required String businessId,
   required Map<String, int> qtyByProductId,
 }) async {
+  // A second tap while the first order is being made does nothing.
+  if (_checkoutRunning) return false;
+  _checkoutRunning = true;
   final messenger = ScaffoldMessenger.of(context);
-  final ({String orderId, int total}) created;
+  // One id for this checkout: if the request is sent twice (retry, slow
+  // network), the server gives back the SAME order instead of a new one.
+  final requestId = newRequestId();
+  ({String orderId, int total}) created;
   try {
-    created = await ShopRepository().createOrder(
-      businessId: businessId,
-      qtyByProductId: qtyByProductId,
-    );
+    messenger.showSnackBar(SnackBar(
+      content: Text(tr('Preparing your order…')),
+      duration: const Duration(seconds: 2),
+    ));
+    try {
+      created = await ShopRepository().createOrder(
+        businessId: businessId,
+        qtyByProductId: qtyByProductId,
+        requestId: requestId,
+      );
+    } on SocketException {
+      // Bad connection: try once more with the same id (no double order).
+      await Future<void>.delayed(const Duration(seconds: 2));
+      created = await ShopRepository().createOrder(
+        businessId: businessId,
+        qtyByProductId: qtyByProductId,
+        requestId: requestId,
+      );
+    }
   } catch (e) {
     messenger.showSnackBar(SnackBar(content: Text(e.toString())));
     return false;
+  } finally {
+    _checkoutRunning = false;
   }
   if (!context.mounted) return false;
   final done = await showModalBottomSheet<bool>(
@@ -159,12 +193,14 @@ class _PaySheetState extends State<PaySheet> with WidgetsBindingObserver {
                 if (!_askResult && _isDesktop) ...[
                   // A computer cannot dial USSD: pay from your MTN phone.
                   Text(tr('Pay from your phone'),
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 16)),
                   const SizedBox(height: 8),
                   Text('1. ${tr('On your MTN phone, dial:')}'),
                   const SizedBox(height: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       border: Border.all(color: AppColors.primary),
                       borderRadius: BorderRadius.circular(12),
@@ -173,17 +209,21 @@ class _PaySheetState extends State<PaySheet> with WidgetsBindingObserver {
                       Expanded(
                         child: SelectableText(ussd,
                             style: const TextStyle(
-                                fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: 1)),
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1)),
                       ),
                       IconButton(
                         tooltip: tr('Copy'),
                         icon: const Icon(Icons.copy_rounded),
-                        onPressed: () => Clipboard.setData(ClipboardData(text: ussd)),
+                        onPressed: () =>
+                            Clipboard.setData(ClipboardData(text: ussd)),
                       ),
                     ]),
                   ),
                   const SizedBox(height: 8),
-                  Text('2. ${tr('Check the name MTN shows, then enter your MoMo PIN.')}'),
+                  Text(
+                      '2. ${tr('Check the name MTN shows, then enter your MoMo PIN.')}'),
                   Text('3. ${tr('Come back here when MTN confirms.')}'),
                   const SizedBox(height: 14),
                   SizedBox(
@@ -195,7 +235,9 @@ class _PaySheetState extends State<PaySheet> with WidgetsBindingObserver {
                     ),
                   ),
                   TextButton(
-                    onPressed: _busy ? null : () => _answer(() => _repo.buyerCancelled(o.id)),
+                    onPressed: _busy
+                        ? null
+                        : () => _answer(() => _repo.buyerCancelled(o.id)),
                     child: Text(tr('Cancel order')),
                   ),
                 ] else if (!_askResult) ...[
@@ -224,15 +266,17 @@ class _PaySheetState extends State<PaySheet> with WidgetsBindingObserver {
                 ] else ...[
                   Text(tr('Did the payment go through?'),
                       textAlign: TextAlign.center,
-                      style:
-                          const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 16)),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _txRef,
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
-                      labelText: tr('Transaction ID from the MoMo SMS (optional)'),
-                      helperText: tr('Helps the shop find your payment quickly.'),
+                      labelText:
+                          tr('Transaction ID from the MoMo SMS (optional)'),
+                      helperText:
+                          tr('Helps the shop find your payment quickly.'),
                     ),
                   ),
                   const SizedBox(height: 14),

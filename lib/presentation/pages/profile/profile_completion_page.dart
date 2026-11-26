@@ -1,3 +1,5 @@
+import 'package:businessfinder/core/widgets/emoji_picker.dart';
+import 'package:businessfinder/core/services/media_picker.dart';
 import 'dart:io';
 import 'package:businessfinder/core/i18n/tr.dart';
 
@@ -114,15 +116,15 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
             digits.length > dialDigits.length + 6)) {
       return '+$digits';
     }
-    final nationalNumber = digits.startsWith('0') ? digits.substring(1) : digits;
+    final nationalNumber =
+        digits.startsWith('0') ? digits.substring(1) : digits;
     return '$_dialCode$nationalNumber';
   }
 
   Future<void> _pickProfileImage() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
+    final picked = await MediaPicker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
 
     setState(() {
@@ -271,8 +273,8 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content:
-                          Text(tr('Failed to update password. Please re-login.')),
+                      content: Text(
+                          tr('Failed to update password. Please re-login.')),
                     ),
                   );
                 }
@@ -405,8 +407,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
                 keyboardType: TextInputType.emailAddress,
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) return null;
-                  if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$')
-                      .hasMatch(value.trim())) {
+                  if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(value.trim())) {
                     return 'Please enter a valid email';
                   }
                   return null;
@@ -465,6 +466,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
               // Bio
               AppTextField(
                 controller: _bioController,
+                suffixIcon: EmojiButton(controller: _bioController),
                 label: tr('Bio'),
                 hintText: tr('Tell people about you...'),
                 maxLines: 3,

@@ -179,6 +179,22 @@ exports.adminSetRole = onCall({region: REGION}, async (request) => {
 });
 
 /** Small numbers for the dashboard. */
+// Verified badge for a real business page (admins only).
+exports.adminSetVerified = onCall({region: REGION}, async (request) => {
+  requireAdmin(request);
+  const businessId = String(request.data?.businessId || "");
+  const verified = request.data?.verified === true;
+  if (!businessId) throw new HttpsError("invalid-argument", "businessId is required.");
+  const ref = db().collection("businesses").doc(businessId);
+  if (!(await ref.get()).exists) throw new HttpsError("not-found", "Page not found.");
+  await ref.set({
+    verified,
+    verifiedAt: verified ? now() : null,
+    verifiedBy: request.auth.uid,
+  }, {merge: true});
+  return {ok: true, verified};
+});
+
 exports.adminStats = onCall({region: REGION}, async (request) => {
   requireStaff(request);
   const count = async (q) => (await q.count().get()).data().count;

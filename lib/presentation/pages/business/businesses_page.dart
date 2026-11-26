@@ -1,3 +1,4 @@
+import 'package:businessfinder/core/services/media_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -183,8 +184,8 @@ class _BusinessesPageState extends State<BusinessesPage> {
 
   Future<void> _pickLogo(String businessId) async {
     try {
-      final picker = ImagePicker();
-      final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+      final pickedFile =
+          await MediaPicker.pickImage(source: ImageSource.gallery);
       if (pickedFile == null) return;
 
       setState(() {
@@ -205,7 +206,8 @@ class _BusinessesPageState extends State<BusinessesPage> {
     if (_selectedLogo == null) return;
     try {
       final bytes = await _selectedLogo!.readAsBytes();
-      final path = '$businessId/logo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final path =
+          '$businessId/logo_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final downloadUrl = await R2StorageService.instance.uploadImage(
         bucket: 'profile-images',
         path: path,
@@ -283,12 +285,16 @@ class _BusinessesPageState extends State<BusinessesPage> {
   void _showPremiumVerifyDialog() {
     _showPremiumStyledDialog(
       title: tr('Premium Required'),
-      message: tr('Page verification is available on Premium. Upgrade to verify.'),
+      message:
+          tr('Page verification is available on Premium. Upgrade to verify.'),
     );
   }
 
   void _restoreBusiness(String businessId) async {
-    await FirebaseFirestore.instance.collection('businesses').doc(businessId).update({
+    await FirebaseFirestore.instance
+        .collection('businesses')
+        .doc(businessId)
+        .update({
       'isActive': true,
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -367,7 +373,8 @@ class _BusinessesPageState extends State<BusinessesPage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.business, size: 64, color: AppColors.grey),
+                        const Icon(Icons.business,
+                            size: 64, color: AppColors.grey),
                         const SizedBox(height: 12),
                         Text(tr('No pages yet')),
                         const SizedBox(height: 12),
@@ -384,16 +391,17 @@ class _BusinessesPageState extends State<BusinessesPage> {
                   children: [
                     ...activeDocs.map((doc) {
                       final data = doc.data() as Map<String, dynamic>;
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: ListTile(
-                        onTap: () => context.push(
-                          AppRoutes.businessProfilePath(doc.id),
-                        ),
-                        leading: CircleAvatar(
-                          backgroundColor: AppColors.primary,
-                          backgroundImage: (data['imageUrl'] != null &&
-                                  (data['imageUrl'] as String).isNotEmpty)
+                      return Card(
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        child: ListTile(
+                          onTap: () => context.push(
+                            AppRoutes.businessProfilePath(doc.id),
+                          ),
+                          leading: CircleAvatar(
+                            backgroundColor: AppColors.primary,
+                            backgroundImage: (data['imageUrl'] != null &&
+                                    (data['imageUrl'] as String).isNotEmpty)
                                 ? NetworkImage(data['imageUrl'])
                                 : null,
                             child: (data['imageUrl'] == null ||
@@ -407,41 +415,41 @@ class _BusinessesPageState extends State<BusinessesPage> {
                                   )
                                 : null,
                           ),
-                        title: Text(data['name'] ?? 'Unnamed Page'),
-                        subtitle: Text(data['category'] ?? 'Category'),
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (value) {
-                            if (value == 'edit') {
-                              context.push(
-                                '${AppRoutes.businessSetup}?businessId=${doc.id}',
-                              );
-                            } else if (value == 'logo') {
-                              _pickLogo(doc.id);
-                            } else if (value == 'delete') {
-                              _confirmDeleteBusiness(doc.id);
-                            } else if (value == 'verify') {
-                              _showPremiumVerifyDialog();
-                            }
-                          },
-                          itemBuilder: (context) => [
-                            PopupMenuItem(
-                              value: 'edit',
-                              child: Text(tr('Edit')),
-                            ),
-                            PopupMenuItem(
-                              value: 'logo',
-                              child: Text(tr('Update Logo')),
-                            ),
-                            PopupMenuItem(
-                              value: 'verify',
-                              child: Text(tr('Verify (Premium)')),
-                            ),
-                            PopupMenuItem(
-                              value: 'delete',
-                              child: Text(tr('Delete')),
-                            ),
-                          ],
-                        ),
+                          title: Text(data['name'] ?? 'Unnamed Page'),
+                          subtitle: Text(data['category'] ?? 'Category'),
+                          trailing: PopupMenuButton<String>(
+                            onSelected: (value) {
+                              if (value == 'edit') {
+                                context.push(
+                                  '${AppRoutes.businessSetup}?businessId=${doc.id}',
+                                );
+                              } else if (value == 'logo') {
+                                _pickLogo(doc.id);
+                              } else if (value == 'delete') {
+                                _confirmDeleteBusiness(doc.id);
+                              } else if (value == 'verify') {
+                                _showPremiumVerifyDialog();
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              PopupMenuItem(
+                                value: 'edit',
+                                child: Text(tr('Edit')),
+                              ),
+                              PopupMenuItem(
+                                value: 'logo',
+                                child: Text(tr('Update Logo')),
+                              ),
+                              PopupMenuItem(
+                                value: 'verify',
+                                child: Text(tr('Verify (Premium)')),
+                              ),
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: Text(tr('Delete')),
+                              ),
+                            ],
+                          ),
                         ),
                       );
                     }),
@@ -453,7 +461,8 @@ class _BusinessesPageState extends State<BusinessesPage> {
                             .where('isActive', isEqualTo: false)
                             .snapshots(),
                         builder: (context, inactiveSnapshot) {
-                          if (inactiveSnapshot.connectionState == ConnectionState.waiting) {
+                          if (inactiveSnapshot.connectionState ==
+                              ConnectionState.waiting) {
                             return const Padding(
                               padding: EdgeInsets.all(16),
                               child: LinearProgressIndicator(),
@@ -465,7 +474,8 @@ class _BusinessesPageState extends State<BusinessesPage> {
                               child: Text('Error: ${inactiveSnapshot.error}'),
                             );
                           }
-                          final inactiveDocs = inactiveSnapshot.data?.docs ?? [];
+                          final inactiveDocs =
+                              inactiveSnapshot.data?.docs ?? [];
                           if (inactiveDocs.isEmpty) {
                             return Padding(
                               padding: const EdgeInsets.all(16),
@@ -476,19 +486,22 @@ class _BusinessesPageState extends State<BusinessesPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 16, 16, 8),
                                 child: Text(
                                   tr('Inactive Pages'),
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold),
                                 ),
                               ),
                               ...inactiveDocs.map((doc) {
                                 final data = doc.data() as Map<String, dynamic>;
                                 return Card(
-                                  margin:
-                                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  margin: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 8),
                                   child: ListTile(
-                                    leading: const Icon(Icons.business_outlined),
+                                    leading:
+                                        const Icon(Icons.business_outlined),
                                     title: Text(data['name'] ?? 'Unnamed Page'),
                                     subtitle: Text(tr('Inactive')),
                                     trailing: TextButton(

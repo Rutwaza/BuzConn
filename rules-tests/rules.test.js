@@ -311,6 +311,41 @@ test("moderators read reports and the team list; normal users cannot; nobody edi
   await assertFails(getDoc(doc(mod, "admin_events/e1")));
 });
 
+test("orders: shop moves a paid order to ready, then delivered", async () => {
+  await seedShop();
+  await assertFails(updateDoc(doc(as(ALICE), "orders/o1"), {status: "ready"})); // not paid yet
+  await assertSucceeds(updateDoc(doc(as(ALICE), "orders/o1"), {status: "confirmed"}));
+  await assertFails(updateDoc(doc(as(BOB), "orders/o1"), {status: "ready"}));
+  await assertSucceeds(updateDoc(doc(as(ALICE), "orders/o1"), {status: "ready", readyAt: serverTimestamp()}));
+  await assertFails(updateDoc(doc(as(ALICE), "orders/o1"), {status: "confirmed"}));
+  await assertSucceeds(updateDoc(doc(as(ALICE), "orders/o1"), {status: "delivered", deliveredAt: serverTimestamp()}));
+  await assertFails(updateDoc(doc(as(ALICE), "orders/o1"), {status: "ready"}));
+});
+
+test("pages: owner can't set verified, productCount or ratings", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "businesses/b9"), {ownerId: ALICE, name: "Shop"});
+  });
+  await assertSucceeds(updateDoc(doc(as(ALICE), "businesses/b9"), {name: "New name"}));
+  await assertFails(updateDoc(doc(as(ALICE), "businesses/b9"), {verified: true}));
+  await assertFails(updateDoc(doc(as(ALICE), "businesses/b9"), {productCount: 9}));
+  await assertFails(updateDoc(doc(as(ALICE), "businesses/b9"), {ratingAvg: 5}));
+  await assertFails(setDoc(doc(as(BOB), "businesses/b10"), {ownerId: BOB, name: "X", verified: true}));
+  await assertFails(setDoc(doc(as(ALICE), "businesses/b9/products/p1"), {name: "Tea", price: 500, soldCount: 99}));
+  await assertSucceeds(setDoc(doc(as(ALICE), "businesses/b9/products/p1"), {name: "Tea", price: 500}));
+});
+
+test("reviews: one per person, 1-5 stars, not by the owner", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "businesses/b9"), {ownerId: ALICE, name: "Shop"});
+  });
+  await assertSucceeds(setDoc(doc(as(BOB), `businesses/b9/reviews/${BOB}`), {rating: 5, text: "Great"}));
+  await assertFails(setDoc(doc(as(BOB), `businesses/b9/reviews/${EVE}`), {rating: 5}));
+  await assertFails(setDoc(doc(as(EVE), `businesses/b9/reviews/${EVE}`), {rating: 6}));
+  await assertFails(setDoc(doc(as(ALICE), `businesses/b9/reviews/${ALICE}`), {rating: 5}));
+  await assertFails(setDoc(doc(as(EVE), `businesses/b9/reviews/${EVE}`), {rating: 4, ratingAvg: 5}));
+});
+
 test("users cannot un-suspend themselves", async () => {
   await assertFails(updateDoc(doc(as(ALICE), "users/alice"), {suspended: false}));
 });

@@ -1,3 +1,5 @@
+import 'package:businessfinder/core/widgets/emoji_picker.dart';
+import 'package:businessfinder/core/services/media_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:flutter/material.dart';
@@ -118,8 +120,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
         _momoNameController.text = (data['momoName'] ?? '').toString();
         _emailController.text = (data['email'] ?? '').toString();
         final category = (data['category'] ?? 'Other').toString();
-        _selectedCategory =
-            _categories.contains(category) ? category : 'Other';
+        _selectedCategory = _categories.contains(category) ? category : 'Other';
         _existingImageUrl = (data['imageUrl'] ?? '').toString();
         final lat = (data['lat'] ?? data['latitude']) as num?;
         final lng = (data['lng'] ?? data['longitude']) as num?;
@@ -147,136 +148,138 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                 .where('ownerId', isEqualTo: user.uid)
                 .get();
             if (existingBusinesses.docs.length >= 2) {
-            setState(() {
-              _isLoading = false;
-            });
-            if (mounted) {
-              showDialog(
-                context: context,
-                barrierDismissible: true,
-                builder: (context) {
-                  final isDark =
-                      Theme.of(context).brightness == Brightness.dark;
-                  return Dialog(
-                    insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF141821) : Colors.white,
+              setState(() {
+                _isLoading = false;
+              });
+              if (mounted) {
+                showDialog(
+                  context: context,
+                  barrierDismissible: true,
+                  builder: (context) {
+                    final isDark =
+                        Theme.of(context).brightness == Brightness.dark;
+                    return Dialog(
+                      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+                      shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: isDark ? Colors.white10 : Colors.black12,
-                        ),
                       ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 54,
-                            height: 54,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: LinearGradient(
-                                colors: [
-                                  AppColors.primary.withValues(alpha: 0.95),
-                                  AppColors.primary.withValues(alpha: 0.55),
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color:
+                              isDark ? const Color(0xFF141821) : Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: isDark ? Colors.white10 : Colors.black12,
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 54,
+                              height: 54,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: LinearGradient(
+                                  colors: [
+                                    AppColors.primary.withValues(alpha: 0.95),
+                                    AppColors.primary.withValues(alpha: 0.55),
+                                  ],
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.stars_rounded,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              tr('Go Premium'),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              tr('Free accounts can create up to 2 pages. Upgrade to unlock more pages and reach more fans.'),
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(color: AppColors.grey),
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? Colors.white.withValues(alpha: 0.06)
+                                    : Colors.black.withValues(alpha: 0.04),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.check_circle,
+                                      color: AppColors.primary, size: 18),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      tr('Unlimited pages • Priority review • Featured boost'),
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
-                            child: const Icon(
-                              Icons.stars_rounded,
-                              color: Colors.white,
-                              size: 28,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            tr('Go Premium'),
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            tr('Free accounts can create up to 2 pages. Upgrade to unlock more pages and reach more fans.'),
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(color: AppColors.grey),
-                          ),
-                          const SizedBox(height: 16),
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? Colors.white.withValues(alpha: 0.06)
-                                  : Colors.black.withValues(alpha: 0.04),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Row(
+                            const SizedBox(height: 16),
+                            Row(
                               children: [
-                                const Icon(Icons.check_circle,
-                                    color: AppColors.primary, size: 18),
-                                const SizedBox(width: 8),
                                 Expanded(
-                                  child: Text(
-                                    tr('Unlimited pages • Priority review • Featured boost'),
-                                    style: const TextStyle(fontSize: 12),
+                                  child: OutlinedButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(),
+                                    style: OutlinedButton.styleFrom(
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: Text(tr('Not now')),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: () {
+                                      Navigator.of(context).pop();
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            tr('Premium upgrade coming soon!'),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: Text(tr('Go Premium')),
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: () =>
-                                      Navigator.of(context).pop(),
-                                  style: OutlinedButton.styleFrom(
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  child: Text(tr('Not now')),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    Navigator.of(context).pop();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          tr('Premium upgrade coming soon!'),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  child: Text(tr('Go Premium')),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
-              );
-            }
+                    );
+                  },
+                );
+              }
               return;
             }
           }
@@ -320,9 +323,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                 .doc(widget.editBusinessId);
             await businessRef.update(businessData);
           } else {
-            businessRef = await FirebaseFirestore.instance
-                .collection('businesses')
-                .add({
+            businessRef =
+                await FirebaseFirestore.instance.collection('businesses').add({
               'ownerId': user.uid,
               ...businessData,
               'isVerified': false,
@@ -379,7 +381,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(tr('Failed to create page. Please try again.'))),
+            SnackBar(
+                content: Text(tr('Failed to create page. Please try again.'))),
           );
         }
       }
@@ -401,8 +404,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
 
   Future<void> _pickImage() async {
     try {
-      final picker = ImagePicker();
-      final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+      final pickedFile =
+          await MediaPicker.pickImage(source: ImageSource.gallery);
 
       if (pickedFile != null) {
         final bytes = await pickedFile.readAsBytes();
@@ -423,7 +426,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
   Future<String?> _uploadImage(File imageFile, String businessId) async {
     try {
       final bytes = await imageFile.readAsBytes();
-      final path = '$businessId/logo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final path =
+          '$businessId/logo_${DateTime.now().millisecondsSinceEpoch}.jpg';
       return await R2StorageService.instance.uploadImage(
         bucket: 'profile-images',
         path: path,
@@ -465,8 +469,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
       }
     }
 
-    final atMatch = RegExp(r'@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)')
-        .firstMatch(trimmed);
+    final atMatch =
+        RegExp(r'@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)').firstMatch(trimmed);
     if (atMatch != null) {
       final lat = double.tryParse(atMatch.group(1) ?? '');
       final lng = double.tryParse(atMatch.group(2) ?? '');
@@ -639,7 +643,9 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            point != null ? 'Map link pasted and pin detected' : 'Map link pasted',
+            point != null
+                ? 'Map link pasted and pin detected'
+                : 'Map link pasted',
           ),
         ),
       );
@@ -752,7 +758,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                       children: [
                         CircleAvatar(
                           radius: 38,
-                          backgroundColor: AppColors.primary.withValues(alpha: 0.2),
+                          backgroundColor:
+                              AppColors.primary.withValues(alpha: 0.2),
                           backgroundImage: _selectedImageBytes != null
                               ? MemoryImage(_selectedImageBytes!)
                                   as ImageProvider<Object>?
@@ -873,6 +880,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                     const SizedBox(height: 16),
                     AppTextField(
                       controller: _descriptionController,
+                      suffixIcon:
+                          EmojiButton(controller: _descriptionController),
                       label: tr('Bio'),
                       hintText: tr('Describe your work and style...'),
                       maxLines: 3,
@@ -912,8 +921,9 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                       runSpacing: 10,
                       children: [
                         OutlinedButton.icon(
-                          onPressed:
-                              _isResolvingLocation ? null : _pinLocationFromAddress,
+                          onPressed: _isResolvingLocation
+                              ? null
+                              : _pinLocationFromAddress,
                           icon: const Icon(Icons.search_rounded),
                           label: Text(tr('Pin from address')),
                         ),
@@ -934,7 +944,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                     AppTextField(
                       controller: _googleMapsLinkController,
                       label: tr('Google Maps Link (optional)'),
-                      hintText: tr('Auto-filled after pinning, or paste your link'),
+                      hintText:
+                          tr('Auto-filled after pinning, or paste your link'),
                       keyboardType: TextInputType.url,
                       onChanged: (value) {
                         final point = _extractPointFromMapsLink(value);
@@ -1083,7 +1094,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
                         tr('With a MoMo Pay code your customers can buy from your Shop. Money goes straight to your MoMo; Duhuze never holds it.'),
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        style:
+                            const TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -1141,8 +1153,8 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
                     context.go(AppRoutes.dashboard);
                   },
                   style: OutlinedButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 28, vertical: 12),
                     side: BorderSide(
                       color: Theme.of(context)
                           .colorScheme

@@ -14,6 +14,7 @@ class Product {
     this.description = '',
     this.imageUrl,
     this.inStock = true,
+    this.soldCount = 0,
   });
 
   factory Product.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -25,6 +26,7 @@ class Product {
       description: (d['description'] ?? '').toString(),
       imageUrl: d['imageUrl'] as String?,
       inStock: d['inStock'] != false,
+      soldCount: (d['soldCount'] as num?)?.round() ?? 0,
     );
   }
 
@@ -34,6 +36,9 @@ class Product {
   final String description;
   final String? imageUrl;
   final bool inStock;
+
+  /// How many were sold (confirmed orders). Kept by the server.
+  final int soldCount;
 }
 
 enum OrderStatus {
@@ -41,7 +46,19 @@ enum OrderStatus {
   paidClaimed('paid_claimed', 'Buyer says paid'),
   confirmed('confirmed', 'Paid ✓'),
   notReceived('not_received', 'Not received by shop'),
+  ready('ready', 'Ready 📦'),
+  delivered('delivered', 'Delivered ✓'),
   cancelled('cancelled', 'Cancelled');
+
+  /// Where this order is on the buyer's tracking line (0..3), -1 = off it.
+  int get step => switch (this) {
+        OrderStatus.pendingPayment || OrderStatus.notReceived => 0,
+        OrderStatus.paidClaimed => 1,
+        OrderStatus.confirmed => 2,
+        OrderStatus.ready => 3,
+        OrderStatus.delivered => 4,
+        OrderStatus.cancelled => -1,
+      };
 
   const OrderStatus(this.value, this.label);
   final String value;

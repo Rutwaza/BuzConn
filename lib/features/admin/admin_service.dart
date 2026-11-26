@@ -21,7 +21,8 @@ class AdminService {
     final token = await user.getIdTokenResult(refresh);
     final claims = token.claims ?? const {};
     if (claims['admin'] == true) return StaffRole.admin;
-    if (user.emailVerified && _ownerEmails.contains(user.email?.toLowerCase())) {
+    if (user.emailVerified &&
+        _ownerEmails.contains(user.email?.toLowerCase())) {
       return StaffRole.admin;
     }
     if (claims['moderator'] == true) return StaffRole.moderator;
@@ -33,14 +34,22 @@ class AdminService {
 
   Future<Map<String, dynamic>> stats() => _call('adminStats', {});
 
-  Future<void> resolveReport(String reportId, String action, {String note = ''}) =>
-      _call('adminResolveReport', {'reportId': reportId, 'action': action, 'note': note});
+  /// Verified badge on a business page.
+  Future<void> setVerified(String businessId, bool verified) => _call(
+      'adminSetVerified', {'businessId': businessId, 'verified': verified});
+
+  Future<void> resolveReport(String reportId, String action,
+          {String note = ''}) =>
+      _call('adminResolveReport',
+          {'reportId': reportId, 'action': action, 'note': note});
 
   Future<void> setSuspended(String uid, bool suspended, {String note = ''}) =>
-      _call('adminSetUserSuspended', {'uid': uid, 'suspended': suspended, 'note': note});
+      _call('adminSetUserSuspended',
+          {'uid': uid, 'suspended': suspended, 'note': note});
 
   Future<Map<String, dynamic>> setModerator(String email, bool enabled) =>
-      _call('adminSetRole', {'email': email, 'role': enabled ? 'moderator' : 'none'});
+      _call('adminSetRole',
+          {'email': email, 'role': enabled ? 'moderator' : 'none'});
 
   Stream<QuerySnapshot<Map<String, dynamic>>> reports({required bool open}) =>
       FirebaseFirestore.instance
@@ -54,7 +63,8 @@ class AdminService {
       FirebaseFirestore.instance.collection('staff').snapshots();
 
   /// Users whose name/username contains [term] (server-made searchKeywords).
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> searchUsers(String term) async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> searchUsers(
+      String term) async {
     final t = term.trim().toLowerCase();
     if (t.length < 2) return [];
     final snap = await FirebaseFirestore.instance
@@ -65,7 +75,8 @@ class AdminService {
     return snap.docs;
   }
 
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> suspendedUsers() async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      suspendedUsers() async {
     final snap = await FirebaseFirestore.instance
         .collection('users')
         .where('suspended', isEqualTo: true)

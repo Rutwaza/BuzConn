@@ -1,3 +1,4 @@
+import 'package:businessfinder/core/widgets/emoji_picker.dart';
 import 'dart:async';
 import 'package:businessfinder/core/i18n/tr.dart';
 
@@ -285,7 +286,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
       });
       _commentController.text = text;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Comment not sent. Check your connection. ($e)')),
+        SnackBar(
+            content: Text('Comment not sent. Check your connection. ($e)')),
       );
     } finally {
       if (mounted) {
@@ -308,6 +310,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
             maxLines: 4,
             minLines: 1,
             decoration: InputDecoration(
+              suffixIcon: EmojiButton(controller: controller),
               hintText: tr('Update your comment...'),
             ),
           ),
@@ -1205,7 +1208,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.mode_comment_outlined, color: AppColors.grey),
+                  const Icon(Icons.mode_comment_outlined,
+                      color: AppColors.grey),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -1307,6 +1311,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           textInputAction: TextInputAction.send,
                           onSubmitted: (_) => _addComment(post.id),
                           decoration: InputDecoration(
+                            suffixIcon:
+                                EmojiButton(controller: _commentController),
                             hintText: _replyingToComment == null
                                 ? 'Share your thoughts...'
                                 : 'Write your reply...',

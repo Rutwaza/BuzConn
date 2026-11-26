@@ -57,10 +57,12 @@ class ShopRepository {
   Future<({String orderId, int total})> createOrder({
     required String businessId,
     required Map<String, int> qtyByProductId,
+    String? requestId,
   }) async {
     try {
       final r = await R2StorageService.instance.callFunction('createOrder', {
         'businessId': businessId,
+        if (requestId != null) 'requestId': requestId,
         'items': [
           for (final e in qtyByProductId.entries)
             if (e.value > 0) {'productId': e.key, 'qty': e.value},
@@ -114,6 +116,29 @@ class ShopRepository {
 
   Future<void> shopNotReceived(String orderId) =>
       _set(orderId, {'status': OrderStatus.notReceived.value});
+
+  Future<void> shopReady(String orderId) => _set(orderId, {
+        'status': OrderStatus.ready.value,
+        'readyAt': FieldValue.serverTimestamp(),
+      });
+
+  Future<void> shopDelivered(String orderId) => _set(orderId, {
+        'status': OrderStatus.delivered.value,
+        'deliveredAt': FieldValue.serverTimestamp(),
+      });
+
+  /// Best sellers first (counted by the server), then the newest.
+  Stream<List<Product>> popularProducts(String businessId, {int limit = 8}) =>
+      products(businessId).map((list) {
+        final inStock = list.where((p) => p.inStock).toList()
+          ..sort((a, b) => b.soldCount.compareTo(a.soldCount));
+        return inStock.take(limit).toList();
+      });
+
+  Future<Product?> product(String businessId, String productId) async {
+    final d = await _products(businessId).doc(productId).get();
+    return d.exists ? Product.fromDoc(d) : null;
+  }
 }
 
 class ShopException implements Exception {

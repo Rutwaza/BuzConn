@@ -1,3 +1,4 @@
+import 'package:businessfinder/core/widgets/emoji_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -22,7 +23,9 @@ class BlockService {
 
   CollectionReference<Map<String, dynamic>>? get _mine {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    return uid == null ? null : _db.collection('users').doc(uid).collection('blocked');
+    return uid == null
+        ? null
+        : _db.collection('users').doc(uid).collection('blocked');
   }
 
   Future<void> load() async {
@@ -72,7 +75,8 @@ Future<void> showReportSheet(
     isScrollControlled: true,
     showDragHandle: true,
     builder: (context) => Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SafeArea(
         child: SingleChildScrollView(
           child: Column(
@@ -90,13 +94,17 @@ Future<void> showReportSheet(
                   controller: details,
                   maxLength: 500,
                   maxLines: 2,
-                  decoration: InputDecoration(labelText: tr('More details (optional)')),
+                  decoration: InputDecoration(
+                      suffixIcon: EmojiButton(controller: details),
+                      labelText: tr('More details (optional)')),
                 ),
               ),
               for (final e in _reasons.entries)
                 ListTile(
                   leading: Icon(
-                    e.key == 'child_safety' ? Icons.child_care_rounded : Icons.flag_outlined,
+                    e.key == 'child_safety'
+                        ? Icons.child_care_rounded
+                        : Icons.flag_outlined,
                     color: e.key == 'child_safety' ? AppColors.error : null,
                   ),
                   title: Text(tr(e.value)),
@@ -119,26 +127,34 @@ Future<void> showReportSheet(
       'targetOwnerId': targetOwnerId,
       'reason': reason,
       'details': text,
-      'preview': (preview ?? '').length > 300 ? preview!.substring(0, 300) : (preview ?? ''),
+      'preview': (preview ?? '').length > 300
+          ? preview!.substring(0, 300)
+          : (preview ?? ''),
       'status': 'open',
       'createdAt': FieldValue.serverTimestamp(),
     });
-    messenger.showSnackBar(SnackBar(content: Text(tr('Thank you. We will review this report.'))));
+    messenger.showSnackBar(
+        SnackBar(content: Text(tr('Thank you. We will review this report.'))));
   } catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text('${tr('Could not send the report.')} $e')));
+    messenger.showSnackBar(
+        SnackBar(content: Text('${tr('Could not send the report.')} $e')));
   }
 }
 
 /// Block with a confirmation. Returns true when blocked.
-Future<bool> confirmBlock(BuildContext context, {required String userId, required String name}) async {
+Future<bool> confirmBlock(BuildContext context,
+    {required String userId, required String name}) async {
   final messenger = ScaffoldMessenger.of(context);
   final ok = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text('${tr('Block')} $name?'),
-      content: Text(tr('You will not see their posts or statuses, and they cannot message you. They are not told.')),
+      content: Text(tr(
+          'You will not see their posts or statuses, and they cannot message you. They are not told.')),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: Text(tr('Cancel'))),
+        TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(tr('Cancel'))),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: AppColors.error),
           onPressed: () => Navigator.pop(context, true),
@@ -177,10 +193,13 @@ Future<void> showUserSafetySheet(
             onTap: () => Navigator.pop(context, 'report'),
           ),
           ListTile(
-            leading: Icon(isBlocked ? Icons.lock_open_rounded : Icons.block_rounded,
+            leading: Icon(
+                isBlocked ? Icons.lock_open_rounded : Icons.block_rounded,
                 color: AppColors.error),
-            title: Text(isBlocked ? '${tr('Unblock')} $name' : '${tr('Block')} $name'),
-            onTap: () => Navigator.pop(context, isBlocked ? 'unblock' : 'block'),
+            title: Text(
+                isBlocked ? '${tr('Unblock')} $name' : '${tr('Block')} $name'),
+            onTap: () =>
+                Navigator.pop(context, isBlocked ? 'unblock' : 'block'),
           ),
         ],
       ),
@@ -190,7 +209,10 @@ Future<void> showUserSafetySheet(
   switch (choice) {
     case 'report':
       await showReportSheet(context,
-          targetType: reportType, targetId: reportId ?? userId, targetOwnerId: userId, preview: preview);
+          targetType: reportType,
+          targetId: reportId ?? userId,
+          targetOwnerId: userId,
+          preview: preview);
     case 'block':
       await confirmBlock(context, userId: userId, name: name);
     case 'unblock':

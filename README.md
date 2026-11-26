@@ -109,7 +109,19 @@ It prints the messages and saves them in `functions/ghost-exports/` (not in Git)
 
 Nothing is verified automatically, and Duhuze never holds money. Android does not let apps read the USSD reply, and Google Play does not allow reading SMS.
 
-Order states (rules allow only these moves): `pending_payment → paid_claimed → confirmed`, `paid_claimed → not_received → paid_claimed`, and `pending_payment/not_received → cancelled`.
+Order states (rules allow only these moves): `pending_payment → paid_claimed → confirmed → ready → delivered` (the shop may also go `confirmed → delivered` directly), `paid_claimed → not_received → paid_claimed`, and `pending_payment/not_received → cancelled`. Buyers see this as a tracking line: Ordered → Paid → Confirmed → Ready → Delivered, with a notification at every step (`onOrderWritten`).
+
+**No double orders.** The app makes one `requestId` per checkout and the second tap is ignored while the first runs. The server turns `requestId` into the order's id, so the same request always returns the same order (a retry on a bad connection never makes a second one). An identical unpaid cart from the same buyer in the last 5 minutes is also reused (`cartKey`).
+
+#### How a shop works (for page owners)
+
+1. **Edit page →** fill in **MoMo Pay merchant code** and **Name registered on MoMo Pay**.
+2. Open **My shop** (page profile, or the desktop side menu → Shop → My shop) and **Add product** (name, price in RWF, photo, in stock).
+3. When you post **as the page**, pick **Tag a product**: the post shows **Buy · price** and opens the shop with that product in the cart. Posts from pages with products get a **🛍 Shop** button.
+4. **Orders** (receipt icon in the shop, or side menu → Orders → *My shop* tab): check your MoMo SMS for the amount and transaction ID, then **Received ✓**, later **Ready** and **Mark delivered**.
+5. The page profile shows **Popular in this shop** (best sellers first; `soldCount` is counted by the server when an order is confirmed) and **Reviews** (1–5 stars, one per person; the average is kept by `onReviewWritten`).
+
+Server-only page fields (owners can't write them): `productCount` (feeds the Shop button; filled for old pages by the one-time `shopMaintenance` job), `verified*`, `ratingAvg`, `ratingCount`; and `products/*.soldCount`.
 
 **When Duhuze is ready for a real gateway**, the plug-in points are already there:
 
@@ -183,7 +195,8 @@ say **URGENT**.
 | --- | --- |
 | Panel screens | `lib/features/admin/admin_panel_page.dart` |
 | Role check + calls | `lib/features/admin/admin_service.dart` |
-| Server actions: `adminResolveReport`, `adminSetUserSuspended`, `adminSetRole`, `adminStats` | `functions/admin.js` |
+| Server actions: `adminResolveReport`, `adminSetUserSuspended`, `adminSetRole`, `adminSetVerified`, `adminStats` | `functions/admin.js` |
+| Verified badge (✓): open the page → **Verify this page** (admins only see the button). Give it only to real, checked businesses. | `lib/features/admin/admin_verify_button.dart` |
 | Report alerts to the team | `functions/moderation.js` (`staff` + `ADMIN_EMAILS`) |
 | Who can read `reports` / `staff` | `firestore.rules` (`isStaff()`) |
 | Report & block for users | `lib/features/moderation/moderation.dart` |
@@ -195,7 +208,7 @@ account), then `node scripts/set-admin.js <old email> --remove`.
 ### Other things that must not be forgotten
 
 - [ ] **Admin:** run `node scripts/set-admin.js nelsonjembe99@gmail.com` (from `functions/`), sign out and in, then remove the email fallback: `isSuperAdmin` in `firestore.rules`, `SUPER_ADMIN_EMAILS` in `functions/index.js` and `functions/ghost.js`, `OWNER_EMAILS` in `functions/admin.js`, `_ownerEmails` in `lib/features/admin/admin_service.dart`.
-- [ ] **One-time jobs:** when Firestore `_maintenance/phase2` and `_maintenance/phase3` both show `done: true`, delete `phase2Maintenance` (social.js) and `phase3Maintenance` (feed.js), then deploy.
+- [ ] **One-time jobs:** when Firestore `_maintenance/phase2`, `_maintenance/phase3` and `_maintenance/shop1` show `done: true`, delete `phase2Maintenance` (social.js), `phase3Maintenance` (feed.js) and `shopMaintenance` (shop.js), then deploy. Until phase3 is done, old posts still show: the feed falls back to reading them by date.
 - [ ] **Map tiles:** chat maps use OpenStreetMap's free server (`AppConstants.mapTileUrl`). Switch to a paid provider (MapTiler, Stadia, …) before a big launch.
 - [ ] **Live location:** works in the background through an Android foreground service (`lib/features/chat/data/live_location_service.dart`). It stops if the user swipes the app away, and resumes when that chat is opened again. Google Play will ask why the app uses `FOREGROUND_SERVICE_LOCATION`; the answer is "live location sharing in chat".
 - [ ] **App id:** run `tools/register-android-app.ps1` (docs/RELEASE.md step 4). Until then builds keep `com.example.bussinessfinder`.
@@ -213,7 +226,8 @@ account), then `node scripts/set-admin.js <old email> --remove`.
 | Collection | What | Who writes |
 | --- | --- | --- |
 | `users`, `users_private` | Profiles; push tokens + unread counter (private) | Owner (server fields locked) / server |
-| `businesses`, `businesses/{id}/products` | Pages incl. `momoCode`; shop catalog | Business owner |
+| `businesses`, `businesses/{id}/products` | Pages incl. `momoCode`; shop catalog | Business owner (server: `productCount`, `verified`, ratings, `soldCount`) |
+| `businesses/{id}/reviews/{uid}` | One review per person (1–5 stars + text) | That person (not the page owner); average by server |
 | `orders` | Shop orders | `createOrder` (server), then buyer/owner status moves |
 | `posts`, `posts/{id}/likes`, `posts/{id}/comments` | Feed content | Users; counters by server |
 | `timelines/{uid}/items` | Following feed | Server only |
@@ -449,6 +463,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\installer\build_in
 | MoMo Pay | "Pay from your phone": shows the USSD code to dial on your MTN phone, then asks "Did the payment go through?" | A PC cannot dial USSD. |
 | Live location | Works while the app is open, using Windows Location (Settings → Privacy → Location must be on). Accuracy is Wi-Fi based. | No GPS on most PCs; no background mode. |
 | Status viewer | Arrow keys = next/back, Space = pause, Esc = close. | Desktop keyboard. |
+| Picking files | Always through `MediaPicker` (`lib/core/services/media_picker.dart`): the Windows file window opens from a background worker, and big photos are shrunk in the background. Don't call `ImagePicker()` directly: on Windows it freezes the app while Explorer loads. | `image_picker` opens the dialog on the app's main thread. |
+| Video thumbnails | Taken from the video with a hidden, muted media_kit player, one at a time, cached on disk (`lib/core/services/video_frame_grabber.dart`). | `video_thumbnail` has no Windows version. |
+| Layout | Side menu (For You / Reels / Following, Discover, Messages, Notifications, Saved, Shop, Profile, Settings). Right panel from 1180 px; wide menu from 1440 px. Window can't go below 760×600. Shortcuts: `1/2/3`, `Ctrl+N/K/M`, `F5`, `Home`, arrows. | Desktop screens and small laptops. |
 
 ## Troubleshooting notes
 

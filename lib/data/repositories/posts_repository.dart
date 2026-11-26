@@ -45,14 +45,15 @@ class PostsRepository {
     List<PostMedia> media = const [],
     String? imageUrl,
     String? videoUrl,
+    ProductTag? product,
   }) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('User not authenticated');
 
     final userProfile = await _currentUserProfile();
     String resolvedBusinessId = '';
-    String displayName = (userProfile['name'] ?? user.displayName ?? 'User')
-        .toString();
+    String displayName =
+        (userProfile['name'] ?? user.displayName ?? 'User').toString();
     String? displayImageUrl =
         (userProfile['imageUrl'] ?? '').toString().trim().isEmpty
             ? null
@@ -60,8 +61,10 @@ class PostsRepository {
     String? googleMapsLink;
 
     if (businessId != null && businessId.trim().isNotEmpty) {
-      final businessSnap =
-          await _firestore.collection('businesses').doc(businessId.trim()).get();
+      final businessSnap = await _firestore
+          .collection('businesses')
+          .doc(businessId.trim())
+          .get();
       if (!businessSnap.exists) {
         throw Exception('Business not found');
       }
@@ -112,6 +115,8 @@ class PostsRepository {
       comments: [],
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
+      // Only a page's own products can be tagged.
+      product: resolvedBusinessId.isEmpty ? null : product,
     );
 
     await postRef.set(post.toFirestore());
@@ -128,8 +133,7 @@ class PostsRepository {
     await LikeStore.instance.toggle(postId);
   }
 
-  Stream<List<Comment>> watchComments(String postId) =>
-      _comments.watch(postId);
+  Stream<List<Comment>> watchComments(String postId) => _comments.watch(postId);
 
   Future<void> addComment(
     String postId,

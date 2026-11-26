@@ -1,7 +1,10 @@
+import 'package:businessfinder/core/widgets/emoji_picker.dart';
+import 'package:businessfinder/core/services/media_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:businessfinder/core/widgets/desktop_width.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/theme/colors.dart';
@@ -9,6 +12,7 @@ import '../data/shop_models.dart';
 import '../data/shop_repository.dart';
 import 'checkout_sheet.dart';
 import 'orders_page.dart';
+import '../logic/page_index.dart';
 
 /// A business's shop: products in a grid. Buyers pick quantities and pay
 /// with MoMo; the owner adds, edits and removes products.
@@ -19,12 +23,17 @@ class CatalogPage extends StatefulWidget {
     required this.businessName,
     required this.isOwner,
     this.hasMomoCode = false,
+    this.highlightProductId,
   });
 
   final String businessId;
   final String businessName;
   final bool isOwner;
   final bool hasMomoCode;
+
+  /// Opened from a post's "Buy" button: this product starts in the cart
+  /// and is outlined.
+  final String? highlightProductId;
 
   @override
   State<CatalogPage> createState() => _CatalogPageState();
@@ -33,6 +42,13 @@ class CatalogPage extends StatefulWidget {
 class _CatalogPageState extends State<CatalogPage> {
   final _repo = ShopRepository();
   final Map<String, int> _cart = {};
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.highlightProductId;
+    if (id != null && !widget.isOwner) _cart[id] = 1;
+  }
 
   int _total(List<Product> products) =>
       products.fold(0, (sum, p) => sum + p.price * (_cart[p.id] ?? 0));
@@ -91,8 +107,8 @@ class _CatalogPageState extends State<CatalogPage> {
             children: [
               if (widget.isOwner && !widget.hasMomoCode)
                 MaterialBanner(
-                  content: Text(
-                      tr('Add your MoMo Pay code in Edit page so customers can pay you.')),
+                  content: Text(tr(
+                      'Add your MoMo Pay code in Edit page so customers can pay you.')),
                   leading: const Icon(Icons.info_outline_rounded,
                       color: AppColors.warning),
                   actions: const [SizedBox.shrink()],
@@ -124,6 +140,7 @@ class _CatalogPageState extends State<CatalogPage> {
                         itemBuilder: (_, i) {
                           final p = products[i];
                           return _ProductTile(
+                            highlighted: p.id == widget.highlightProductId,
                             product: p,
                             qty: _cart[p.id] ?? 0,
                             isOwner: widget.isOwner,
@@ -135,27 +152,29 @@ class _CatalogPageState extends State<CatalogPage> {
                       ),
               ),
               if (!widget.isOwner && total > 0)
-                DesktopWidth(maxWidth: 520, child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: FilledButton.icon(
-                        icon: const Icon(Icons.payments_rounded),
-                        label: Text('Pay ${formatRwf(total)} with MoMo'),
-                        onPressed: () async {
-                          final done = await showCheckout(
-                            context,
-                            businessId: widget.businessId,
-                            qtyByProductId: Map.of(_cart),
-                          );
-                          if (done && mounted) setState(_cart.clear);
-                        },
+                DesktopWidth(
+                    maxWidth: 520,
+                    child: SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: FilledButton.icon(
+                            icon: const Icon(Icons.payments_rounded),
+                            label: Text('Pay ${formatRwf(total)} with MoMo'),
+                            onPressed: () async {
+                              final done = await showCheckout(
+                                context,
+                                businessId: widget.businessId,
+                                qtyByProductId: Map.of(_cart),
+                              );
+                              if (done && mounted) setState(_cart.clear);
+                            },
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                )),
+                    )),
             ],
           );
         },
@@ -172,8 +191,10 @@ class _ProductTile extends StatelessWidget {
     required this.onAdd,
     required this.onRemove,
     required this.onEdit,
+    this.highlighted = false,
   });
 
+  final bool highlighted;
   final Product product;
   final int qty;
   final bool isOwner;
@@ -186,7 +207,12 @@ class _ProductTile extends StatelessWidget {
     final p = product;
     return Card(
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: highlighted
+            ? const BorderSide(color: AppColors.primary, width: 2.5)
+            : BorderSide.none,
+      ),
       child: InkWell(
         onTap: isOwner ? onEdit : (p.inStock ? onAdd : null),
         child: Column(
@@ -198,7 +224,10 @@ class _ProductTile extends StatelessWidget {
                 children: [
                   p.imageUrl != null
                       ? CachedNetworkImage(
-                          imageUrl: p.imageUrl!, fit: BoxFit.cover)
+                          imageUrl: p.imageUrl!,
+                          fit: BoxFit.cover,
+                          memCacheWidth: 500,
+                          fadeInDuration: const Duration(milliseconds: 220))
                       : Container(
                           color: AppColors.mist,
                           child: const Icon(Icons.shopping_bag_rounded,
@@ -315,6 +344,7 @@ class _ProductEditorState extends State<_ProductEditor> {
         newImage: _image == null ? null : await _image!.readAsBytes(),
         currentImageUrl: widget.product?.imageUrl,
       );
+      PageIndex.instance.markShop(widget.businessId);
       nav.pop();
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Could not save: $e')));
@@ -342,7 +372,7 @@ class _ProductEditorState extends State<_ProductEditor> {
               const SizedBox(height: 14),
               GestureDetector(
                 onTap: () async {
-                  final img = await ImagePicker().pickImage(
+                  final img = await MediaPicker.pickImage(
                       source: ImageSource.gallery,
                       maxWidth: 1280,
                       imageQuality: 82);
@@ -369,13 +399,11 @@ class _ProductEditorState extends State<_ProductEditor> {
                                   fit: BoxFit.cover,
                                   width: double.infinity),
                             )
-                          : Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                  const Icon(Icons.add_a_photo_rounded,
-                                      color: AppColors.primary, size: 34),
-                                  Text(tr('Add a photo')),
-                                ]),
+                          : Column(mainAxisSize: MainAxisSize.min, children: [
+                              const Icon(Icons.add_a_photo_rounded,
+                                  color: AppColors.primary, size: 34),
+                              Text(tr('Add a photo')),
+                            ]),
                 ),
               ),
               const SizedBox(height: 12),
@@ -389,8 +417,8 @@ class _ProductEditorState extends State<_ProductEditor> {
               TextFormField(
                 controller: _price,
                 keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                    labelText: tr('Price'), suffixText: 'RWF'),
+                decoration:
+                    InputDecoration(labelText: tr('Price'), suffixText: 'RWF'),
                 validator: (v) {
                   final n =
                       int.tryParse((v ?? '').replaceAll(RegExp(r'[^0-9]'), ''));
@@ -403,8 +431,10 @@ class _ProductEditorState extends State<_ProductEditor> {
                 controller: _desc,
                 maxLines: 3,
                 maxLength: 500,
-                decoration:
-                    InputDecoration(labelText: tr('Description (optional)')),
+                decoration: InputDecoration(
+                  labelText: tr('Description (optional)'),
+                  suffixIcon: EmojiButton(controller: _desc),
+                ),
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -446,4 +476,24 @@ class _ProductEditorState extends State<_ProductEditor> {
       ),
     );
   }
+}
+
+/// Opens a page's shop from anywhere (feed "Shop"/"Buy" buttons, menu).
+Future<void> openShop(
+  BuildContext context, {
+  required String businessId,
+  required String businessName,
+  required String ownerId,
+  String? productId,
+}) {
+  final me = FirebaseAuth.instance.currentUser?.uid;
+  return Navigator.of(context).push(MaterialPageRoute(
+    builder: (_) => CatalogPage(
+      businessId: businessId,
+      businessName: businessName,
+      isOwner: me != null && me == ownerId,
+      hasMomoCode: true, // the server checks it when ordering
+      highlightProductId: productId,
+    ),
+  ));
 }

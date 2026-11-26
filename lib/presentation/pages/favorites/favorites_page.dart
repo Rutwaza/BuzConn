@@ -2,8 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'dart:typed_data';
-import 'package:video_thumbnail/video_thumbnail.dart';
+import 'package:businessfinder/core/widgets/post_thumb.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
 import '../feed/post_detail_page.dart';
@@ -117,7 +116,11 @@ class FavoritesPage extends StatelessWidget {
                   : ClipRRect(
                       borderRadius: BorderRadius.circular(10),
                       child: isVideo
-                          ? _VideoThumb(url: previewUrl)
+                          ? _VideoThumb(
+                              url: previewUrl,
+                              thumb: media.isNotEmpty
+                                  ? media.first.thumbnailUrl
+                                  : null)
                           : Image.network(
                               previewUrl,
                               fit: BoxFit.cover,
@@ -214,36 +217,28 @@ class FavoritesPage extends StatelessWidget {
 }
 
 class _VideoThumb extends StatelessWidget {
-  const _VideoThumb({required this.url});
+  const _VideoThumb({required this.url, this.thumb});
 
   final String url;
+  final String? thumb;
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Uint8List?>(
-      future: VideoThumbnail.thumbnailData(
-        video: url,
-        imageFormat: ImageFormat.JPEG,
-        maxWidth: 240,
-        quality: 75,
-      ),
-      builder: (context, snap) {
-        final bytes = snap.data;
-        if (bytes == null) {
-          return const Center(
-            child: Icon(Icons.play_circle_fill, color: Colors.white70),
-          );
-        }
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            Image.memory(bytes, fit: BoxFit.cover),
-            const Center(
-              child: Icon(Icons.play_circle_fill, color: Colors.white70),
-            ),
-          ],
-        );
-      },
+    // Cover picture, or a frame taken from the video (works on Windows too).
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        VideoCover(
+          media: PostMedia(
+              type: PostMediaType.video, url: url, thumbnailUrl: thumb),
+          width: 320,
+        ),
+        const Center(
+          child: Icon(Icons.play_circle_fill,
+              color: Colors.white,
+              shadows: [Shadow(blurRadius: 6, color: Colors.black54)]),
+        ),
+      ],
     );
   }
 }

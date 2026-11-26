@@ -13,6 +13,7 @@ class Post {
   final String? googleMapsLink;
   final int viewCount;
   final int playCount;
+
   /// Legacy lists (before Phase 2). New posts keep them empty; use
   /// [likeCount], [commentCount] and LikeStore instead.
   final List<String> likes;
@@ -23,6 +24,10 @@ class Post {
   final int commentCount;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// A product from the page's shop tagged in this post ("Buy · 5,000 RWF").
+  /// A copy of name/price/photo is kept so the feed needs no extra read.
+  final ProductTag? product;
 
   Post({
     required this.id,
@@ -43,6 +48,7 @@ class Post {
     int? commentCount,
     required this.createdAt,
     required this.updatedAt,
+    this.product,
   })  : likeCount = likeCount ?? likes.length,
         commentCount = commentCount ?? comments.length;
 
@@ -72,6 +78,7 @@ class Post {
       commentCount: commentCount ?? this.commentCount,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      product: product,
     );
   }
 
@@ -105,14 +112,18 @@ class Post {
       playCount: _intFromDynamic(data['playCount']),
       likes: _stringListFromDynamic(data['likes']),
       comments: (data['comments'] is List)
-          ? (data['comments'] as List<dynamic>).map((comment) => Comment.fromMap(comment)).toList()
+          ? (data['comments'] as List<dynamic>)
+              .map((comment) => Comment.fromMap(comment))
+              .toList()
           : [],
-      likeCount: data['likeCount'] == null ? null : _intFromDynamic(data['likeCount']),
+      likeCount:
+          data['likeCount'] == null ? null : _intFromDynamic(data['likeCount']),
       commentCount: data['commentCount'] == null
           ? null
           : _intFromDynamic(data['commentCount']),
       createdAt: _parseTimestamp(data['createdAt']),
       updatedAt: _parseTimestamp(data['updatedAt']),
+      product: ProductTag.fromMap(data['product']),
     );
   }
 
@@ -133,6 +144,7 @@ class Post {
       'commentCount': 0,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
+      if (product != null) 'product': product!.toMap(),
     };
   }
 }
@@ -289,4 +301,38 @@ List<PostMedia> _mediaListFromDynamic(dynamic value) {
     return items;
   }
   return [];
+}
+
+/// The shop product shown on a post.
+class ProductTag {
+  const ProductTag({
+    required this.productId,
+    required this.name,
+    required this.price,
+    this.imageUrl,
+  });
+
+  final String productId;
+  final String name;
+  final int price;
+  final String? imageUrl;
+
+  static ProductTag? fromMap(dynamic raw) {
+    if (raw is! Map) return null;
+    final id = (raw['productId'] ?? '').toString();
+    if (id.isEmpty) return null;
+    return ProductTag(
+      productId: id,
+      name: (raw['name'] ?? '').toString(),
+      price: (raw['price'] as num?)?.round() ?? 0,
+      imageUrl: raw['imageUrl'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'productId': productId,
+        'name': name,
+        'price': price,
+        'imageUrl': imageUrl,
+      };
 }

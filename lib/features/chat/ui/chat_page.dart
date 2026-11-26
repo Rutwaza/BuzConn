@@ -1,3 +1,5 @@
+import 'package:businessfinder/core/widgets/emoji_picker.dart';
+import 'package:businessfinder/core/services/media_picker.dart';
 import 'dart:async';
 import 'package:businessfinder/features/moderation/moderation.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
@@ -315,61 +317,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   Future<void> _showEmojiPicker() async {
-    const emojis = [
-      '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '🥹', '😊', '😍',
-      '🥰', '😘', '😎', '🤩', '🥳', '😢', '😭', '😡', '🤔', '🙌', '👏',
-      '👍', '👎', '🙏', '🤝', '💪', '👋', '❤️', '🧡', '💛', '💚', '💙',
-      '💜', '🖤', '✨', '🔥', '🎉', '💯', '✅', '⭐', '🌟', '🌹', '💐',
-      '☀️', '🌙', '🍀', '☕', '🎂', '🥂', '⚽', '🎵', '🚀', '💡', '📸',
-    ];
-    final emoji = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (context) => SafeArea(
-        child: SizedBox(
-          height: 300,
-          child: GridView.builder(
-            padding: const EdgeInsets.all(14),
-            itemCount: emojis.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 8,
-              mainAxisSpacing: 4,
-              crossAxisSpacing: 4,
-            ),
-            itemBuilder: (context, index) => InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => Navigator.pop(context, emojis[index]),
-              child: Center(
-                child: Text(emojis[index], style: const TextStyle(fontSize: 26)),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    if (emoji == null || !mounted) return;
-    final value = _controller.value;
-    final selection = value.selection.isValid
-        ? value.selection
-        : TextSelection.collapsed(offset: value.text.length);
-    final start = selection.start.clamp(0, value.text.length);
-    final end = selection.end.clamp(0, value.text.length);
-    final newText = value.text.replaceRange(start, end, emoji);
-    _controller.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: start + emoji.length),
-    );
-    _handleTyping(newText);
-    setState(() {});
+    // Full picker with categories (lib/core/widgets/emoji_picker.dart).
+    await showEmojiPicker(context, controller: _controller);
+    if (mounted) setState(() {});
   }
 
   Future<void> _sendMedia(ImageSource source, {required bool isVideo}) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final picker = ImagePicker();
     if (!isVideo) {
-      final pickedImages = await picker.pickMultiImage();
+      final pickedImages = await MediaPicker.pickMultiImage();
       if (pickedImages.isEmpty) return;
       await _sendMultipleMediaFiles(
         userId: user.uid,
@@ -378,7 +335,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       );
       return;
     }
-    final pickedVideo = await picker.pickVideo(source: source);
+    final pickedVideo = await MediaPicker.pickVideo(source: source);
     if (pickedVideo == null) return;
     await _sendMultipleMediaFiles(
       userId: user.uid,
@@ -395,7 +352,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     setState(() {
       _sendingMedia = true;
       _mediaProgress = 0;
-      _mediaProgressLabel = 'Preparing ${files.length} ${mediaType == 'image' ? 'photo(s)' : 'video'}...';
+      _mediaProgressLabel =
+          'Preparing ${files.length} ${mediaType == 'image' ? 'photo(s)' : 'video'}...';
     });
     try {
       await _setTyping(false);
@@ -677,19 +635,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           actions: [
             _ChatActionButton(
               icon: Icons.call_rounded,
-              onPressed:
-                  isIncomingMessageRequest || isRejectedMessageRequest
-                      ? null
-                      : _startAudioCall,
+              onPressed: isIncomingMessageRequest || isRejectedMessageRequest
+                  ? null
+                  : _startAudioCall,
               tooltip: tr('Audio call'),
             ),
             const SizedBox(width: 6),
             _ChatActionButton(
               icon: Icons.videocam_rounded,
-              onPressed:
-                  isIncomingMessageRequest || isRejectedMessageRequest
-                      ? null
-                      : _startVideoCall,
+              onPressed: isIncomingMessageRequest || isRejectedMessageRequest
+                  ? null
+                  : _startVideoCall,
               tooltip: tr('Video call'),
             ),
             PopupMenuButton<String>(
@@ -984,8 +940,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                             children: [
                               Expanded(
                                 child: OutlinedButton.icon(
-                                  onPressed: () =>
-                                      _respondToIncomingRequest(
+                                  onPressed: () => _respondToIncomingRequest(
                                     userId: user.uid,
                                     accept: false,
                                   ),
@@ -996,8 +951,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: FilledButton.icon(
-                                  onPressed: () =>
-                                      _respondToIncomingRequest(
+                                  onPressed: () => _respondToIncomingRequest(
                                     userId: user.uid,
                                     accept: true,
                                   ),
@@ -1020,170 +974,170 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   )
                 else
                   SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: inputBarColor.withValues(alpha: 0.98),
-                        borderRadius: BorderRadius.circular(28),
-                        border: Border.all(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.10)
-                              : Colors.black.withValues(alpha: 0.05),
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black
-                                .withValues(alpha: isDark ? 0.18 : 0.07),
-                            blurRadius: 18,
-                            offset: const Offset(0, 8),
+                        decoration: BoxDecoration(
+                          color: inputBarColor.withValues(alpha: 0.98),
+                          borderRadius: BorderRadius.circular(28),
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.10)
+                                : Colors.black.withValues(alpha: 0.05),
                           ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          _ComposerIconButton(
-                            icon: Icons.add_rounded,
-                            onPressed:
-                                _sendingMedia ? null : _showAttachmentSheet,
-                          ),
-                          _ComposerIconButton(
-                            icon: _isRecording
-                                ? Icons.stop_rounded
-                                : Icons.mic_none_rounded,
-                            color: _isRecording ? Colors.redAccent : null,
-                            onPressed: _sendingMedia
-                                ? null
-                                : () {
-                                    if (_isRecording) {
-                                      _stopRecording();
-                                    } else {
-                                      _startRecording();
-                                    }
-                                  },
-                          ),
-                          if (_isRecording || _recordedPath != null)
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (_isRecording)
-                                  _ComposerIconButton(
-                                    icon: _isRecordingPaused
-                                        ? Icons.play_arrow_rounded
-                                        : Icons.pause_rounded,
-                                    onPressed: _togglePauseRecording,
-                                  ),
-                                if (_recordedPath != null && !_isRecording)
-                                  _ComposerIconButton(
-                                    icon: _isVoicePlaying
-                                        ? Icons.pause_rounded
-                                        : Icons.play_arrow_rounded,
-                                    onPressed: _togglePlayRecording,
-                                  ),
-                                if (_recordedPath != null && !_isRecording)
-                                  _ComposerIconButton(
-                                    icon: Icons.delete_outline_rounded,
-                                    onPressed: _discardRecording,
-                                  ),
-                              ],
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black
+                                  .withValues(alpha: isDark ? 0.18 : 0.07),
+                              blurRadius: 18,
+                              offset: const Offset(0, 8),
                             ),
-                          Expanded(
-                            child: (_isRecording || _recordedPath != null)
-                                ? Row(
-                                    children: [
-                                      const SizedBox(width: 6),
-                                      Icon(
-                                        Icons.fiber_manual_record,
-                                        size: 14,
-                                        color: _isRecording
-                                            ? Colors.redAccent
-                                            : Colors.orangeAccent,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        _isRecording
-                                            ? (_isRecordingPaused
-                                                ? 'Recording paused...'
-                                                : 'Recording...')
-                                            : 'Voice note ready',
-                                        style: TextStyle(
-                                          color: isDark
-                                              ? Colors.white70
-                                              : Colors.black54,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : TextField(
-                                    controller: _controller,
-                                    style: TextStyle(
-                                      color: isDark
-                                          ? Colors.white
-                                          : Colors.black87,
-                                    ),
-                                    decoration: InputDecoration(
-                                      hintText: tr('Encrypted message...'),
-                                      hintStyle: TextStyle(
-                                        color: isDark
-                                            ? Colors.white54
-                                            : AppColors.grey,
-                                      ),
-                                      border: InputBorder.none,
-                                    ),
-                                    textInputAction: TextInputAction.send,
-                                    onSubmitted: (_) => _sendText(),
-                                    onChanged: (value) {
-                                      _handleTyping(value);
-                                      if (mounted) {
-                                        setState(() {});
-                                      }
-                                    },
-                                  ),
-                          ),
-                          if (!_isRecording && _recordedPath == null)
+                          ],
+                        ),
+                        child: Row(
+                          children: [
                             _ComposerIconButton(
-                              icon: Icons.emoji_emotions_outlined,
-                              onPressed: _showEmojiPicker,
+                              icon: Icons.add_rounded,
+                              onPressed:
+                                  _sendingMedia ? null : _showAttachmentSheet,
                             ),
-                          Container(
-                            width: 42,
-                            height: 42,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  const Color(0xFF61D1ED),
-                                  const Color(0xFF7C4DFF)
-                                      .withValues(alpha: 0.78),
-                                ],
-                              ),
-                              shape: BoxShape.circle,
-                            ),
-                            child: IconButton(
-                              icon: const Icon(
-                                Icons.send_rounded,
-                                color: Colors.white,
-                                size: 20,
-                              ),
+                            _ComposerIconButton(
+                              icon: _isRecording
+                                  ? Icons.stop_rounded
+                                  : Icons.mic_none_rounded,
+                              color: _isRecording ? Colors.redAccent : null,
                               onPressed: _sendingMedia
                                   ? null
-                                  : _isRecording
-                                      ? null
-                                      : (_recordedPath != null
-                                          ? _sendRecordedAudio
-                                          : _sendText),
+                                  : () {
+                                      if (_isRecording) {
+                                        _stopRecording();
+                                      } else {
+                                        _startRecording();
+                                      }
+                                    },
                             ),
-                          ),
-                        ],
+                            if (_isRecording || _recordedPath != null)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_isRecording)
+                                    _ComposerIconButton(
+                                      icon: _isRecordingPaused
+                                          ? Icons.play_arrow_rounded
+                                          : Icons.pause_rounded,
+                                      onPressed: _togglePauseRecording,
+                                    ),
+                                  if (_recordedPath != null && !_isRecording)
+                                    _ComposerIconButton(
+                                      icon: _isVoicePlaying
+                                          ? Icons.pause_rounded
+                                          : Icons.play_arrow_rounded,
+                                      onPressed: _togglePlayRecording,
+                                    ),
+                                  if (_recordedPath != null && !_isRecording)
+                                    _ComposerIconButton(
+                                      icon: Icons.delete_outline_rounded,
+                                      onPressed: _discardRecording,
+                                    ),
+                                ],
+                              ),
+                            Expanded(
+                              child: (_isRecording || _recordedPath != null)
+                                  ? Row(
+                                      children: [
+                                        const SizedBox(width: 6),
+                                        Icon(
+                                          Icons.fiber_manual_record,
+                                          size: 14,
+                                          color: _isRecording
+                                              ? Colors.redAccent
+                                              : Colors.orangeAccent,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          _isRecording
+                                              ? (_isRecordingPaused
+                                                  ? 'Recording paused...'
+                                                  : 'Recording...')
+                                              : 'Voice note ready',
+                                          style: TextStyle(
+                                            color: isDark
+                                                ? Colors.white70
+                                                : Colors.black54,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : TextField(
+                                      controller: _controller,
+                                      style: TextStyle(
+                                        color: isDark
+                                            ? Colors.white
+                                            : Colors.black87,
+                                      ),
+                                      decoration: InputDecoration(
+                                        hintText: tr('Encrypted message...'),
+                                        hintStyle: TextStyle(
+                                          color: isDark
+                                              ? Colors.white54
+                                              : AppColors.grey,
+                                        ),
+                                        border: InputBorder.none,
+                                      ),
+                                      textInputAction: TextInputAction.send,
+                                      onSubmitted: (_) => _sendText(),
+                                      onChanged: (value) {
+                                        _handleTyping(value);
+                                        if (mounted) {
+                                          setState(() {});
+                                        }
+                                      },
+                                    ),
+                            ),
+                            if (!_isRecording && _recordedPath == null)
+                              _ComposerIconButton(
+                                icon: Icons.emoji_emotions_outlined,
+                                onPressed: _showEmojiPicker,
+                              ),
+                            Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    const Color(0xFF61D1ED),
+                                    const Color(0xFF7C4DFF)
+                                        .withValues(alpha: 0.78),
+                                  ],
+                                ),
+                                shape: BoxShape.circle,
+                              ),
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.send_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                onPressed: _sendingMedia
+                                    ? null
+                                    : _isRecording
+                                        ? null
+                                        : (_recordedPath != null
+                                            ? _sendRecordedAudio
+                                            : _sendText),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
             if (_showScrollToBottom)
@@ -1676,8 +1630,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
             final currentDate = createdAt?.toDate();
             final nextDate = index + 1 < docs.length
-                ? docs[index + 1].data()['createdAt']
-                    as Timestamp?
+                ? docs[index + 1].data()['createdAt'] as Timestamp?
                 : null;
             final showSeparator = currentDate != null &&
                 (nextDate == null ||

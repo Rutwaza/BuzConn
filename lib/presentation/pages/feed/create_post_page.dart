@@ -1,5 +1,10 @@
+import 'package:businessfinder/core/widgets/emoji_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:businessfinder/core/services/image_shrinker.dart';
+import 'package:businessfinder/core/services/video_frame_grabber.dart';
+import 'package:businessfinder/features/shop/data/shop_models.dart';
+import 'package:businessfinder/features/shop/data/shop_repository.dart';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:businessfinder/core/services/video_compressor.dart';
 import 'package:flutter/services.dart';
@@ -49,6 +54,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
   List<Map<String, dynamic>> _businesses = [];
   String? _selectedBusinessId;
   bool _postAsProfile = true;
+  ProductTag? _taggedProduct;
+  final _shopRepo = ShopRepository();
 
   // Phase 3: videos are compressed on the phone (VideoCompressor), so people
   // can pick bigger originals. The upload itself must still be <= 20 MB.
@@ -263,8 +270,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
   Future<String?> _uploadImage(File imageFile) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
-      final bytes =
-          await ImageShrinker.shrink(await imageFile.readAsBytes());
+      final bytes = await ImageShrinker.shrink(await imageFile.readAsBytes());
       final path =
           '${user?.uid ?? 'anon'}/${DateTime.now().millisecondsSinceEpoch}.jpg';
       return await R2StorageService.instance.uploadImage(
@@ -331,16 +337,13 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
     }
     final frames = <Uint8List>[];
     if (Platform.isWindows) {
-      // On Windows, video_thumbnail is not supported. Load a local placeholder icon to keep the picker functional.
-      try {
-        final bytes = (await rootBundle.load('assets/icons/alien.png'))
-            .buffer
-            .asUint8List();
-        frames.add(bytes);
-      } catch (_) {
-        // Fallback to an empty buffer; UI shows a simple video icon placeholder.
-        frames.add(Uint8List(0));
-      }
+      // Windows: real frames from the video (a hidden media_kit player).
+      frames.addAll(await VideoFrameGrabber.frames(file.path, const [
+        Duration(milliseconds: 300),
+        Duration(milliseconds: 1500),
+        Duration(milliseconds: 3000),
+        Duration(milliseconds: 5000),
+      ]));
     } else {
       for (final timeMs in <int>[0, 1200, 2600, 4200]) {
         final bytes = await VideoThumbnail.thumbnailData(
@@ -620,6 +623,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
         content: _contentController.text.trim(),
         businessId: _postAsProfile ? null : _selectedBusinessId,
         media: uploadedMedia,
+        product: _postAsProfile ? null : _taggedProduct,
       );
 
       if (mounted) {
@@ -630,6 +634,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
       setState(() {
         _selectedMedia.clear();
         _previewIndex = 0;
+        _taggedProduct = null;
       });
 
       if (!mounted) return;
@@ -902,8 +907,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                 color: AppColors.lightGrey,
                                 child: Padding(
                                   padding: const EdgeInsets.all(12),
-                                  child: Text(
-                                      tr('You have no active pages yet. You can still post from your profile.')),
+                                  child: Text(tr(
+                                      'You have no active pages yet. You can still post from your profile.')),
                                 ),
                               ),
                             if (_isBusinessUser || _businesses.isNotEmpty) ...[
@@ -925,9 +930,12 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                           children: [
                                             AppTextField(
                                               controller: _contentController,
+                                              suffixIcon: EmojiButton(
+                                                  controller:
+                                                      _contentController),
                                               label: tr('Caption'),
-                                              hintText:
-                                                  tr('Share something with Duhuze...'),
+                                              hintText: tr(
+                                                  'Share something with Duhuze...'),
                                               textCapitalization:
                                                   TextCapitalization.sentences,
                                               maxLines: 5,
@@ -1029,8 +1037,11 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                                   children: [
                                     AppTextField(
                                       controller: _contentController,
+                                      suffixIcon: EmojiButton(
+                                          controller: _contentController),
                                       label: tr('Caption'),
-                                      hintText: tr('Share something with Duhuze...'),
+                                      hintText:
+                                          tr('Share something with Duhuze...'),
                                       textCapitalization:
                                           TextCapitalization.sentences,
                                       maxLines: 3,
@@ -1175,13 +1186,74 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                   setState(() {
                     _postAsProfile = false;
                     _selectedBusinessId = b['id'] as String;
+                    _taggedProduct = null;
                   });
                 },
               ),
             ),
           ],
         ),
+        if (!_postAsProfile && _selectedBusinessId != null) ...[
+          const SizedBox(height: 12),
+          _buildProductTagSection(_selectedBusinessId!),
+        ],
       ],
+    );
+  }
+
+  /// "Tag a product": the post will show "Buy · 5,000 RWF".
+  Widget _buildProductTagSection(String businessId) {
+    return StreamBuilder<List<Product>>(
+      stream: _shopRepo.products(businessId),
+      builder: (context, snap) {
+        final products =
+            (snap.data ?? const <Product>[]).where((p) => p.inStock).toList();
+        if (products.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.sell_rounded,
+                  size: 18, color: AppColors.primary),
+              const SizedBox(width: 6),
+              Text(tr('Tag a product (optional)'),
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+            ]),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 44,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: products.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, i) {
+                  final p = products[i];
+                  final selected = _taggedProduct?.productId == p.id;
+                  return ChoiceChip(
+                    avatar: p.imageUrl == null
+                        ? const Icon(Icons.shopping_bag_outlined, size: 18)
+                        : CircleAvatar(
+                            backgroundImage:
+                                CachedNetworkImageProvider(p.imageUrl!)),
+                    label: Text('${p.name} · ${formatRwf(p.price)}'),
+                    selected: selected,
+                    onSelected: (_) => setState(() {
+                      _taggedProduct = selected
+                          ? null
+                          : ProductTag(
+                              productId: p.id,
+                              name: p.name,
+                              price: p.price,
+                              imageUrl: p.imageUrl,
+                            );
+                    }),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

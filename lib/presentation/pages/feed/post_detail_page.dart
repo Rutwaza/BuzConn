@@ -1,3 +1,4 @@
+import 'package:businessfinder/core/widgets/emoji_picker.dart';
 import 'dart:async';
 import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -220,8 +221,12 @@ class _PostDetailPageState extends State<PostDetailPage> {
                     IconButton(
                       icon: Icon(
                         Platform.isWindows
-                            ? (_mediaKitPlayer!.state.playing ? Icons.pause : Icons.play_arrow)
-                            : (_videoController!.value.isPlaying ? Icons.pause : Icons.play_arrow),
+                            ? (_mediaKitPlayer!.state.playing
+                                ? Icons.pause
+                                : Icons.play_arrow)
+                            : (_videoController!.value.isPlaying
+                                ? Icons.pause
+                                : Icons.play_arrow),
                       ),
                       onPressed: () {
                         if (Platform.isWindows) {
@@ -446,7 +451,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               onPressed: () {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text(tr('Share feature coming soon!')),
+                                    content:
+                                        Text(tr('Share feature coming soon!')),
                                   ),
                                 );
                               },
@@ -514,6 +520,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                       child: TextField(
                         controller: _commentController,
                         decoration: InputDecoration(
+                          suffixIcon:
+                              EmojiButton(controller: _commentController),
                           hintText: tr('Write a comment...'),
                           border: const OutlineInputBorder(),
                           isDense: true,

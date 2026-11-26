@@ -11,6 +11,8 @@ import 'package:video_player/video_player.dart';
 
 import '../../../core/i18n/tr.dart';
 import '../../moderation/moderation.dart';
+import '../../chat/data/chat_repository.dart';
+import '../../../core/widgets/emoji_picker.dart';
 import '../data/status_repository.dart';
 
 /// Full-screen status viewer. Tap right = next, tap left = back,
@@ -43,6 +45,56 @@ class _StatusViewerPageState extends State<StatusViewerPage>
   StreamSubscription<Duration>? _deskDuration;
   bool _paused = false;
   final FocusNode _focus = FocusNode();
+  final FocusNode _replyFocus = FocusNode();
+  final TextEditingController _reply = TextEditingController();
+  bool _sending = false;
+  String? _flash; // the emoji that just flew up
+
+  static const _reactions = ['❤️', '😂', '😮', '😢', '🔥', '👏'];
+
+  /// A reply or an emoji goes to the owner as a normal chat message
+  /// ("Replying to <name>: status").
+  Future<void> _sendReply(String text) async {
+    final me = FirebaseAuth.instance.currentUser?.uid;
+    final t = text.trim();
+    if (me == null || t.isEmpty || _sending) return;
+    final s = _s;
+    setState(() => _sending = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final repo = ChatRepository();
+      final chatId =
+          await repo.createOrGetDirectChat(userAId: me, userBId: _g.ownerId);
+      await repo.sendMessage(
+        chatId: chatId,
+        senderId: me,
+        text: t,
+        replyTo: {
+          'senderName': _g.name,
+          'text': s.type == 'text'
+              ? '${tr('Status')}: ${s.text}'
+              : '${s.type == 'video' ? '🎬' : '📷'} ${tr('Status')}'
+                  '${s.text.isEmpty ? '' : ': ${s.text}'}',
+          'statusId': s.id,
+        },
+      );
+      _reply.clear();
+      messenger.showSnackBar(SnackBar(
+          content: Text(tr('Sent')), duration: const Duration(seconds: 1)));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('${tr('Not sent')}: $e')));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  void _react(String emoji) {
+    setState(() => _flash = emoji);
+    Future.delayed(const Duration(milliseconds: 900), () {
+      if (mounted && _flash == emoji) setState(() => _flash = null);
+    });
+    unawaited(_sendReply(emoji));
+  }
 
   StatusGroup get _g => widget.groups[_group];
   StatusItem get _s => _g.items[_index];
@@ -51,6 +103,8 @@ class _StatusViewerPageState extends State<StatusViewerPage>
   @override
   void initState() {
     super.initState();
+    // Pause while typing a reply, go on after.
+    _replyFocus.addListener(() => _pause(_replyFocus.hasFocus));
     _show();
   }
 
@@ -60,6 +114,8 @@ class _StatusViewerPageState extends State<StatusViewerPage>
     _video?.dispose();
     _disposeDesktopVideo();
     _focus.dispose();
+    _replyFocus.dispose();
+    _reply.dispose();
     super.dispose();
   }
 
@@ -167,6 +223,14 @@ class _StatusViewerPageState extends State<StatusViewerPage>
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    // Typing a reply: Space and arrows belong to the text box.
+    if (_replyFocus.hasFocus) {
+      if (event.logicalKey == LogicalKeyboardKey.escape) {
+        _replyFocus.unfocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.arrowRight) {
       _next();
@@ -310,7 +374,7 @@ class _StatusViewerPageState extends State<StatusViewerPage>
                 Positioned(
                   left: 16,
                   right: 16,
-                  bottom: 90,
+                  bottom: _isMine ? 90 : 140,
                   child: Text(
                     s.text,
                     textAlign: TextAlign.center,
@@ -399,6 +463,109 @@ class _StatusViewerPageState extends State<StatusViewerPage>
                   ),
                 ),
               ),
+              if (_flash != null)
+                IgnorePointer(
+                  child: Center(
+                    child: TweenAnimationBuilder<double>(
+                      key: ValueKey(_flash),
+                      tween: Tween(begin: 0, end: 1),
+                      duration: const Duration(milliseconds: 800),
+                      curve: Curves.easeOutBack,
+                      builder: (_, v, child) => Transform.translate(
+                        offset: Offset(0, -120 * v),
+                        child: Opacity(
+                            opacity: (1.4 - v).clamp(0.0, 1.0),
+                            child: Transform.scale(
+                                scale: 0.6 + v * 1.4, child: child)),
+                      ),
+                      child:
+                          Text(_flash!, style: const TextStyle(fontSize: 64)),
+                    ),
+                  ),
+                ),
+              if (!_isMine)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: SafeArea(
+                    top: false,
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 560),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceEvenly,
+                                children: [
+                                  for (final e in _reactions)
+                                    InkResponse(
+                                      onTap: () => _react(e),
+                                      radius: 26,
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(6),
+                                        child: Text(e,
+                                            style:
+                                                const TextStyle(fontSize: 28)),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _reply,
+                                    focusNode: _replyFocus,
+                                    style: const TextStyle(color: Colors.white),
+                                    textInputAction: TextInputAction.send,
+                                    onSubmitted: _sendReply,
+                                    decoration: InputDecoration(
+                                      hintText: '${tr('Reply to')} ${_g.name}…',
+                                      hintStyle: const TextStyle(
+                                          color: Colors.white60),
+                                      filled: true,
+                                      fillColor:
+                                          Colors.black.withValues(alpha: 0.35),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 16, vertical: 12),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(28),
+                                        borderSide: const BorderSide(
+                                            color: Colors.white38),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(28),
+                                        borderSide: const BorderSide(
+                                            color: Colors.white38),
+                                      ),
+                                      suffixIcon: EmojiButton(
+                                        controller: _reply,
+                                        color: Colors.white70,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton.filled(
+                                  onPressed: _sending
+                                      ? null
+                                      : () => _sendReply(_reply.text),
+                                  icon: const Icon(Icons.send_rounded),
+                                ),
+                              ]),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               if (_isMine)
                 Positioned(
                   bottom: 24,
