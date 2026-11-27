@@ -290,7 +290,7 @@ class _SettingsPageState extends State<SettingsPage> {
             icon: Icons.person_outline,
             title: tr('Edit Profile'),
             subtitle: tr('Update your photo, bio, and contact details'),
-            onTap: () => context.push(AppRoutes.profile),
+            onTap: () => context.push('${AppRoutes.profile}?edit=1'),
           ),
           _SettingsTile(
             icon: Icons.verified_rounded,

@@ -19,7 +19,10 @@ import '../../../core/services/r2_storage_service.dart';
 import 'package:businessfinder/core/widgets/app_toast.dart';
 
 class ProfileCompletionPage extends ConsumerStatefulWidget {
-  const ProfileCompletionPage({super.key});
+  const ProfileCompletionPage({super.key, this.editing = false});
+
+  /// Opened from "Edit profile": stay on the page and go back when done.
+  final bool editing;
 
   @override
   ConsumerState<ProfileCompletionPage> createState() =>
@@ -56,7 +59,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
 
       if (userDoc.exists) {
         final data = userDoc.data()!;
-        if (data['profileCompleted'] == true) {
+        if (data['profileCompleted'] == true && !widget.editing) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) context.go(AppRoutes.dashboard);
           });
@@ -200,7 +203,11 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
           _isLoading = false;
         });
 
-        context.go(AppRoutes.dashboard);
+        if (widget.editing && context.canPop()) {
+          context.pop();
+        } else {
+          context.go(AppRoutes.dashboard);
+        }
       } catch (e) {
         debugPrint('Profile save failed: $e');
         if (!mounted) return;
@@ -488,7 +495,11 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () {
-                        context.go(AppRoutes.dashboard);
+                        if (widget.editing && context.canPop()) {
+                          context.pop();
+                        } else {
+                          context.go(AppRoutes.dashboard);
+                        }
                       },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.grey,

@@ -87,6 +87,14 @@ class PagesMapState extends State<PagesMap> {
     super.dispose();
   }
 
+  /// Re-fit and make the map redraw its tiles.
+  void _nudge() {
+    if (!mounted || !_ready) return;
+    fitAll();
+    final c = _map.camera;
+    _map.move(c.center, c.zoom + 0.001);
+  }
+
   /// Show every pin.
   void fitAll() {
     if (!_ready || !mounted) return;
@@ -163,6 +171,10 @@ class PagesMapState extends State<PagesMap> {
               onMapReady: () {
                 _ready = true;
                 fitAll();
+                // The map can be laid out a moment after it is ready; without
+                // this the tiles stay black until the first drag or zoom.
+                WidgetsBinding.instance.addPostFrameCallback((_) => _nudge());
+                Future.delayed(const Duration(milliseconds: 350), _nudge);
               },
               onTap: (_, __) {
                 if (_selectedId != null) setState(() => _selectedId = null);

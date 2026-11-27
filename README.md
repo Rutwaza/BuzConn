@@ -494,6 +494,34 @@ firebase deploy --only functions:createOrder,functions:onOrderWritten --project 
 
 Avoid `firebase deploy --only functions` with no names: it updates all ~32 functions at once and hits the CPU quota. Firebase does not let a deployed function change trigger type under the same name; deploy a new name, move callers, then delete the old one. Never deploy test rules that allow unrestricted reads/writes.
 
+## R2 keys and admins: how to set them (do this on a new machine or after a key problem)
+
+Symptoms of a bad R2 key: "access denied" / `R2 upload failed (403)` on photos, products, group photos or chat media.
+
+1. Cloudflare dashboard -> **R2 Object Storage -> Manage API tokens -> Create Account API token**. Permission **Object Read & Write**, buckets `bussinessfinder-public` and `bussinessfinder-private`. Copy the **Access Key ID** and **Secret Access Key** right away (the secret is shown once). The **Account ID** is in the dashboard URL and on the R2 overview page.
+2. Test the key (values are typed in the terminal only, there is no env file):
+
+```powershell
+cd functions
+$env:R2_ACCOUNT_ID="<account id>"
+$env:R2_ACCESS_KEY_ID="<access key id>"
+$env:R2_SECRET_ACCESS_KEY="<secret>"
+node scripts/check-r2.js        # want 6 lines of OK
+```
+
+3. Save the same values in Firebase (Google Secret Manager). Paste each value when asked, answer **No** to the redeploy question, then deploy:
+
+```powershell
+cd ..
+firebase functions:secrets:set R2_ACCESS_KEY_ID
+firebase functions:secrets:set R2_SECRET_ACCESS_KEY
+.\deploy.ps1 -Functions createR2UploadUrl,createR2DownloadUrl,deleteAccount
+```
+
+4. Never put the keys in chat, Git or this README. If one leaks, make a new token, repeat steps 2-3, then delete the old token in Cloudflare.
+
+**Making someone an admin** (the flag can only be set from the PC): from `functions`, run `gcloud auth application-default login` once, then `node scripts/set-admin.js person@example.com` (add `--remove` to take it away). They must sign out and in again. Admins get a notification for every new report.
+
 ## Build artifacts
 
 ### Android (Google Play): see docs/RELEASE.md

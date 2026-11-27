@@ -13,9 +13,12 @@ import 'chat_page.dart';
 import 'package:businessfinder/core/widgets/app_toast.dart';
 
 class ChatListPage extends StatefulWidget {
-  const ChatListPage({super.key, this.initialFilter});
+  const ChatListPage({super.key, this.initialFilter, this.openChatId});
 
   final String? initialFilter;
+
+  /// Chat to show on the right when the inbox opens (desktop).
+  final String? openChatId;
 
   @override
   State<ChatListPage> createState() => _ChatListPageState();
@@ -54,6 +57,23 @@ class _ChatListPageState extends State<ChatListPage> {
     if (widget.initialFilter == 'requests') {
       _filter = _InboxFilter.requests;
     }
+    if (widget.openChatId != null) _openRequestedChat(widget.openChatId!);
+  }
+
+  /// A link (notification, post, profile...) asked for this chat: show it on
+  /// the right of the inbox.
+  Future<void> _openRequestedChat(String chatId) async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      final doc =
+          await FirebaseFirestore.instance.collection('chats').doc(chatId).get();
+      final data = doc.data();
+      if (data == null) return;
+      final meta = await _resolveChatMeta(data, uid);
+      if (!mounted) return;
+      _selectDesktopChat(chatId: chatId, meta: meta);
+    } catch (_) {}
   }
 
   // Kept between rebuilds so clicking a chat does not reload the whole list.

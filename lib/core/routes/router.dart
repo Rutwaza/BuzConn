@@ -54,7 +54,9 @@ class AppRouter {
       ),
       GoRoute(
         path: AppRoutes.profile,
-        builder: (context, state) => const ProfileCompletionPage(),
+        builder: (context, state) => ProfileCompletionPage(
+          editing: state.uri.queryParameters['edit'] == '1',
+        ),
       ),
       GoRoute(
         path: AppRoutes.businessSetup,
@@ -139,12 +141,20 @@ class AppRouter {
         path: AppRoutes.chats,
         builder: (context, state) => ChatListPage(
           initialFilter: state.uri.queryParameters['filter'],
+          openChatId: state.uri.queryParameters['open'],
         ),
       ),
       GoRoute(
         path: AppRoutes.chatDetail,
-        builder: (context, state) =>
-            ChatPage(chatId: state.pathParameters['id']!),
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          // On a wide desktop every link to a chat opens it inside the inbox
+          // (list on the left, chat on the right), never as a lone full page.
+          if (MediaQuery.of(context).size.width >= 1180) {
+            return ChatListPage(key: ValueKey('inbox-$id'), openChatId: id);
+          }
+          return ChatPage(chatId: id);
+        },
       ),
       GoRoute(
         path: AppRoutes.favorites,

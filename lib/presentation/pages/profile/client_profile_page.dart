@@ -624,7 +624,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
           const SizedBox(height: 14),
           if (_isSelf)
             OutlinedButton(
-              onPressed: () => context.push(AppRoutes.profile),
+              onPressed: () => context.push('${AppRoutes.profile}?edit=1'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.primary,
                 side: const BorderSide(color: AppColors.primary),

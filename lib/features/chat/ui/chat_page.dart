@@ -576,9 +576,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             );
           });
         }
-        // Inside the inbox the chat gets the whole space (no side panel).
         final useDesktopSplitLayout =
-            false; // no side profile panel anywhere
+            MediaQuery.of(context).size.width >= 1180;
         final appBar = AppBar(
           scrolledUnderElevation: 0,
           automaticallyImplyLeading: false,
