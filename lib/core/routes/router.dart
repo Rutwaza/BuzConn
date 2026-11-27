@@ -13,7 +13,6 @@ import 'package:businessfinder/presentation/pages/feed/posts_feed_page.dart';
 import 'package:businessfinder/presentation/pages/feed/create_post_page.dart';
 import 'package:businessfinder/presentation/pages/business/business_profile_page.dart';
 import 'package:businessfinder/features/chat/ui/chat_list_page.dart';
-import 'package:businessfinder/features/chat/ui/chat_page.dart';
 import 'package:businessfinder/features/chat/ui/group_pages.dart';
 import 'package:businessfinder/presentation/pages/search/search_page.dart';
 import 'package:businessfinder/presentation/pages/profile/client_profile_page.dart';
@@ -146,14 +145,10 @@ class AppRouter {
       ),
       GoRoute(
         path: AppRoutes.chatDetail,
+        // Every chat opens inside the inbox: no separate chat page.
         builder: (context, state) {
           final id = state.pathParameters['id']!;
-          // On a wide desktop every link to a chat opens it inside the inbox
-          // (list on the left, chat on the right), never as a lone full page.
-          if (MediaQuery.of(context).size.width >= 1180) {
-            return ChatListPage(key: ValueKey('inbox-$id'), openChatId: id);
-          }
-          return ChatPage(chatId: id);
+          return ChatListPage(key: ValueKey('inbox-$id'), openChatId: id);
         },
       ),
       GoRoute(

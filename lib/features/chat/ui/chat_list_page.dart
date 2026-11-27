@@ -256,6 +256,39 @@ class _ChatListPageState extends State<ChatListPage> {
 
     final repo = ChatRepository();
 
+    // Phone / narrow window: the chat takes the whole screen, still inside
+    // the inbox (back goes to the list, or to the page that opened it).
+    if (MediaQuery.of(context).size.width < 1180 &&
+        _selectedDesktopChatId != null) {
+      void leave() {
+        if (widget.openChatId != null && context.canPop()) {
+          context.pop();
+        } else {
+          setState(() {
+            _selectedDesktopChatId = null;
+            _selectedDesktopMeta = null;
+          });
+        }
+      }
+
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) leave();
+        },
+        child: Scaffold(
+          body: SafeArea(
+            child: ChatPage(
+              key: ValueKey(_selectedDesktopChatId),
+              chatId: _selectedDesktopChatId!,
+              embedded: true,
+              onBack: leave,
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(tr('Inbox')),
@@ -576,10 +609,8 @@ class _ChatListPageState extends State<ChatListPage> {
                             docs: recentDocs,
                             currentUserId: user.uid,
                             resolveChatMeta: _resolveChatMeta,
-                            onOpenDesktop: isDesktopWide
-                                ? (id, meta) =>
-                                    _selectDesktopChat(chatId: id, meta: meta)
-                                : null,
+                            onOpenDesktop: (id, meta) =>
+                                _selectDesktopChat(chatId: id, meta: meta),
                           ),
                           const SizedBox(height: 14),
                         ],
@@ -687,16 +718,11 @@ class _ChatListPageState extends State<ChatListPage> {
                                               accept: true,
                                             );
                                             if (!accepted || !mounted) return;
-                                            if (isDesktopWide) {
-                                              _filter = _InboxFilter.all;
-                                              _selectDesktopChat(
-                                                chatId: chatId,
-                                                meta: meta,
-                                              );
-                                            } else {
-                                              context.push(AppRoutes
-                                                  .chatDetailPath(chatId));
-                                            }
+                                            _filter = _InboxFilter.all;
+                                            _selectDesktopChat(
+                                              chatId: chatId,
+                                              meta: meta,
+                                            );
                                           }
                                         : null,
                                     onRejectRequest: isIncomingRequest
@@ -710,27 +736,10 @@ class _ChatListPageState extends State<ChatListPage> {
                                         _selectedDesktopChatId == chatId,
                                     onTap: () async {
                                       HapticFeedback.selectionClick();
-                                      if (isIncomingRequest) {
-                                        if (isDesktopWide) {
-                                          _selectDesktopChat(
-                                            chatId: chatId,
-                                            meta: meta,
-                                          );
-                                        } else {
-                                          context.push(AppRoutes
-                                              .chatDetailPath(chatId));
-                                        }
-                                        return;
-                                      }
-                                      if (isDesktopWide) {
-                                        _selectDesktopChat(
-                                          chatId: chatId,
-                                          meta: meta,
-                                        );
-                                      } else {
-                                        context.push(
-                                            AppRoutes.chatDetailPath(chatId));
-                                      }
+                                      _selectDesktopChat(
+                                        chatId: chatId,
+                                        meta: meta,
+                                      );
                                     },
                                     onLongPress: () => _showChatActions(
                                       chatId: chatId,
