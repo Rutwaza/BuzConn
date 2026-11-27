@@ -67,8 +67,12 @@ if (-not $SkipRelease) {
   $files += Get-ChildItem $relDir -Filter 'Duhuze-Setup-*.exe' -ErrorAction SilentlyContinue | ForEach-Object FullName
   if (-not $files) { throw "No APK/exe files in $relDir" }
   $notes = "Duhuze $ver (build $build).`n`nAndroid: install duhuze-$ver-$build-arm64-v8a-release.apk (most phones).`nWindows: run Duhuze-Setup-$ver-x64.exe."
-  & gh release view $tag *> $null
-  if ($LASTEXITCODE -eq 0) {
+  # "release not found" goes to stderr; do not let PowerShell treat it as an error.
+  $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  & gh release view $tag 2>&1 | Out-Null
+  $exists = ($LASTEXITCODE -eq 0)
+  $ErrorActionPreference = $old
+  if ($exists) {
     Run gh (@('release', 'upload', $tag) + $files + @('--clobber'))
   } else {
     Run gh (@('release', 'create', $tag) + $files + @('--title', "Duhuze $ver (build $build)", '--notes', $notes, '--target', 'main'))
