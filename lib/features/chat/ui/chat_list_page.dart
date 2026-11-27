@@ -556,6 +556,10 @@ class _ChatListPageState extends State<ChatListPage> {
                             docs: recentDocs,
                             currentUserId: user.uid,
                             resolveChatMeta: _resolveChatMeta,
+                            onOpenDesktop: isDesktopWide
+                                ? (id, meta) =>
+                                    _selectDesktopChat(chatId: id, meta: meta)
+                                : null,
                           ),
                           const SizedBox(height: 14),
                         ],
@@ -1242,8 +1246,11 @@ class _RecentChatsRow extends StatelessWidget {
     required this.docs,
     required this.currentUserId,
     required this.resolveChatMeta,
+    this.onOpenDesktop,
   });
 
+  /// On wide desktop the chat opens in the inbox's right side, not a new page.
+  final void Function(String chatId, Map<String, dynamic> meta)? onOpenDesktop;
   final List<QueryDocumentSnapshot<Object?>> docs;
   final String currentUserId;
   final Future<Map<String, dynamic>> Function(
@@ -1275,7 +1282,11 @@ class _RecentChatsRow extends StatelessWidget {
                 borderRadius: BorderRadius.circular(18),
                 onTap: () {
                   HapticFeedback.selectionClick();
-                  context.push(AppRoutes.chatDetailPath(chatId));
+                  if (onOpenDesktop != null) {
+                    onOpenDesktop!(chatId, meta);
+                  } else {
+                    context.push(AppRoutes.chatDetailPath(chatId));
+                  }
                 },
                 child: SizedBox(
                   width: 78,
