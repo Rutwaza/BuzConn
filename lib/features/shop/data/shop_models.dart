@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
@@ -6,6 +8,16 @@ final _rwf = NumberFormat.decimalPattern('en_US');
 /// "5,000 RWF"
 String formatRwf(num amount) => '${_rwf.format(amount)} RWF';
 
+/// One photo while editing a product: already saved (`url`) or just picked (`bytes`).
+class ProductPhoto {
+  const ProductPhoto({this.url, this.bytes});
+  final String? url;
+  final Uint8List? bytes;
+}
+
+/// A product can show this many photos.
+const int maxProductPhotos = 4;
+
 class Product {
   Product({
     required this.id,
@@ -13,13 +25,21 @@ class Product {
     required this.price,
     this.description = '',
     this.imageUrl,
+    this.images = const [],
     this.inStock = true,
     this.soldCount = 0,
   });
 
   factory Product.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data() ?? {};
+    final single = d['imageUrl'] as String?;
+    final many = (d['imageUrls'] as List? ?? [])
+        .whereType<String>()
+        .where((u) => u.isNotEmpty)
+        .take(maxProductPhotos)
+        .toList();
     return Product(
+      images: many.isNotEmpty ? many : [if (single != null && single.isNotEmpty) single],
       id: doc.id,
       name: (d['name'] ?? '').toString(),
       price: (d['price'] as num?)?.round() ?? 0,
@@ -30,11 +50,18 @@ class Product {
     );
   }
 
+  /// Photos to show (cover first), also for products saved before there were several.
+  List<String> get gallery =>
+      images.isNotEmpty ? images : [if (imageUrl != null && imageUrl!.isNotEmpty) imageUrl!];
+
   final String id;
   final String name;
   final int price; // whole RWF
   final String description;
   final String? imageUrl;
+
+  /// Up to [maxProductPhotos] photos; the first one is the cover.
+  final List<String> images;
   final bool inStock;
 
   /// How many were sold (confirmed orders). Kept by the server.
@@ -95,6 +122,9 @@ class ShopOrder {
     this.momoName,
     this.txRef,
     this.createdAt,
+    this.completedAt,
+    this.buyerHidden = false,
+    this.shopHidden = false,
   });
 
   factory ShopOrder.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -121,6 +151,10 @@ class ShopOrder {
       momoName: d['momoName'] as String?,
       txRef: d['txRef'] as String?,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate(),
+      completedAt: (d['completedAt'] as Timestamp?)?.toDate() ??
+          (d['updatedAt'] as Timestamp?)?.toDate(),
+      buyerHidden: d['buyerHidden'] == true,
+      shopHidden: d['shopHidden'] == true,
     );
   }
 
@@ -136,6 +170,24 @@ class ShopOrder {
   final String? momoName;
   final String? txRef;
   final DateTime? createdAt;
+  final DateTime? completedAt;
+  final bool buyerHidden;
+  final bool shopHidden;
+
+  bool get isFinished =>
+      status == OrderStatus.delivered || status == OrderStatus.cancelled;
+
+  /// When it can be deleted: 2 days after it finished.
+  DateTime? get deletableFrom {
+    if (!isFinished) return null;
+    final t = completedAt ?? createdAt;
+    return t?.add(const Duration(days: 2));
+  }
+
+  bool get canDelete {
+    final d = deletableFrom;
+    return d != null && !DateTime.now().isBefore(d);
+  }
 
   String get summary {
     if (items.isEmpty) return '';

@@ -43,12 +43,16 @@ class PagesMap extends StatefulWidget {
     required this.pages,
     required this.onOpenPage,
     this.loading = false,
+    this.myPoint,
     this.fallbackCenter = const LatLng(-1.9441, 30.0619), // Kigali
   });
 
   final List<MapPage> pages;
   final void Function(String pageId) onOpenPage;
   final bool loading;
+
+  /// Where the phone is (blue dot), when known.
+  final LatLng? myPoint;
   final LatLng fallbackCenter;
 
   @override
@@ -119,6 +123,17 @@ class PagesMapState extends State<PagesMap> {
     _map.move(c.center, (c.zoom + by).clamp(3, 18).toDouble());
   }
 
+  static const _darkTiles = ColorFilter.matrix(<double>[
+    -0.78, 0, 0, 0, 215, //
+    0, -0.78, 0, 0, 222, //
+    0, 0, -0.78, 0, 236, //
+    0, 0, 0, 1, 0, //
+  ]);
+
+  Widget _tiles(bool isDark, Widget layer) => isDark
+      ? ColorFiltered(colorFilter: _darkTiles, child: layer)
+      : layer;
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -154,16 +169,42 @@ class PagesMapState extends State<PagesMap> {
               },
             ),
             children: [
-              TileLayer(
-                // Carto basemaps (OpenStreetMap data): clean, with a dark
-                // version for dark mode.
-                urlTemplate: isDark
-                    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-                    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-                subdomains: const ['a', 'b', 'c', 'd'],
-                retinaMode: RetinaMode.isHighDensity(context),
-                userAgentPackageName: AppConstants.mapUserAgent,
+              // OpenStreetMap standard tiles: free, no key needed. In dark
+              // mode the same tiles are inverted to a dark navy look.
+              _tiles(
+                isDark,
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  retinaMode: false,
+                  maxNativeZoom: 19,
+                  userAgentPackageName: AppConstants.mapUserAgent,
+                ),
               ),
+              if (widget.myPoint != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: widget.myPoint!,
+                      width: 22,
+                      height: 22,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2F80FF),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 3),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF2F80FF)
+                                  .withValues(alpha: 0.45),
+                              blurRadius: 10,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               MarkerLayer(
                 markers: [
                   for (final p in pins)
@@ -307,7 +348,7 @@ class PagesMapState extends State<PagesMap> {
             right: 8,
             bottom: 4,
             child: Text(
-              '© OpenStreetMap · © CARTO',
+              '© OpenStreetMap contributors',
               style: TextStyle(
                 fontSize: 9.5,
                 color: isDark ? Colors.white54 : Colors.black45,

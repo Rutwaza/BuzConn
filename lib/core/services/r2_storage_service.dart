@@ -162,8 +162,11 @@ class R2StorageService {
             .where((value) => value.isNotEmpty)
             .join(': ');
         throw HttpException(
-          'R2 upload failed (${response.statusCode})'
-          '${details.isEmpty ? '.' : ': $details'}',
+          response.statusCode == 403
+              ? 'Upload was refused by the file storage (check the storage key). '
+                  '${details.isEmpty ? '' : '[$details]'}'
+              : 'Upload failed (${response.statusCode})'
+                  '${details.isEmpty ? '.' : ': $details'}',
         );
       }
     } finally {
@@ -206,7 +209,25 @@ class R2StorageService {
       request.write(jsonEncode({'data': data}));
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
-      final decoded = body.isEmpty ? <String, dynamic>{} : jsonDecode(body);
+      // A Google error page (HTML) means the function is missing, not public
+      // yet, or the service is down: say that in plain words.
+      final looksLikeHtml = body.trimLeft().startsWith('<');
+      if (looksLikeHtml) {
+        final code = response.statusCode;
+        throw HttpException(
+          code == 403 || code == 401
+              ? 'This service is not open yet. Please try again later.'
+              : code == 404
+                  ? 'This service is not available yet. Please try again later.'
+                  : 'The service is busy. Please try again in a moment.',
+        );
+      }
+      Object? decoded;
+      try {
+        decoded = body.isEmpty ? <String, dynamic>{} : jsonDecode(body);
+      } on FormatException {
+        throw const HttpException('The service answered in an unexpected way. Please try again.');
+      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final message = decoded is Map
             ? (decoded['error']?['message'] ?? decoded['message'])

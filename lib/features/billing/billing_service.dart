@@ -47,6 +47,11 @@ class BillingInfo {
 
   bool get ready => raw['ready'] == true;
   int get pageSlotPrice => (raw['pageSlotPrice'] as num?)?.toInt() ?? 0;
+
+  /// What the next extra page costs this person (the 2nd page can have its
+  /// own price, set in Admin -> Payments).
+  int get nextPagePrice =>
+      (raw['nextPagePrice'] as num?)?.toInt() ?? pageSlotPrice;
   PageSlots get pages =>
       PageSlots(Map<String, dynamic>.from(raw['pages'] as Map? ?? {}));
   List<BoostPackage> get boostPackages => (raw['boostPackages'] as List? ?? [])

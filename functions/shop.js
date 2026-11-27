@@ -187,6 +187,12 @@ exports.onOrderWritten = onDocumentWritten(
       batch.update(event.data.after.ref, {soldCounted: true});
       await batch.commit().catch((e) => console.warn("soldCount", e.message));
     }
+    // Remember when the order was finished: it can be deleted 2 days later.
+    if ((after.status === "delivered" || after.status === "cancelled") &&
+        !after.completedAt) {
+      await event.data.after.ref.update({completedAt: FieldValue.serverTimestamp()})
+        .catch((e) => console.warn("completedAt", e.message));
+    }
     const msg = MESSAGES[after.status];
     if (!msg) return;
     const [to, text] = msg;
@@ -215,6 +221,44 @@ exports.onOrderWritten = onDocumentWritten(
     })));
   },
 );
+
+// ------------------------------------------------------ delete an order --
+
+const DELETE_AFTER_MS = 2 * 24 * 60 * 60 * 1000;
+
+/**
+ * Buyer or shop removes a finished order (delivered or cancelled) from
+ * their own list, 2 days after it finished. It is hidden for that side
+ * only; when both sides have removed it, the order is deleted for good.
+ */
+exports.deleteOrder = onCall({region: REGION}, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in first.");
+  const orderId = String(request.data?.orderId || "");
+  if (!orderId) throw new HttpsError("invalid-argument", "Missing order.");
+  const ref = db().collection("orders").doc(orderId);
+  const snap = await ref.get();
+  if (!snap.exists) return {deleted: true};
+  const o = snap.data();
+  const isBuyer = o.buyerId === uid;
+  const isShop = o.businessOwnerId === uid || (o.staffIds || []).includes(uid);
+  if (!isBuyer && !isShop) {
+    throw new HttpsError("permission-denied", "This is not your order.");
+  }
+  if (o.status !== "delivered" && o.status !== "cancelled") {
+    throw new HttpsError("failed-precondition", "Only finished orders can be deleted.");
+  }
+  const t = (o.completedAt || o.updatedAt || o.createdAt)?.toMillis?.() || 0;
+  if (Date.now() - t < DELETE_AFTER_MS) {
+    throw new HttpsError("failed-precondition", "You can delete this order 2 days after it is finished.");
+  }
+  const patch = isBuyer ? {buyerHidden: true} : {shopHidden: true};
+  const buyerGone = isBuyer || o.buyerHidden === true;
+  const shopGone = isShop || o.shopHidden === true;
+  if (buyerGone && shopGone) await ref.delete();
+  else await ref.update(patch);
+  return {deleted: true};
+});
 
 // ------------------------------------------------- shop index & reviews --
 

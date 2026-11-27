@@ -68,7 +68,8 @@ class FollowListPage extends StatelessWidget {
       body: StreamBuilder<QuerySnapshot>(
         stream: query.snapshots(),
         builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
+          if (snap.connectionState == ConnectionState.waiting &&
+              !snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
           final docs = snap.data?.docs ?? [];

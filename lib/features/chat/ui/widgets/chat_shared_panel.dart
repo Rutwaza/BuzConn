@@ -26,55 +26,22 @@ extension _ChatSharedPanel on _ChatPageState {
         final item = items[index];
         final url = item['url'] as String;
         final isVideo = item['type'] == 'video';
-        return FutureBuilder<String>(
-          future: _resolveChatMediaUrl(url),
-          builder: (context, resolvedSnapshot) {
-            final resolvedUrl = resolvedSnapshot.data;
-            if (resolvedUrl == null) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            return InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => _scrollToMessage(item['messageId'] as String),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (!isVideo)
-                      Image.network(resolvedUrl, fit: BoxFit.cover)
-                    else
-                      FutureBuilder<Uint8List?>(
-                        future: _getVideoThumbnail(resolvedUrl),
-                        builder: (context, snapshot) {
-                          final bytes = snapshot.data;
-                          if (bytes == null) {
-                            return Container(
-                              color: isDark
-                                  ? Colors.white.withValues(alpha: 0.06)
-                                  : Colors.black.withValues(alpha: 0.05),
-                              child: const Icon(Icons.videocam_rounded),
-                            );
-                          }
-                          return Image.memory(bytes, fit: BoxFit.cover);
-                        },
-                      ),
-                    if (isVideo)
-                      Container(
-                        color: Colors.black.withValues(alpha: 0.18),
-                        child: const Center(
-                          child: Icon(
-                            Icons.play_circle_fill_rounded,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            );
-          },
+        if (isVideo) {
+          return GestureDetector(
+            onTap: () => _scrollToMessage(item['messageId'] as String),
+            child: _ChatVideoThumb(
+              resolve: () => _resolveChatMediaUrl(url),
+              thumbnail: _getVideoThumbnail,
+              width: double.infinity,
+              height: double.infinity,
+            ),
+          );
+        }
+        return _ChatPhoto(
+          resolve: () => _resolveChatMediaUrl(url),
+          square: true,
+          radius: 14,
+          onTap: () => _scrollToMessage(item['messageId'] as String),
         );
       },
     );
@@ -184,9 +151,7 @@ extension _ChatSharedPanel on _ChatPageState {
               await _openLink(await _resolveChatMediaUrl(mediaRef));
             } catch (e) {
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Could not open file: $e')),
-                );
+                showToast(context, 'Could not open file: $e');
               }
             }
           },

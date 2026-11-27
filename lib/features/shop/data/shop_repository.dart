@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -19,6 +18,8 @@ class ShopRepository {
       .snapshots()
       .map((s) => s.docs.map(Product.fromDoc).toList());
 
+  /// [photos] in order (first = cover), up to [maxProductPhotos]: saved ones
+  /// keep their link, new ones are uploaded now.
   Future<void> saveProduct({
     required String businessId,
     String? productId,
@@ -26,26 +27,31 @@ class ShopRepository {
     required int price,
     required String description,
     required bool inStock,
-    Uint8List? newImage,
-    String? currentImageUrl,
+    List<ProductPhoto> photos = const [],
   }) async {
     final ref = productId == null
         ? _products(businessId).doc()
         : _products(businessId).doc(productId);
-    String? imageUrl = currentImageUrl;
-    if (newImage != null) {
-      imageUrl = await R2StorageService.instance.uploadImage(
-        bucket: 'post-images',
-        path: 'products/${ref.id}_${DateTime.now().millisecondsSinceEpoch}.jpg',
-        bytes: newImage,
-      );
+    final urls = <String>[];
+    for (final p in photos.take(maxProductPhotos)) {
+      if (p.url != null) {
+        urls.add(p.url!);
+      } else if (p.bytes != null) {
+        final url = await R2StorageService.instance.uploadImage(
+          bucket: 'post-images',
+          path: 'products/${ref.id}_${DateTime.now().microsecondsSinceEpoch}.jpg',
+          bytes: p.bytes!,
+        );
+        if (url != null) urls.add(url);
+      }
     }
     await ref.set({
       'name': name,
       'price': price,
       'description': description,
       'inStock': inStock,
-      'imageUrl': imageUrl,
+      'imageUrl': urls.isEmpty ? null : urls.first,
+      'imageUrls': urls,
       'updatedAt': FieldValue.serverTimestamp(),
       if (productId == null) 'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -78,6 +84,16 @@ class ShopRepository {
     }
   }
 
+  /// Removes a finished order from my list (server checks the 2 days).
+  Future<void> deleteOrder(String orderId) async {
+    try {
+      await R2StorageService.instance
+          .callFunction('deleteOrder', {'orderId': orderId});
+    } on HttpException catch (e) {
+      throw ShopException(e.message);
+    }
+  }
+
   Stream<ShopOrder?> order(String orderId) => _db
       .collection('orders')
       .doc(orderId)
@@ -97,7 +113,10 @@ class ShopRepository {
           .orderBy('createdAt', descending: true)
           .limit(50)
           .snapshots()
-          .map((s) => s.docs.map(ShopOrder.fromDoc).toList());
+          .map((s) => s.docs
+              .map(ShopOrder.fromDoc)
+              .where((o) => asShop ? !o.shopHidden : !o.buyerHidden)
+              .toList());
     }
 
     if (!asShop) return q('buyerId');

@@ -14,6 +14,22 @@ class AppTheme {
       error: AppColors.error,
     ),
     scaffoldBackgroundColor: AppColors.background,
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: const Color(0xF2161B26),
+      contentTextStyle: const TextStyle(
+        color: Colors.white,
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+      ),
+      actionTextColor: AppColors.primary,
+      width: 420,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0x33FFFFFF)),
+      ),
+    ),
     appBarTheme: AppBarTheme(
       backgroundColor: AppColors.white,
       elevation: 0,
@@ -112,6 +128,22 @@ class AppTheme {
       error: AppColors.error,
     ),
     scaffoldBackgroundColor: Colors.transparent,
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: const Color(0xF2161B26),
+      contentTextStyle: const TextStyle(
+        color: Colors.white,
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+      ),
+      actionTextColor: AppColors.primary,
+      width: 420,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0x33FFFFFF)),
+      ),
+    ),
     appBarTheme: const AppBarTheme(
       centerTitle: false,
       titleSpacing: 0,

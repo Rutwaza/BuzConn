@@ -18,6 +18,7 @@ import '../../moderation/moderation.dart';
 import '../data/chat_repository.dart';
 import '../data/group_service.dart';
 import 'people_picker.dart';
+import 'package:businessfinder/core/widgets/app_toast.dart';
 
 Future<String?> _uploadGroupPhoto() async {
   final f = await MediaPicker.pickImage(maxWidth: 720);
@@ -409,8 +410,7 @@ class GroupInfoPage extends StatelessWidget {
                             await Clipboard.setData(ClipboardData(
                                 text: GroupService.inviteLink(code)));
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(tr('Invite link copied'))));
+                              showToast(context, tr('Invite link copied'));
                             }
                           },
                         ),

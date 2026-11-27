@@ -16,6 +16,7 @@ import '../../../core/theme/colors.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/services/r2_storage_service.dart';
+import 'package:businessfinder/core/widgets/app_toast.dart';
 
 class ProfileCompletionPage extends ConsumerStatefulWidget {
   const ProfileCompletionPage({super.key});
@@ -150,9 +151,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to upload photo: $e')),
-        );
+        showToast(context, 'Failed to upload photo: $e');
       }
     } finally {
       if (mounted) {
@@ -209,11 +208,7 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
           _isLoading = false;
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to save profile: $e'),
-          ),
-        );
+        showToast(context, 'Failed to save profile: $e');
       }
     }
   }
@@ -263,20 +258,11 @@ class _ProfileCompletionPageState extends ConsumerState<ProfileCompletionPage> {
                     ?.updatePassword(newPass);
                 if (mounted) {
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(tr('Password updated.')),
-                    ),
-                  );
+                  showToast(context, tr('Password updated.'));
                 }
               } on FirebaseAuthException {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                          tr('Failed to update password. Please re-login.')),
-                    ),
-                  );
+                  showToast(context, tr('Failed to update password. Please re-login.'));
                 }
               }
             },

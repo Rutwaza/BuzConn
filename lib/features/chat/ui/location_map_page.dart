@@ -103,7 +103,8 @@ class _LocationMapPageState extends State<LocationMapPage> {
           return Scaffold(
             appBar: AppBar(title: Text(tr('Location'))),
             body: Center(
-              child: snap.connectionState == ConnectionState.waiting
+              child: snap.connectionState == ConnectionState.waiting &&
+              !snap.hasData
                   ? const CircularProgressIndicator()
                   : Text(tr('This location is no longer available.')),
             ),

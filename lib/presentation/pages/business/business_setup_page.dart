@@ -24,6 +24,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/opening_hours.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/services/r2_storage_service.dart';
+import 'package:businessfinder/core/widgets/app_toast.dart';
 
 class BusinessSetupPage extends ConsumerStatefulWidget {
   const BusinessSetupPage({super.key, this.editBusinessId});
@@ -246,10 +247,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
         });
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(tr('Failed to create page. Please try again.'))),
-          );
+          showToast(context, tr('Failed to create page. Please try again.'));
         }
       }
     }
@@ -312,9 +310,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Image picker failed: $e')),
-        );
+        showToast(context, 'Image picker failed: $e');
       }
     }
   }
@@ -404,9 +400,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
     _googleMapsLinkController.text = _buildMapsLinkFromCoordinates(point);
     if (successMessage != null && mounted) {
       HapticFeedback.lightImpact();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(successMessage)),
-      );
+      showToast(context, successMessage);
     }
   }
 
@@ -414,9 +408,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
     final address = _addressController.text.trim();
     if (address.isEmpty) {
       if (showFeedback && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(tr('Add your address first'))),
-        );
+        showToast(context, tr('Add your address first'));
       }
       return;
     }
@@ -521,9 +513,7 @@ class _BusinessSetupPageState extends ConsumerState<BusinessSetupPage> {
 
     final text = data?.text?.trim() ?? '';
     if (text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('Clipboard is empty'))),
-      );
+      showToast(context, tr('Clipboard is empty'));
       return;
     }
 

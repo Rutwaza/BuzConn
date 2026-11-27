@@ -40,6 +40,7 @@ import 'package:businessfinder/features/chat/data/presence_service.dart';
 import 'package:businessfinder/features/chat/logic/chat_messages_controller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_constants.dart';
+import 'package:businessfinder/core/widgets/app_toast.dart';
 
 part 'widgets/chat_media_viewer.dart';
 part 'widgets/ghost_message.dart';
@@ -51,10 +52,14 @@ class ChatPage extends ConsumerStatefulWidget {
   final String chatId;
   final bool embedded;
 
+  /// Inbox (desktop): arrow to go back to the empty panel.
+  final VoidCallback? onBack;
+
   const ChatPage({
     super.key,
     required this.chatId,
     this.embedded = false,
+    this.onBack,
   });
 
   @override
@@ -196,9 +201,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       }, SetOptions(merge: true));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save ghost mode preference: $error')),
-      );
+      showToast(context, 'Could not save ghost mode preference: $error');
     }
   }
 
@@ -214,9 +217,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not update request: $error')),
-      );
+      showToast(context, 'Could not update request: $error');
     }
   }
 
@@ -321,9 +322,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           );
           setState(() => _replyingTo = replyTo);
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Message not sent: $e')),
-        );
+        showToast(context, 'Message not sent: $e');
       }),
     );
   }
@@ -404,9 +403,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
         if (url == null) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(tr('Upload failed. Try again.'))),
-            );
+            showToast(context, tr('Upload failed. Try again.'));
           }
           continue;
         }
@@ -424,9 +421,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Media send failed: $e')),
-        );
+        showToast(context, 'Media send failed: $e');
       }
     } finally {
       if (mounted) {
@@ -466,14 +461,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         bytes: Uint8List.fromList(bytes),
       );
       if (savedPath == null || !mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Saved to $savedPath')),
-      );
+      showToast(context, 'Saved to $savedPath');
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not download file: $error')),
-      );
+      showToast(context, 'Could not download file: $error');
     }
   }
 
@@ -585,11 +576,20 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             );
           });
         }
+        // Inside the inbox the chat gets the whole space (no side panel).
         final useDesktopSplitLayout =
-            MediaQuery.of(context).size.width >= (widget.embedded ? 860 : 1180);
+            !widget.embedded && MediaQuery.of(context).size.width >= 1180;
         final appBar = AppBar(
           scrolledUnderElevation: 0,
-          titleSpacing: 10,
+          automaticallyImplyLeading: false,
+          leading: widget.embedded && widget.onBack != null
+              ? IconButton(
+                  tooltip: tr('Back to inbox'),
+                  onPressed: widget.onBack,
+                  icon: const Icon(Icons.arrow_back_rounded),
+                )
+              : null,
+          titleSpacing: widget.embedded && widget.onBack != null ? 0 : 10,
           title: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: !isGroup
@@ -715,7 +715,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   ));
                   return;
                 }
-                if (value == 'profile') {
+                if (value == 'user_profile') {
+                  if (otherUserId != null && otherUserId.isNotEmpty && context.mounted) {
+                    context.push(AppRoutes.clientProfilePath(otherUserId));
+                  }
+                } else if (value == 'profile') {
                   final businessId = chatData['businessId'] as String?;
                   if (businessId != null && context.mounted) {
                     context.push(AppRoutes.businessProfilePath(businessId));
@@ -727,11 +731,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       initialIndex: 0,
                     );
                   } else if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(tr('No media yet')),
-                      ),
-                    );
+                    showToast(context, tr('No media yet'));
                   }
                 } else if (value == 'safety') {
                   if (otherUserId != null) {
@@ -761,9 +761,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       }
                     } catch (e) {
                       if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Clear failed: $e')),
-                        );
+                        showToast(context, 'Clear failed: $e');
                       }
                     }
                   }
@@ -787,6 +785,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       child: Text(tr('View profile')),
                     ),
                   );
+                }
+                if (!isGroup &&
+                    (chatType == 'direct' || isBusinessOwner) &&
+                    otherUserId != null &&
+                    otherUserId.isNotEmpty) {
+                  items.add(PopupMenuItem(
+                    value: 'user_profile',
+                    child: Text(tr('View profile')),
+                  ));
                 }
                 if (_hasIncomingCall || _hasActiveCall) {
                   items.add(
@@ -1300,7 +1307,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         if (widget.embedded) {
           return ColoredBox(
             color: backgroundColor,
-            child: body,
+            child: Column(
+              children: [
+                SizedBox(
+                  height: appBar.preferredSize.height,
+                  child: MediaQuery.removePadding(
+                    context: context,
+                    removeTop: true,
+                    child: appBar,
+                  ),
+                ),
+                Expanded(child: body),
+              ],
+            ),
           );
         }
 
@@ -1444,6 +1463,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             _messageKeys.putIfAbsent(messageId, () => GlobalKey());
             final isLinkOnly = _isSingleUrl(text.toString());
             final isAudio = mediaUrl != null && mediaType == 'audio';
+            final isVisual = !deleted &&
+                mediaUrl != null &&
+                (mediaType == 'image' || mediaType == 'video');
             final isEmojiOnly = !isGhost &&
                 _isEmojiOnly(text.toString()) &&
                 mediaUrl == null &&
@@ -1532,30 +1554,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               final index = mediaItems.indexWhere(
                 (item) => item.url == mediaUrl,
               );
-              content = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  InkWell(
-                    onTap: () => _openMediaViewer(
-                      items: mediaItems,
-                      initialIndex: index < 0 ? 0 : index,
-                    ),
-                    child: FutureBuilder<String>(
-                      future: _resolveChatMediaUrl(mediaUrl),
-                      builder: (context, snapshot) {
-                        final url = snapshot.data;
-                        if (url == null) {
-                          return const SizedBox(
-                            width: 200,
-                            height: 120,
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-                        return Image.network(url, width: 200);
-                      },
-                    ),
-                  ),
-                ],
+              content = _ChatPhoto(
+                resolve: () => _resolveChatMediaUrl(mediaUrl),
+                onTap: () => _openMediaViewer(
+                  items: mediaItems,
+                  initialIndex: index < 0 ? 0 : index,
+                ),
               );
             } else if (mediaUrl != null && mediaType == 'audio') {
               content = _AudioMessageTile(
@@ -1575,9 +1579,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                         await _openLink(await _resolveChatMediaUrl(mediaUrl));
                       } catch (e) {
                         if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Could not open file: $e')),
-                          );
+                          showToast(context, 'Could not open file: $e');
                         }
                       }
                     },
@@ -1620,57 +1622,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               final index = mediaItems.indexWhere(
                 (item) => item.url == mediaUrl,
               );
-              content = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  FutureBuilder<String>(
-                    future: _resolveChatMediaUrl(mediaUrl),
-                    builder: (context, urlSnapshot) {
-                      final url = urlSnapshot.data;
-                      if (url == null) {
-                        return const SizedBox(
-                          width: 200,
-                          height: 120,
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      return FutureBuilder<Uint8List?>(
-                        future: _getVideoThumbnail(url),
-                        builder: (context, snap) {
-                          final bytes = snap.data;
-                          return InkWell(
-                            onTap: () {
-                              _openMediaViewer(
-                                items: mediaItems,
-                                initialIndex: index < 0 ? 0 : index,
-                              );
-                            },
-                            child: Container(
-                              width: 200,
-                              height: 120,
-                              color: replyBarColor,
-                              child: bytes == null
-                                  ? const Center(
-                                      child: Icon(Icons.play_circle_fill,
-                                          size: 36),
-                                    )
-                                  : Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        Image.memory(bytes, fit: BoxFit.cover),
-                                        const Center(
-                                          child: Icon(Icons.play_circle_fill,
-                                              size: 36),
-                                        ),
-                                      ],
-                                    ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ],
+              content = _ChatVideoThumb(
+                resolve: () => _resolveChatMediaUrl(mediaUrl),
+                thumbnail: _getVideoThumbnail,
+                onTap: () => _openMediaViewer(
+                  items: mediaItems,
+                  initialIndex: index < 0 ? 0 : index,
+                ),
               );
             } else if (mediaType == 'call') {
               content = Row(
@@ -1728,15 +1686,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   content,
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: () => _downloadChatMedia(
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                        (mediaType == 'image' || mediaType == 'video') ? 8 : 0,
+                        6,
+                        0,
+                        0),
+                    child: _DownloadPill(
+                      isMe: isMe,
+                      onTap: () => _downloadChatMedia(
                         mediaRef: mediaUrl,
                         fileName: fileName,
                       ),
-                      icon: const Icon(Icons.download_rounded, size: 16),
-                      label: Text(tr('Download')),
                     ),
                   ),
                 ],
@@ -1851,7 +1812,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                 margin: const EdgeInsets.symmetric(vertical: 6),
                                 padding: (isLinkOnly || isAudio || isEmojiOnly)
                                     ? EdgeInsets.zero
-                                    : const EdgeInsets.all(10),
+                                    : isVisual
+                                        ? const EdgeInsets.fromLTRB(3, 3, 3, 6)
+                                        : const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
                                   color: (isLinkOnly || isAudio || isEmojiOnly)
                                       ? Colors.transparent
@@ -1996,9 +1959,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final hasPermission = await _recorder.hasPermission();
     if (!hasPermission) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(tr('Microphone permission required.'))),
-        );
+        showToast(context, tr('Microphone permission required.'));
       }
       return;
     }
@@ -2120,9 +2081,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
       if (url == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(tr('Upload failed. Try again.'))),
-          );
+          showToast(context, tr('Upload failed. Try again.'));
         }
         return;
       }
@@ -2140,9 +2099,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Voice note failed: $e')),
-        );
+        showToast(context, 'Voice note failed: $e');
       }
     } finally {
       try {
@@ -2214,9 +2171,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         );
         if (url == null) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(tr('Upload failed. Try again.'))),
-            );
+            showToast(context, tr('Upload failed. Try again.'));
           }
           continue;
         }
@@ -2236,9 +2191,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Document send failed: $e')),
-        );
+        showToast(context, 'Document send failed: $e');
       }
     } finally {
       if (mounted) {
@@ -2643,9 +2596,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ghost message deletion failed: $e')),
-      );
+      showToast(context, 'Ghost message deletion failed: $e');
     }
   }
 
@@ -2977,9 +2928,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       return;
     }
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('No app found to open this link.'))),
-      );
+      showToast(context, tr('No app found to open this link.'));
     }
   }
 
@@ -3150,9 +3099,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not open chat media: $e')),
-        );
+        showToast(context, 'Could not open chat media: $e');
       }
     }
   }

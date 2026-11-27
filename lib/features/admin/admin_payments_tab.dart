@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/colors.dart';
 import '../billing/billing_service.dart';
+import 'package:businessfinder/core/widgets/app_toast.dart';
 
 /// Admin panel -> Payments (admin only).
 ///  - Prices: extra page, boost packages, free pages per person.
@@ -25,6 +26,7 @@ class _AdminPaymentsTabState extends State<AdminPaymentsTab> {
   String _filter = 'all';
 
   final _pagePrice = TextEditingController();
+  final _secondPrice = TextEditingController();
   final _freePages = TextEditingController();
   final _accountId = TextEditingController();
   final _codePage = TextEditingController();
@@ -42,7 +44,7 @@ class _AdminPaymentsTabState extends State<AdminPaymentsTab> {
 
   @override
   void dispose() {
-    for (final c in [_pagePrice, _freePages, _accountId, _codePage, _codeBoost, ..._boostDays, ..._boostPrice]) {
+    for (final c in [_pagePrice, _secondPrice, _freePages, _accountId, _codePage, _codeBoost, ..._boostDays, ..._boostPrice]) {
       c.dispose();
     }
     super.dispose();
@@ -55,6 +57,7 @@ class _AdminPaymentsTabState extends State<AdminPaymentsTab> {
       final ir = Map<String, dynamic>.from(c['irembopay'] as Map? ?? {});
       final codes = Map<String, dynamic>.from(ir['productCodes'] as Map? ?? {});
       _pagePrice.text = '${c['pageSlotPrice'] ?? ''}';
+      _secondPrice.text = c['secondPagePrice'] == null ? '' : '${c['secondPagePrice']}';
       _freePages.text = '${c['freePages'] ?? 1}';
       _accountId.text = (ir['accountId'] ?? '').toString();
       _codePage.text = (codes['page_slot'] ?? '').toString();
@@ -75,7 +78,7 @@ class _AdminPaymentsTabState extends State<AdminPaymentsTab> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not load: $e')));
+        showToast(context, 'Could not load: $e');
       }
     }
   }
@@ -89,6 +92,10 @@ class _AdminPaymentsTabState extends State<AdminPaymentsTab> {
         'config': {
           'ready': _ready,
           'pageSlotPrice': int.tryParse(_pagePrice.text.trim()) ?? 0,
+          // Empty = the 2nd page costs the same as the others.
+          'secondPagePrice': _secondPrice.text.trim().isEmpty
+              ? null
+              : (int.tryParse(_secondPrice.text.trim()) ?? 0),
           'freePages': int.tryParse(_freePages.text.trim()) ?? 1,
           'boostPackages': [
             for (var i = 0; i < _boostDays.length; i++)
@@ -309,12 +316,28 @@ class _AdminPaymentsTabState extends State<AdminPaymentsTab> {
           Row(children: [
             Expanded(
               child: TextField(
-                controller: _pagePrice,
+                controller: _secondPrice,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'One extra page (paid once)'),
+                decoration: const InputDecoration(
+                  labelText: '2nd page (paid once)',
+                  helperText: 'Empty = same as the next ones',
+                ),
               ),
             ),
             const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: _pagePrice,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '3rd page and more (each)',
+                  helperText: 'Paid once per page',
+                ),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
             Expanded(
               child: TextField(
                 controller: _freePages,
@@ -322,6 +345,8 @@ class _AdminPaymentsTabState extends State<AdminPaymentsTab> {
                 decoration: const InputDecoration(labelText: 'Free pages per person'),
               ),
             ),
+            const SizedBox(width: 10),
+            const Expanded(child: SizedBox()),
           ]),
           const SizedBox(height: 14),
           const Text('Boost packages', style: TextStyle(fontWeight: FontWeight.w700)),

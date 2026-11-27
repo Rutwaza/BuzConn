@@ -23,6 +23,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
 import '../../../data/repositories/posts_repository.dart';
+import 'package:businessfinder/core/widgets/app_toast.dart';
 
 class PostDetailPage extends StatefulWidget {
   final Post post;
@@ -235,9 +236,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('Could not open Google Maps'))),
-      );
+      showToast(context, tr('Could not open Google Maps'));
     }
   }
 
@@ -288,10 +287,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
         _pendingComments.removeWhere((comment) => comment.id == optimistic.id);
       });
       _commentController.text = text;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Comment not sent. Check your connection. ($e)')),
-      );
+      showToast(context, 'Comment not sent. Check your connection. ($e)');
     } finally {
       if (mounted) {
         setState(() {

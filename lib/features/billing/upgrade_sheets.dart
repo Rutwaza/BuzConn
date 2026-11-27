@@ -90,7 +90,7 @@ class _PageSlotsSheetState extends State<_PageSlotsSheet> {
                       icon: Icons.add_business_rounded,
                       title: tr('One more page'),
                       subtitle: tr('You can create a new page right after paying.'),
-                      amount: info.pageSlotPrice,
+                      amount: info.nextPagePrice,
                     );
                     if (paid) nav.pop(true);
                   },
@@ -100,7 +100,7 @@ class _PageSlotsSheetState extends State<_PageSlotsSheet> {
                         borderRadius: BorderRadius.circular(14)),
                   ),
                   icon: const Icon(Icons.lock_open_rounded, size: 18),
-                  label: Text('${tr('Get one more page')} · ${rwf(info.pageSlotPrice)}'),
+                  label: Text('${tr('Get one more page')} · ${rwf(info.nextPagePrice)}'),
                 ),
             ],
           );

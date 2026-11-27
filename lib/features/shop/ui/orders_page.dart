@@ -4,6 +4,7 @@ import 'package:businessfinder/core/i18n/tr.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/theme/colors.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../data/shop_models.dart';
 import '../data/shop_repository.dart';
 import 'checkout_sheet.dart';
@@ -144,6 +145,52 @@ class _OrderCard extends StatelessWidget {
       ));
     }
 
+    Widget? deleteRow;
+    if (o.isFinished) {
+      final from = o.deletableFrom;
+      if (o.canDelete) {
+        deleteRow = Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (c) => AlertDialog(
+                  title: Text(tr('Delete this order?')),
+                  content: Text(tr('It will be removed from your list.')),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(c, false),
+                        child: Text(tr('Cancel'))),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(c, true),
+                        child: Text(tr('Delete'))),
+                  ],
+                ),
+              );
+              if (ok != true) return;
+              try {
+                await repo.deleteOrder(o.id);
+              } catch (e) {
+                if (context.mounted) {
+                  showToast(context, e.toString(), kind: ToastKind.error);
+                }
+              }
+            },
+            icon: const Icon(Icons.delete_outline_rounded, size: 18),
+            label: Text(tr('Delete')),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+          ),
+        );
+      } else if (from != null) {
+        final days = from.difference(DateTime.now()).inDays + 1;
+        deleteRow = Text(
+          '${tr('You can delete this in')} $days ${days == 1 ? tr('day') : tr('days')}',
+          style: const TextStyle(fontSize: 11.5, color: AppColors.grey),
+        );
+      }
+    }
+
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
@@ -193,6 +240,10 @@ class _OrderCard extends StatelessWidget {
             if (buttons.isNotEmpty) ...[
               const SizedBox(height: 10),
               Wrap(alignment: WrapAlignment.end, spacing: 8, children: buttons),
+            ],
+            if (deleteRow != null) ...[
+              const SizedBox(height: 8),
+              deleteRow,
             ],
           ],
         ),

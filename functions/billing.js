@@ -35,7 +35,8 @@ const DEFAULTS = {
   provider: "irembopay",
   currency: "RWF",
   freePages: 1,
-  pageSlotPrice: 5000,
+  pageSlotPrice: 5000, // each further page (3rd and more)
+  secondPagePrice: null, // the 2nd page; empty = same as pageSlotPrice
   boostPackages: [
     {id: "boost_3d", days: 3, price: 2000},
     {id: "boost_7d", days: 7, price: 4000},
@@ -69,6 +70,14 @@ async function pageSlots(uid, cfg) {
   const used = pages.docs.filter((d) => d.data().isActive !== false).length;
   const total = (Number(cfg.freePages) || 1) + bought;
   return {free: Number(cfg.freePages) || 1, bought, total, used, canCreate: used < total};
+}
+
+/** What the NEXT extra page costs this person: the 2nd page has its own price. */
+function nextPagePrice(cfg, slots) {
+  const first = slots.bought === 0; // nothing bought yet: this is the 2nd page
+  const second = Number(cfg.secondPagePrice);
+  if (first && cfg.secondPagePrice !== null && cfg.secondPagePrice !== undefined && second >= 0) return second;
+  return Number(cfg.pageSlotPrice);
 }
 
 function rwf(n) {
@@ -140,12 +149,15 @@ exports.billingInfo = onCall({region: REGION}, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Sign in first.");
   const cfg = await config();
+  const pages = await pageSlots(uid, cfg);
   return {
     ready: gatewayReady(cfg),
     currency: cfg.currency,
     pageSlotPrice: cfg.pageSlotPrice,
+    secondPagePrice: cfg.secondPagePrice ?? null,
+    nextPagePrice: nextPagePrice(cfg, pages),
     boostPackages: cfg.boostPackages,
-    pages: await pageSlots(uid, cfg),
+    pages,
   };
 });
 
@@ -169,7 +181,7 @@ exports.startPurchase = onCall({region: REGION, secrets: BILLING_SECRETS}, async
     createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
   };
   if (item === "page_slot") {
-    payment.amount = Number(cfg.pageSlotPrice);
+    payment.amount = nextPagePrice(cfg, await pageSlots(uid, cfg));
     payment.description = "Duhuze: one extra page";
   } else if (item === "boost") {
     const postId = String(d.postId || "");
@@ -272,6 +284,9 @@ exports.adminBilling = onCall({region: REGION}, async (request) => {
     const clean = {};
     if (typeof c.ready === "boolean") clean.ready = c.ready;
     if (Number.isInteger(c.pageSlotPrice) && c.pageSlotPrice >= 0) clean.pageSlotPrice = c.pageSlotPrice;
+    // The 2nd page: its own price, or null to use the same price as the others.
+    if (c.secondPagePrice === null) clean.secondPagePrice = null;
+    else if (Number.isInteger(c.secondPagePrice) && c.secondPagePrice >= 0) clean.secondPagePrice = c.secondPagePrice;
     if (Number.isInteger(c.freePages) && c.freePages >= 1 && c.freePages <= 10) clean.freePages = c.freePages;
     if (Array.isArray(c.boostPackages)) {
       clean.boostPackages = c.boostPackages.slice(0, 6).map((p, i) => ({
@@ -336,4 +351,4 @@ exports.adminBilling = onCall({region: REGION}, async (request) => {
   throw new HttpsError("invalid-argument", "Unknown action.");
 });
 
-exports._billingInternals = {config, pageSlots, fulfill, DEFAULTS};
+exports._billingInternals = {config, pageSlots, fulfill, nextPagePrice, DEFAULTS};

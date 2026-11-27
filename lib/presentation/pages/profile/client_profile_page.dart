@@ -17,6 +17,7 @@ import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
 import 'package:businessfinder/features/chat/data/chat_repository.dart';
 import '../business/post_detail_page.dart' as business_post;
+import 'package:businessfinder/core/widgets/app_toast.dart';
 
 class ClientProfilePage extends StatefulWidget {
   final String userId;
@@ -75,9 +76,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
     final uri = Uri(scheme: 'tel', path: phone.replaceAll(RegExp(r'\s+'), ''));
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('Could not open dialer.'))),
-      );
+      showToast(context, tr('Could not open dialer.'));
     }
   }
 
@@ -102,9 +101,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
           .get();
       if (businessesSnap.docs.isEmpty) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(tr('Create a page before messaging.'))),
-          );
+          showToast(context, tr('Create a page before messaging.'));
         }
         return;
       }
@@ -186,11 +183,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                     child: ElevatedButton(
                       onPressed: () {
                         Navigator.of(context).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                              content:
-                                  Text(tr('Premium upgrade is coming soon!'))),
-                        );
+                        showToast(context, tr('Premium upgrade is coming soon!'));
                       },
                       child: Text(tr('Go Premium')),
                     ),
@@ -256,8 +249,7 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Logo upload failed: $e')));
+        showToast(context, 'Logo upload failed: $e');
       }
     } finally {
       if (mounted) setState(() => _selectedLogo = null);
@@ -298,7 +290,8 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
             .doc(widget.userId)
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.hasData || !snapshot.data!.exists) {
@@ -726,7 +719,8 @@ class _ClientProfilePageState extends State<ClientProfilePage> {
                 .limit(5)
                 .snapshots(),
             builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
+              if (snap.connectionState == ConnectionState.waiting &&
+              !snap.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
               final docs = snap.data?.docs ?? [];

@@ -23,6 +23,7 @@ import '../../../data/models/post_model.dart';
 import 'post_detail_page.dart';
 import 'package:businessfinder/features/chat/data/chat_repository.dart';
 import '../../../core/constants/app_constants.dart';
+import 'package:businessfinder/core/widgets/app_toast.dart';
 
 class BusinessProfilePage extends StatefulWidget {
   final String businessId;
@@ -59,7 +60,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
             .doc(widget.businessId)
             .snapshots(),
         builder: (context, businessSnapshot) {
-          if (businessSnapshot.connectionState == ConnectionState.waiting) {
+          if (businessSnapshot.connectionState == ConnectionState.waiting &&
+              !businessSnapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
           if (!businessSnapshot.hasData || !businessSnapshot.data!.exists) {
@@ -460,8 +462,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
                       .where('ownerId', isEqualTo: ownerId)
                       .snapshots(),
                   builder: (context, postsSnapshot) {
-                    if (postsSnapshot.connectionState ==
-                        ConnectionState.waiting) {
+                    if (postsSnapshot.connectionState == ConnectionState.waiting &&
+              !postsSnapshot.hasData) {
                       return const Center(child: CircularProgressIndicator());
                     }
                     final docs = postsSnapshot.data?.docs ?? [];
@@ -578,7 +580,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
               .where('ownerId', isEqualTo: ownerId)
               .snapshots(),
           builder: (context, postsSnapshot) {
-            if (postsSnapshot.connectionState == ConnectionState.waiting) {
+            if (postsSnapshot.connectionState == ConnectionState.waiting &&
+              !postsSnapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
 
@@ -1215,7 +1218,8 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
               child: FutureBuilder<LatLng?>(
                 future: _getBusinessLocation(business),
                 builder: (context, snap) {
-                  if (snap.connectionState == ConnectionState.waiting) {
+                  if (snap.connectionState == ConnectionState.waiting &&
+              !snap.hasData) {
                     return Container(
                       color: isDark ? Colors.white10 : Colors.black12,
                       child: const Center(child: CircularProgressIndicator()),
@@ -1474,9 +1478,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
     if (uri == null) return;
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('Could not open the map location.'))),
-      );
+      showToast(context, tr('Could not open the map location.'));
     }
   }
 
@@ -1652,9 +1654,7 @@ class _BusinessProfilePageState extends State<BusinessProfilePage> {
       mode: LaunchMode.externalApplication,
     );
     if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('Could not open dialer.'))),
-      );
+      showToast(context, tr('Could not open dialer.'));
     }
   }
 }

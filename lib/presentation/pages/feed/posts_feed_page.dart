@@ -46,6 +46,7 @@ import 'package:businessfinder/features/chat/data/chat_repository.dart';
 import '../../../core/services/r2_storage_service.dart';
 import '../business/post_detail_page.dart' as business_post;
 import 'package:visibility_detector/visibility_detector.dart';
+import 'package:businessfinder/core/widgets/app_toast.dart';
 
 class PostsFeedPage extends ConsumerStatefulWidget {
   const PostsFeedPage({super.key, this.initialPostId});
@@ -109,14 +110,10 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       }
     } on FirebaseException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Follow update failed: ${e.message ?? e.code}')),
-      );
+      showToast(context, 'Follow update failed: ${e.message ?? e.code}');
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('Follow update failed'))),
-      );
+      showToast(context, tr('Follow update failed'));
     }
   }
 
@@ -232,14 +229,10 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       }
     } on FirebaseException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Follow update failed: ${e.message ?? e.code}')),
-      );
+      showToast(context, 'Follow update failed: ${e.message ?? e.code}');
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('Follow update failed'))),
-      );
+      showToast(context, tr('Follow update failed'));
     }
   }
 
@@ -390,9 +383,7 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
     } catch (e) {
       debugPrint('Failed to load feed: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(tr('Failed to load feed'))),
-        );
+        showToast(context, tr('Failed to load feed'));
       }
     } finally {
       if (mounted) {
@@ -2498,14 +2489,10 @@ class _PostsFeedPageState extends ConsumerState<PostsFeedPage> {
       if (await canLaunchUrl(url)) {
         await launchUrl(url, mode: LaunchMode.externalApplication);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(tr('Could not open Google Maps'))),
-        );
+        showToast(context, tr('Could not open Google Maps'));
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('Location not available'))),
-      );
+      showToast(context, tr('Location not available'));
     }
   }
 
@@ -4649,8 +4636,7 @@ class PostCard extends StatelessWidget {
                             } else if (value == 'link') {
                               Clipboard.setData(
                                   ClipboardData(text: postLink(post.id)));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(tr('Link copied'))));
+                              showToast(context, tr('Link copied'));
                             } else if (value == 'report') {
                               showReportSheet(context,
                                   targetType: 'post',

@@ -356,3 +356,225 @@ class _TypingDotsState extends State<_TypingDots>
     );
   }
 }
+
+/// A picture in a chat bubble: rounded, no heavy box around it, shows a soft
+/// placeholder while loading and a tap-to-retry card when it cannot load
+/// (instead of a red error box).
+class _ChatPhoto extends StatefulWidget {
+  const _ChatPhoto({
+    required this.resolve,
+    this.onTap,
+    this.width = 260,
+    this.height,
+    this.radius = 18,
+    this.square = false,
+  });
+
+  final Future<String> Function() resolve;
+  final VoidCallback? onTap;
+  final double width;
+  final double? height;
+  final double radius;
+  final bool square;
+
+  @override
+  State<_ChatPhoto> createState() => _ChatPhotoState();
+}
+
+class _ChatPhotoState extends State<_ChatPhoto> {
+  late Future<String> _url = widget.resolve();
+  int _attempt = 0;
+
+  void _retry() => setState(() {
+        _attempt++;
+        _url = widget.resolve();
+      });
+
+  Widget _box(Widget child) => SizedBox(
+        width: widget.square ? null : widget.width,
+        height: widget.height ?? (widget.square ? null : 160),
+        child: child,
+      );
+
+  Widget _soft({required Widget child, VoidCallback? onTap}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return _box(
+      Material(
+        color: isDark ? Colors.white10 : Colors.black12,
+        borderRadius: BorderRadius.circular(widget.radius),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(widget.radius),
+          onTap: onTap,
+          child: Center(child: child),
+        ),
+      ),
+    );
+  }
+
+  Widget _broken() => _soft(
+        onTap: _retry,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.image_not_supported_outlined, size: 26),
+            if (!widget.square) ...[
+              const SizedBox(height: 6),
+              Text(tr('Could not load · tap to retry'),
+                  style: const TextStyle(fontSize: 11)),
+            ],
+          ],
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String>(
+      future: _url,
+      builder: (context, snap) {
+        if (snap.hasError) return _broken();
+        final url = snap.data;
+        if (url == null) {
+          return _soft(
+            child: const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+        return GestureDetector(
+          onTap: widget.onTap,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(widget.radius),
+            child: _box(
+              Image.network(
+                url,
+                key: ValueKey(_attempt),
+                fit: BoxFit.cover,
+                width: widget.square ? null : widget.width,
+                height: widget.height ?? (widget.square ? null : 160),
+                errorBuilder: (_, __, ___) => _broken(),
+                loadingBuilder: (c, child, progress) => progress == null
+                    ? child
+                    : _soft(
+                        child: const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// A video in a chat bubble: thumbnail (when the phone can make one) with a
+/// play button.
+class _ChatVideoThumb extends StatefulWidget {
+  const _ChatVideoThumb({
+    required this.resolve,
+    required this.thumbnail,
+    this.onTap,
+    this.width = 260,
+    this.height = 160,
+  });
+
+  final Future<String> Function() resolve;
+  final Future<Uint8List?> Function(String url) thumbnail;
+  final VoidCallback? onTap;
+  final double width;
+  final double height;
+
+  @override
+  State<_ChatVideoThumb> createState() => _ChatVideoThumbState();
+}
+
+class _ChatVideoThumbState extends State<_ChatVideoThumb> {
+  late final Future<Uint8List?> _thumb =
+      widget.resolve().then(widget.thumbnail).catchError((_) => null);
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: SizedBox(
+          width: widget.width,
+          height: widget.height,
+          child: FutureBuilder<Uint8List?>(
+            future: _thumb,
+            builder: (context, snap) {
+              final bytes = snap.data;
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (bytes != null)
+                    Image.memory(bytes, fit: BoxFit.cover)
+                  else
+                    ColoredBox(color: isDark ? Colors.white10 : Colors.black12),
+                  Center(
+                    child: Container(
+                      width: 46,
+                      height: 46,
+                      decoration: const BoxDecoration(
+                        color: Colors.black54,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.play_arrow_rounded,
+                          color: Colors.white, size: 30),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Small clear "Download" button that stays readable on any bubble colour.
+class _DownloadPill extends StatelessWidget {
+  const _DownloadPill({required this.isMe, required this.onTap});
+  final bool isMe;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isMe
+        ? Colors.white.withValues(alpha: 0.22)
+        : (isDark ? Colors.white12 : AppColors.primary.withValues(alpha: 0.12));
+    final fg = isMe ? Colors.white : (isDark ? Colors.white : AppColors.primary);
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.download_rounded, size: 16, color: fg),
+              const SizedBox(width: 6),
+              Text(
+                tr('Download'),
+                style: TextStyle(
+                    color: fg, fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

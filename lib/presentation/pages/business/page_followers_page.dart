@@ -22,7 +22,8 @@ class PageFollowersPage extends StatelessWidget {
             .where('pageId', isEqualTo: pageId)
             .snapshots(),
         builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
+          if (snap.connectionState == ConnectionState.waiting &&
+              !snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
           final docs = snap.data?.docs ?? [];

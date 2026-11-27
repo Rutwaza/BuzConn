@@ -10,6 +10,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/colors.dart';
 import 'package:businessfinder/features/chat/data/chat_repository.dart';
 import 'chat_page.dart';
+import 'package:businessfinder/core/widgets/app_toast.dart';
 
 class ChatListPage extends StatefulWidget {
   const ChatListPage({super.key, this.initialFilter});
@@ -41,9 +42,7 @@ class _ChatListPageState extends State<ChatListPage> {
       return true;
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not update request: $error')),
-        );
+        showToast(context, 'Could not update request: $error');
       }
       return false;
     }
@@ -57,7 +56,40 @@ class _ChatListPageState extends State<ChatListPage> {
     }
   }
 
+  // Kept between rebuilds so clicking a chat does not reload the whole list.
+  Stream<QuerySnapshot>? _chatsStream;
+  String? _chatsStreamUid;
+  Stream<QuerySnapshot> _chats(ChatRepository repo, String uid) {
+    if (_chatsStream == null || _chatsStreamUid != uid) {
+      _chatsStreamUid = uid;
+      _chatsStream = repo.userChatsStream(uid);
+    }
+    return _chatsStream!;
+  }
+
+  final Map<String, ({DateTime at, Future<Map<String, dynamic>> meta})>
+      _metaCache = {};
+
+  /// Name, photo and last-seen of the other side. The same answer is reused
+  /// for a minute so rows do not blink while the list rebuilds.
   Future<Map<String, dynamic>> _resolveChatMeta(
+    Map<String, dynamic> data,
+    String currentUserId,
+  ) {
+    final id = '${data['userAId']}|${data['userBId']}|${data['businessId']}|'
+        '${data['groupName']}|${data['groupImageUrl']}|${data['userAName']}|'
+        '${data['userBName']}|${data['businessName']}|${data['clientName']}|'
+        '${data['chatType']}|$currentUserId';
+    final hit = _metaCache[id];
+    if (hit != null && DateTime.now().difference(hit.at).inSeconds < 60) {
+      return hit.meta;
+    }
+    final meta = _loadChatMeta(data, currentUserId);
+    _metaCache[id] = (at: DateTime.now(), meta: meta);
+    return meta;
+  }
+
+  Future<Map<String, dynamic>> _loadChatMeta(
     Map<String, dynamic> data,
     String currentUserId,
   ) async {
@@ -391,9 +423,10 @@ class _ChatListPageState extends State<ChatListPage> {
               ),
               Expanded(
                 child: StreamBuilder<QuerySnapshot>(
-                  stream: repo.userChatsStream(user.uid),
+                  stream: _chats(repo, user.uid),
                   builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
                       return const Center(child: CircularProgressIndicator());
                     }
                     final docs = snapshot.data?.docs ?? [];
@@ -1019,96 +1052,12 @@ class _DesktopChatShell extends StatelessWidget {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.03)
-                  : AppColors.primary.withValues(alpha: 0.05),
-              border: Border(
-                bottom: BorderSide(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.06)
-                      : Colors.black.withValues(alpha: 0.05),
-                ),
-              ),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  tooltip: tr('Back to inbox'),
-                  onPressed: onBackToList,
-                  icon: const Icon(Icons.arrow_back_rounded),
-                ),
-                const SizedBox(width: 6),
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: AppColors.primary,
-                  backgroundImage: avatarUrl != null && avatarUrl!.isNotEmpty
-                      ? NetworkImage(avatarUrl!)
-                      : null,
-                  child: avatarUrl == null || avatarUrl!.isEmpty
-                      ? Text(
-                          title.isNotEmpty ? title[0].toUpperCase() : '?',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 18,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        activityLabel,
-                        style: TextStyle(
-                          color: isDark ? Colors.white60 : AppColors.grey,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    tr('Desktop chat'),
-                    style: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ChatPage(
-              chatId: chatId,
-              embedded: true,
-            ),
-          ),
-        ],
+      // The chat draws its own header: name, status, ghost eye, calls and
+      // the three-dot menu, with a back arrow to the list.
+      child: ChatPage(
+        chatId: chatId,
+        embedded: true,
+        onBack: onBackToList,
       ),
     );
   }

@@ -15,6 +15,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
 import '../../../data/repositories/posts_repository.dart';
+import 'package:businessfinder/core/widgets/app_toast.dart';
 
 class PostDetailPage extends StatefulWidget {
   const PostDetailPage({
@@ -158,9 +159,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('Could not open Google Maps'))),
-      );
+      showToast(context, tr('Could not open Google Maps'));
     }
   }
 
@@ -290,7 +289,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
             .doc(widget.postId)
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.hasData || !snapshot.data!.exists) {
@@ -449,12 +449,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                             IconButton(
                               icon: const Icon(Icons.forward),
                               onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content:
-                                        Text(tr('Share feature coming soon!')),
-                                  ),
-                                );
+                                showToast(context, tr('Share feature coming soon!'));
                               },
                             ),
                             const Spacer(),

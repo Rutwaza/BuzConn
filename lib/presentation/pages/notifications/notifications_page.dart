@@ -12,6 +12,7 @@ import '../../../core/services/notification_read_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../data/models/post_model.dart';
 import '../business/post_detail_page.dart';
+import 'package:businessfinder/core/widgets/app_toast.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -26,6 +27,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
   _NotificationFilter _filter = _NotificationFilter.all;
   bool get _selectionMode => _selectedIds.isNotEmpty;
 
+  // Made once, so selecting or filtering does not re-subscribe (no reload).
+  late final Stream<QuerySnapshot> _stream = FirebaseFirestore.instance
+      .collection('notifications')
+      .where('toUserId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
+      .orderBy('createdAt', descending: true)
+      .limit(100) // newest 100 only
+      .snapshots();
+
   @override
   void initState() {
     super.initState();
@@ -38,9 +47,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     } catch (e) {
       debugPrint('Failed to mark notifications read: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(tr('Failed to mark notifications read'))),
-        );
+        showToast(context, tr('Failed to mark notifications read'));
       }
     }
   }
@@ -153,15 +160,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
             : [],
       ),
       body: StreamBuilder<QuerySnapshot>(
-        // Newest 100 only (Phase 3); older ones are rarely opened.
-        stream: FirebaseFirestore.instance
-            .collection('notifications')
-            .where('toUserId', isEqualTo: user.uid)
-            .orderBy('createdAt', descending: true)
-            .limit(100)
-            .snapshots(),
+        stream: _stream,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {

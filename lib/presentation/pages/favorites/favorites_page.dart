@@ -29,7 +29,8 @@ class FavoritesPage extends StatelessWidget {
             .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
+          if (snap.connectionState == ConnectionState.waiting &&
+              !snap.hasData) {
             return _grid(context, count: 9, builder: (_) => const _TileShimmer());
           }
           final docs = snap.data?.docs ?? [];
@@ -197,6 +198,83 @@ class _SavedTileState extends State<_SavedTile> {
                     ],
                   ),
                 ),
+              // Always visible: what it is and who posted it, so you can tell
+              // saved posts apart even when a video has no picture yet.
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: IgnorePointer(
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(8, 22, 8, 7),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.78),
+                        ],
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (post.businessName.trim().isNotEmpty)
+                          Text(
+                            post.businessName.trim(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        if (post.content.trim().isNotEmpty)
+                          Text(
+                            post.content.trim().replaceAll('\n', ' '),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10.5,
+                              height: 1.2,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              // Kind of post, top left.
+              Positioned(
+                left: 6,
+                top: 6,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    post.media.isEmpty
+                        ? tr('Text')
+                        : post.media.first.isVideo
+                            ? tr('Video')
+                            : post.media.length > 1
+                                ? tr('Photos')
+                                : tr('Photo'),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
               // Hover (desktop): likes and comments, like Instagram.
               AnimatedOpacity(
                 opacity: _hover ? 1 : 0,

@@ -22,6 +22,7 @@ import '../../../data/models/post_model.dart';
 import '../../../data/repositories/posts_repository.dart';
 import '../../../core/services/r2_storage_service.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
+import 'package:businessfinder/core/widgets/app_toast.dart';
 
 class CreatePostPage extends ConsumerStatefulWidget {
   const CreatePostPage({super.key});
@@ -180,9 +181,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Image picker failed: $e')),
-        );
+        showToast(context, 'Image picker failed: $e');
       }
     }
   }
@@ -222,9 +221,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Video picker failed: $e')),
-        );
+        showToast(context, 'Video picker failed: $e');
       }
     }
   }
@@ -571,9 +568,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
 
   Future<void> _createPost() async {
     if (!_postAsProfile && _selectedBusinessId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('Please select a page.'))),
-      );
+      showToast(context, tr('Please select a page.'));
       return;
     }
     if (!_formKey.currentState!.validate()) return;

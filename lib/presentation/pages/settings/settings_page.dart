@@ -413,7 +413,8 @@ class _GhostModeSetting extends StatelessWidget {
                     tr('Choose whether new messages start in ghost mode.'),
                     style: const TextStyle(color: AppColors.grey, fontSize: 13)),
                 value: ghostMode,
-                onChanged: snapshot.connectionState == ConnectionState.waiting
+                onChanged: snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData
                     ? null
                     : (value) async {
                         await FirebaseFirestore.instance

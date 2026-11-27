@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -166,6 +167,11 @@ class _SearchPageState extends State<SearchPage> {
   }
   final Set<String> _resolvingPageLocations = {};
 
+  // The first page of a new list replaces the old one in one step.
+  bool _replaceBusinesses = false;
+  bool _replaceUsers = false;
+  bool _replacePosts = false;
+
   @override
   void dispose() {
     _controller.dispose();
@@ -179,6 +185,78 @@ class _SearchPageState extends State<SearchPage> {
     super.initState();
     _postScrollController.addListener(_onPostScroll);
     _resultsScrollController.addListener(_onResultsScroll);
+    _loadMapPages();
+  }
+
+  // ---- Discover map: pages near you, even before anything is typed ----
+  final List<Map<String, dynamic>> _mapSource = [];
+  LatLng? _myPoint;
+  bool _mapSourceLoaded = false;
+
+  Future<void> _loadMapPages() async {
+    try {
+      // No order, so no special index: the newest pages are not needed here,
+      // the closest ones are (sorted below).
+      final snap = await FirebaseFirestore.instance
+          .collection('businesses')
+          .where('isActive', isEqualTo: true)
+          .limit(120)
+          .get();
+      final list = [
+        for (final d in snap.docs) {...d.data(), 'id': d.id},
+      ];
+      if (!mounted) return;
+      setState(() {
+        _mapSource
+          ..clear()
+          ..addAll(list);
+        _mapSourceLoaded = true;
+      });
+    } catch (e) {
+      debugPrint('Map pages failed: $e');
+      if (mounted) setState(() => _mapSourceLoaded = true);
+    }
+    _locateMe();
+  }
+
+  /// Where you are (only used to put the closest pages first). Never asks
+  /// twice and fails quietly: the map still works around Kigali.
+  Future<void> _locateMe() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      var p = await Geolocator.checkPermission();
+      if (p == LocationPermission.denied) {
+        p = await Geolocator.requestPermission();
+      }
+      if (p == LocationPermission.denied ||
+          p == LocationPermission.deniedForever) {
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.low,
+        timeLimit: const Duration(seconds: 8),
+      );
+      if (!mounted) return;
+      setState(() => _myPoint = LatLng(pos.latitude, pos.longitude));
+    } catch (_) {
+      // Location is optional.
+    }
+  }
+
+  /// The pages the map starts with: nearest first (or in order if the place
+  /// of the phone is unknown).
+  List<Map<String, dynamic>> _nearbyPages() {
+    final list = _mapSource.where(_passesPageFilters).toList();
+    final me = _myPoint;
+    if (me == null) return list;
+    const dist = Distance();
+    double d(Map<String, dynamic> b) {
+      final p = _extractPagePoint(b);
+      return p == null ? double.infinity : dist(me, p);
+    }
+
+    list.sort((a, b) => d(a).compareTo(d(b)));
+    return list;
   }
 
   void _onPostScroll() {
@@ -196,9 +274,12 @@ class _SearchPageState extends State<SearchPage> {
       _keywordSearch(query);
       return;
     }
+    // One typed letter is too little to search: keep the list as it is.
+    if (query.length == 1) return;
     if (_lastPostQuery == query && _postResults.isNotEmpty) return;
     _lastPostQuery = query;
-    _postResults.clear();
+    // Do not empty the list now (it would blink): the first page replaces it.
+    _replacePosts = true;
     _postLastDoc = null;
     _hasMorePosts = true;
     await _loadMorePosts();
@@ -277,6 +358,7 @@ class _SearchPageState extends State<SearchPage> {
       return;
     }
     _keywordQueryDone = '';
+    if (query.length == 1) return; // too short: keep the list, narrow locally
     if (_lastResultQuery == query &&
         _lastResultFilter == _filter &&
         (_businessResults.isNotEmpty || _userResults.isNotEmpty)) {
@@ -284,8 +366,8 @@ class _SearchPageState extends State<SearchPage> {
     }
     _lastResultQuery = query;
     _lastResultFilter = _filter;
-    _businessResults.clear();
-    _userResults.clear();
+    _replaceBusinesses = true;
+    _replaceUsers = true;
     _businessLastDoc = null;
     _userLastDoc = null;
     _hasMoreBusinesses = true;
@@ -342,6 +424,10 @@ class _SearchPageState extends State<SearchPage> {
         }
         rethrow;
       }
+      if (_replaceBusinesses) {
+        _businessResults.clear();
+        _replaceBusinesses = false;
+      }
       if (snap.docs.isNotEmpty) {
         _businessLastDoc = snap.docs.last;
         _businessResults.addAll(
@@ -379,6 +465,10 @@ class _SearchPageState extends State<SearchPage> {
         query = query.startAfterDocument(_userLastDoc!);
       }
       final snap = await query.get();
+      if (_replaceUsers) {
+        _userResults.clear();
+        _replaceUsers = false;
+      }
       if (snap.docs.isNotEmpty) {
         _userLastDoc = snap.docs.last;
         _userResults.addAll(
@@ -416,6 +506,10 @@ class _SearchPageState extends State<SearchPage> {
         query = query.startAfterDocument(_postLastDoc!);
       }
       final snap = await query.get();
+      if (_replacePosts) {
+        _postResults.clear();
+        _replacePosts = false;
+      }
       if (snap.docs.isNotEmpty) {
         _postLastDoc = snap.docs.last;
         final fetched = snap.docs.map(Post.fromFirestore).toList();
@@ -468,7 +562,26 @@ class _SearchPageState extends State<SearchPage> {
     return _resolvedPageLocations[id];
   }
 
-  Future<void> _resolvePageLocation(Map<String, dynamic> page) async {
+  // Address lookups go one by one, about one a second (the free service asks for that).
+  Future<void> _geoQueue = Future.value();
+  final Set<String> _geoQueued = {};
+
+  Future<void> _resolvePageLocation(Map<String, dynamic> page) {
+    final pageId = (page['id'] ?? page['businessId'] ?? '').toString();
+    if (pageId.isEmpty ||
+        _resolvedPageLocations.containsKey(pageId) ||
+        !_geoQueued.add(pageId)) {
+      return Future.value();
+    }
+    _geoQueue = _geoQueue.then((_) async {
+      if (!mounted) return;
+      await _resolvePageNow(page);
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+    });
+    return _geoQueue;
+  }
+
+  Future<void> _resolvePageNow(Map<String, dynamic> page) async {
     final pageId = (page['id'] ?? page['businessId'] ?? '').toString();
     if (pageId.isEmpty ||
         _resolvedPageLocations.containsKey(pageId) ||
@@ -525,7 +638,7 @@ class _SearchPageState extends State<SearchPage> {
   /// place is only an address get looked up (once) in the background.
   List<MapPage> _mapPages(List<Map<String, dynamic>> pages) {
     final out = <MapPage>[];
-    for (final page in pages.take(12)) {
+    for (final page in pages.take(40)) {
       final point = _extractPagePoint(page);
       if (point == null) {
         _resolvePageLocation(page);
@@ -967,14 +1080,21 @@ class _SearchPageState extends State<SearchPage> {
      ],
     );
 
-    final locationPages = _businessResults.where((business) {
-      if (query.isEmpty) return true;
-      final name = (business['name'] ?? '').toString().toLowerCase();
-      final location = (business['location'] ?? business['address'] ?? '')
-          .toString()
-          .toLowerCase();
-      return name.contains(query) || location.contains(query);
-    }).take(12).toList();
+    // Nothing typed: pages near you. Typing: the real matches from the server.
+    final locationPages = query.isEmpty
+        ? _nearbyPages().take(40).toList()
+        : _businessResults
+            .where((business) {
+              if (!_passesPageFilters(business)) return false;
+              final name = (business['name'] ?? '').toString().toLowerCase();
+              final location =
+                  (business['location'] ?? business['address'] ?? '')
+                      .toString()
+                      .toLowerCase();
+              return name.contains(query) || location.contains(query);
+            })
+            .take(40)
+            .toList();
 
     final mapPages = _mapPages(locationPages);
 
@@ -1069,7 +1189,9 @@ class _SearchPageState extends State<SearchPage> {
                           child: PagesMap(
                             key: _pagesMapKey,
                             pages: mapPages,
-                            loading: _resolvingPageLocations.isNotEmpty,
+                            loading: _resolvingPageLocations.isNotEmpty ||
+                                !_mapSourceLoaded,
+                            myPoint: _myPoint,
                             fallbackCenter: _defaultDiscoverCenter,
                             onOpenPage: (id) =>
                                 context.push(AppRoutes.businessProfilePath(id)),
