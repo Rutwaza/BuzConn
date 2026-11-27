@@ -32,6 +32,14 @@ class AdminService {
   Future<Map<String, dynamic>> _call(String name, Map<String, Object?> data) =>
       R2StorageService.instance.callFunction(name, data);
 
+  /// Super admin: a person's conversations (email or user id).
+  Future<Map<String, dynamic>> findChats(String query, String reason) =>
+      _call('adminFindChats', {'query': query, 'reason': reason});
+
+  /// Super admin: the whole chat, ghost messages decoded and marked.
+  Future<Map<String, dynamic>> readChat(String chatId, String reason) =>
+      _call('adminReadChat', {'chatId': chatId, 'reason': reason});
+
   Future<Map<String, dynamic>> stats() => _call('adminStats', {});
 
   /// Verified badge on a business page.

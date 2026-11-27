@@ -80,7 +80,9 @@ Ghost messages disappear from the chat after the receiver reads them, but the se
 | Code | `functions/ghost.js` (`archiveGhostMessage` trigger, `decryptGhostArchive` admin callable) |
 | Log of every opening | Firestore `admin_events`, type `ghost_archive_opened` |
 
-**To open a chat's ghost messages** (only for a safety report or legal request):
+**Easiest way (admin only): Admin panel -> Chats.** Write the reason (report id), type a person's email or user id, pick a conversation, and read it like a normal chat. Ghost messages are decoded and marked with a purple border and "GHOST" (and "read & wiped" when the receiver already read it). Every search and opening is logged in `admin_events` (`chat_search`, `chat_read`). Functions: `adminFindChats`, `adminReadChat` in `functions/ghost.js`. Photos and files show only their name and type.
+
+**From the PC instead** (only for a safety report or legal request):
 
 ```powershell
 cd functions

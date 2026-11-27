@@ -40,6 +40,7 @@ const _sections = [
   _Section(Icons.history_rounded, 'Activity', true),
   _Section(Icons.shield_rounded, 'Team', true),
   _Section(Icons.payments_rounded, 'Payments', true),
+  _Section(Icons.forum_rounded, 'Chats', true),
 ];
 
 class _AdminPanelPageState extends State<AdminPanelPage> {
@@ -83,7 +84,8 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
       5 => const _Padded(_OrdersTab()),
       6 => const _Padded(_ActivityTab()),
       7 => const _Padded(_TeamTab()),
-      _ => const _Padded(AdminPaymentsTab()),
+      8 => const _Padded(AdminPaymentsTab()),
+      _ => const _ChatsTab(),
     };
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final title = Text(
@@ -1730,5 +1732,308 @@ class _TeamTab extends StatelessWidget {
         },
       ),
     );
+  }
+}
+
+
+// ------------------------------------------------------------------ Chats --
+
+/// Super admin only. Find a person's conversations, open one and read it like
+/// a normal chat, with ghost messages decoded and marked. Needs a written
+/// reason (report id...) and every opening is logged in `admin_events`.
+class _ChatsTab extends StatefulWidget {
+  const _ChatsTab();
+
+  @override
+  State<_ChatsTab> createState() => _ChatsTabState();
+}
+
+class _ChatsTabState extends State<_ChatsTab> {
+  final _query = TextEditingController();
+  final _reason = TextEditingController();
+  bool _busy = false;
+  String? _error;
+  List<Map<String, dynamic>> _chats = [];
+  String? _uid;
+  Map<String, dynamic>? _open;
+  List<Map<String, dynamic>> _messages = [];
+
+  @override
+  void dispose() {
+    _query.dispose();
+    _reason.dispose();
+    super.dispose();
+  }
+
+  bool _needReason() {
+    if (_reason.text.trim().length >= 5) return true;
+    setState(() => _error = 'Write a reason first (report id, case number...).');
+    return false;
+  }
+
+  Future<void> _search() async {
+    if (_query.text.trim().isEmpty || !_needReason()) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final r = await AdminService.instance
+          .findChats(_query.text.trim(), _reason.text.trim());
+      if (!mounted) return;
+      setState(() {
+        _uid = r['uid'] as String?;
+        _chats = ((r['chats'] as List?) ?? const [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _openChat(Map<String, dynamic> chat) async {
+    if (!_needReason()) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final r = await AdminService.instance
+          .readChat(chat['chatId'] as String, _reason.text.trim());
+      if (!mounted) return;
+      setState(() {
+        _open = chat;
+        _messages = ((r['messages'] as List?) ?? const [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _chatName(Map<String, dynamic> c) {
+    final title = c['title'] as String?;
+    if (title != null && title.isNotEmpty) return title;
+    final people = ((c['people'] as List?) ?? const [])
+        .map((e) => (e as Map)['name'].toString())
+        .toList();
+    return people.join(' & ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final list = _buildSearch(context);
+    final chat = _open == null ? null : _buildChat(context);
+    final wide = MediaQuery.sizeOf(context).width >= 1000;
+    if (wide) {
+      return Row(children: [
+        SizedBox(width: 400, child: list),
+        const VerticalDivider(width: 1),
+        Expanded(
+          child: chat ??
+              const Center(
+                child: Text('Pick a conversation to read it.',
+                    style: TextStyle(color: AppColors.grey)),
+              ),
+        ),
+      ]);
+    }
+    return chat ?? list;
+  }
+
+  Widget _buildSearch(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(14),
+      children: [
+        const Text(
+          'Read a conversation, ghost messages included. Private: only for a '
+          'safety report or a legal request. Every search and opening is logged.',
+          style: TextStyle(color: AppColors.grey, fontSize: 12.5),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _reason,
+          decoration: const InputDecoration(
+            labelText: 'Reason (report id, case number)',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _query,
+          onSubmitted: (_) => _search(),
+          decoration: InputDecoration(
+            labelText: "Person's email or user id",
+            border: const OutlineInputBorder(),
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.search_rounded),
+              onPressed: _busy ? null : _search,
+            ),
+          ),
+        ),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(_error!, style: const TextStyle(color: AppColors.error)),
+          ),
+        if (_busy)
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        const SizedBox(height: 8),
+        for (final c in _chats)
+          Card(
+            child: ListTile(
+              selected: _open?['chatId'] == c['chatId'],
+              leading: CircleAvatar(
+                child: Icon((c['type'] == 'group')
+                    ? Icons.groups_rounded
+                    : Icons.person_rounded),
+              ),
+              title: Text(_chatName(c),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text((c['lastMessage'] as String?)?.isNotEmpty == true
+                  ? c['lastMessage'] as String
+                  : 'No messages'),
+              onTap: _busy ? null : () => _openChat(c),
+            ),
+          ),
+        if (_uid != null && _chats.isEmpty && !_busy)
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('No conversations for this person.'),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildChat(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final firstSender =
+        _messages.isEmpty ? '' : (_messages.first['senderId'] as String? ?? '');
+    final ghosts = _messages.where((m) => m['isGhost'] == true).length;
+    final df = DateFormat('d MMM yyyy');
+    final tf = DateFormat('HH:mm');
+    String? lastDay;
+
+    final rows = <Widget>[];
+    for (final m in _messages) {
+      final t = DateTime.fromMillisecondsSinceEpoch((m['at'] as num?)?.toInt() ?? 0);
+      final day = df.format(t);
+      if (day != lastDay) {
+        lastDay = day;
+        rows.add(Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(day,
+                style: const TextStyle(color: AppColors.grey, fontSize: 12)),
+          ),
+        ));
+      }
+      final ghost = m['isGhost'] == true;
+      final wiped = m['wiped'] == true;
+      final mine = (m['senderId'] as String? ?? '') == firstSender;
+      final text = (m['text'] as String? ?? '').trim();
+      final media = m['mediaType'] as String?;
+      final bg = ghost
+          ? (isDark ? const Color(0xFF3A2B5C) : const Color(0xFFEDE4FF))
+          : mine
+              ? AppColors.primary.withValues(alpha: isDark ? 0.55 : 0.14)
+              : (isDark ? Colors.white10 : const Color(0xFFF0F2F5));
+      rows.add(Align(
+        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 460),
+          margin: const EdgeInsets.symmetric(vertical: 3),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(14),
+            border: ghost
+                ? Border.all(color: const Color(0xFF8E6BFF), width: 1.2)
+                : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                (m['senderName'] as String?)?.isNotEmpty == true
+                    ? m['senderName'] as String
+                    : 'User',
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11.5,
+                    color: AppColors.grey),
+              ),
+              if (media != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.attach_file_rounded, size: 15),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        '$media${(m['mediaName'] as String?)?.isNotEmpty == true ? ' · ${m['mediaName']}' : ''}',
+                        style: const TextStyle(fontSize: 12.5),
+                      ),
+                    ),
+                  ]),
+                ),
+              if (text.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: SelectableText(text),
+                ),
+              const SizedBox(height: 4),
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                if (ghost) ...[
+                  const Text('👻', style: TextStyle(fontSize: 12)),
+                  const SizedBox(width: 4),
+                  Text(
+                    wiped ? 'GHOST · read & wiped' : 'GHOST',
+                    style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF8E6BFF)),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Text(tf.format(t),
+                    style:
+                        const TextStyle(fontSize: 10.5, color: AppColors.grey)),
+              ]),
+            ],
+          ),
+        ),
+      ));
+    }
+
+    return Column(children: [
+      Material(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: ListTile(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: () => setState(() => _open = null),
+          ),
+          title: Text(_chatName(_open!),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text('${_messages.length} messages · $ghosts ghost'),
+        ),
+      ),
+      Expanded(
+        child: _messages.isEmpty
+            ? const Center(child: Text('No messages.'))
+            : ListView(padding: const EdgeInsets.all(12), children: rows),
+      ),
+    ]);
   }
 }

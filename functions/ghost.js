@@ -174,4 +174,150 @@ exports.decryptGhostArchive = onCall(
   },
 );
 
+// --- Callables: super admin "Chats" tab ------------------------------------
+// 1) adminFindChats: a person's conversations (by email or user id).
+// 2) adminReadChat: the whole chat, normal and ghost messages together. Ghost
+//    messages are decoded and marked; ones the receiver already read (wiped
+//    from the chat) come back from the encrypted archive.
+// Both need a written reason and are logged in admin_events.
+
+function needReason(data) {
+  const reason = String(data?.reason || "").trim();
+  if (reason.length < 5) {
+    throw new HttpsError("invalid-argument", "Give a reason (e.g. report id).");
+  }
+  return reason;
+}
+
+function ms(t) {
+  return t?.toMillis ? t.toMillis() : 0;
+}
+
+exports.adminFindChats = onCall({region: REGION}, async (request) => {
+  if (!(await isSuperAdmin(request.auth))) {
+    throw new HttpsError("permission-denied", "Super admin only.");
+  }
+  const reason = needReason(request.data);
+  const q = String(request.data?.query || "").trim();
+  if (!q) throw new HttpsError("invalid-argument", "Type an email or user id.");
+  let uid = q;
+  if (q.includes("@")) {
+    try {
+      uid = (await admin.auth().getUserByEmail(q.toLowerCase())).uid;
+    } catch (_) {
+      throw new HttpsError("not-found", "No user with that email.");
+    }
+  }
+  const snap = await db().collection("chats")
+    .where("participants", "array-contains", uid).limit(200).get();
+  const names = {};
+  const nameOf = async (id) => {
+    if (!(id in names)) {
+      const u = (await db().collection("users").doc(id).get()).data() || {};
+      names[id] = String(u.name || u.displayName || u.email || id.slice(0, 6));
+    }
+    return names[id];
+  };
+  const chats = [];
+  for (const d of snap.docs) {
+    const c = d.data();
+    const parts = (c.participants || []).map(String);
+    const people = [];
+    for (const id of parts) people.push({uid: id, name: await nameOf(id)});
+    chats.push({
+      chatId: d.id,
+      type: String(c.type || (parts.length > 2 ? "group" : "direct")),
+      title: c.groupName || c.name || null,
+      people,
+      lastMessage: String(c.lastMessage || ""),
+      updatedAt: ms(c.lastMessageAt || c.updatedAt || c.createdAt),
+    });
+  }
+  chats.sort((a, b) => b.updatedAt - a.updatedAt);
+  await db().collection("admin_events").add({
+    type: "chat_search", query: q, reason, count: chats.length,
+    byUid: request.auth.uid, byEmail: request.auth.token.email || null,
+    at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return {uid, chats};
+});
+
+exports.adminReadChat = onCall(
+  {region: REGION, secrets: [GHOST_ARCHIVE_KEY]},
+  async (request) => {
+    if (!(await isSuperAdmin(request.auth))) {
+      throw new HttpsError("permission-denied", "Super admin only.");
+    }
+    const reason = needReason(request.data);
+    const chatId = String(request.data?.chatId || "").trim();
+    if (!chatId) throw new HttpsError("invalid-argument", "chatId is required.");
+
+    const [msgSnap, archSnap] = await Promise.all([
+      db().collection("chats").doc(chatId).collection("messages")
+        .orderBy("createdAt", "desc").limit(500).get(),
+      db().collection("ghost_archive").where("chatId", "==", chatId)
+        .orderBy("createdAt", "desc").limit(500).get(),
+    ]);
+
+    const byId = new Map();
+    for (const doc of msgSnap.docs) {
+      const m = doc.data();
+      const ghost = m.isGhost === true;
+      byId.set(doc.id, {
+        id: doc.id,
+        senderId: String(m.senderId || ""),
+        senderName: String(m.senderName || ""),
+        text: ghost ?
+          decodeGhostText(String(m.ghostCipherText || ""), chatId,
+            String(m.senderId || ""), String(m.ghostNonce || "")) :
+          String(m.text || ""),
+        isGhost: ghost,
+        wiped: false,
+        mediaType: m.mediaType || null,
+        mediaName: m.mediaName || null,
+        at: ms(m.createdAt),
+      });
+    }
+    // Ghost messages already read and wiped: only the archive still has them.
+    for (const doc of archSnap.docs) {
+      const a = doc.data();
+      if (byId.has(a.messageId)) {
+        const live = byId.get(a.messageId);
+        if (!live.text) {
+          try {
+            live.text = decrypt(a.box, doc.id).text || "";
+          } catch (_) { /* keep empty */ }
+        }
+        continue;
+      }
+      let p = {};
+      try {
+        p = decrypt(a.box, doc.id);
+      } catch (e) {
+        logger.error("ghost archive decrypt failed", {id: doc.id, error: e.message});
+        p = {text: "(could not decrypt)"};
+      }
+      byId.set(a.messageId, {
+        id: a.messageId,
+        senderId: String(a.senderId || ""),
+        senderName: String(p.senderName || ""),
+        text: String(p.text || ""),
+        isGhost: true,
+        wiped: true,
+        mediaType: p.mediaType || null,
+        mediaName: p.mediaName || null,
+        at: ms(a.createdAt),
+      });
+    }
+    const messages = [...byId.values()].sort((a, b) => a.at - b.at);
+    await db().collection("admin_events").add({
+      type: "chat_read", chatId, reason, count: messages.length,
+      ghostCount: messages.filter((m) => m.isGhost).length,
+      byUid: request.auth.uid, byEmail: request.auth.token.email || null,
+      at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return {chatId, count: messages.length, messages};
+  },
+);
+
 exports._ghostInternals = {decodeGhostText, encrypt, decrypt};
